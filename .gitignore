@@ -7,3 +7,4 @@ public/api
 .qoder
 target/
 .codebuddy/
+cache
