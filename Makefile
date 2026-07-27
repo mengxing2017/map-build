@@ -8,7 +8,7 @@ ROLE           ?= both
 FORMAT         ?= both
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor fetch build verify pack pack-tar pack-zip clean all
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor fetch build verify pack pack-tar pack-zip clean all release release-tar release-zip
 
 init: init-workdir
 
@@ -75,3 +75,9 @@ clean:
 	  "$(WORKDIR)/outputs/$(SESSION).building.attribution.json"
 
 all: build pack
+
+release: build pack verify
+
+release-tar: build pack-tar verify
+
+release-zip: build pack-zip verify
