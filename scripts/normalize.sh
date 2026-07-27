@@ -39,7 +39,7 @@ while IFS= read -r layer; do
   bak="${input}.bak"
 
   log_info "normalize ${layer}"
-  jq -c \
+  jq --seq -c \
     --arg layer "${layer}" \
     --argjson name_order "${name_order}" \
     --argjson allowed "${allowed}" \
