@@ -32,7 +32,9 @@ normalize_session_vars
 
 [[ -n "${INPUT}" ]] || die "${HUAVD_EXIT_INPUT}" "--input is required"
 INPUT="$(resolve_workspace_path "${INPUT}")"
-require_file "${INPUT}"
+if [[ ! -f "${INPUT}" ]]; then
+  die "${HUAVD_EXIT_INPUT}" "required input PBF does not exist: ${INPUT}; run 'make fetch' first, place the file under ${WORKDIR}/mirror, or set INPUT=/path/to/input.osm.pbf"
+fi
 require_cmd osmium tippecanoe pmtiles sha512sum
 
 ensure_dir "$(outputs_dir)"
