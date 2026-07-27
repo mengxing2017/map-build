@@ -109,7 +109,7 @@ verify_role() {
     metadata_bounds="$(jq -c '.bounds' <<< "${metadata}")"
     if jq -n -e --argjson header "${header_bounds}" --argjson meta "${metadata_bounds}" '
       def abs: if . < 0 then -. else . end;
-      [0,1,2,3] | all(. as $i; (($header[$i] - $meta[$i]) | abs) <= 0.0000001)
+      [0,1,2,3] | map((($header[.] - $meta[.]) | abs) <= 0.0000001) | all
     ' >/dev/null; then
       ok "metadata bounds match PMTiles header"
     else
