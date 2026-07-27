@@ -93,7 +93,11 @@ sudo apt-get install -y build-essential pkg-config libsqlite3-dev zlib1g-dev
 
 推荐使用“一次声明、自动继承”的操作模式。先声明构建上下文，后续 `make` 命令会自动读取这些环境变量，无需在每条命令里重复传参。
 
+所有 `make` 命令都应在项目仓库根目录执行。`WORKDIR` 是数据工作目录，不是执行 `make` 的目录；不要在 `${WORKDIR}` 或 `${WORKDIR}/mirror` 中直接运行 `make release`。
+
 ```bash
+export REPO_ROOT=/path/to/huavd-map-build
+cd "${REPO_ROOT}"
 export REGION=china/guangxi
 export YYYYMM=202607
 # export WORKDIR=/tmp/huavd-map-build
@@ -146,7 +150,7 @@ make pack
 mirror/{geofabrik.basename}
 ```
 
-其中 `geofabrik.basename` 来自 `config/regions.yaml`，与 `make fetch` 下载和校验的文件名保持一致。对于 `china/guangxi`，默认输入会解析为：
+其中 `geofabrik.basename` 来自 `config/regions.yaml`，与 `make fetch` 下载和校验的文件名保持一致。`YYYYMM` 只用于输出 session 和产物版本，不参与输入 PBF 文件名推导。对于 `china/guangxi`，当前配置的默认输入会解析为：
 
 ```text
 /tmp/huavd-map-build/mirror/guangxi-latest.osm.pbf
@@ -224,42 +228,63 @@ make release
 
 无法使用 `make fetch` 时，仍然可以手动准备地图数据。适用场景包括浏览器下载、内网中转、使用自定义镜像源，或在无网络环境导入已有 `.osm.pbf` 文件。
 
-需要准备两个文件：
+如果使用 `make fetch`，需要准备或下载的文件名由 `config/regions.yaml` 的 `geofabrik.basename` 决定：
 
 ```text
 {geofabrik.basename}
 {geofabrik.basename}.md5
 ```
 
-以 `china/guangxi` 为例，文件名是：
+以 `china/guangxi` 为例，当前配置值是：
 
 ```text
 guangxi-latest.osm.pbf
 guangxi-latest.osm.pbf.md5
 ```
 
-方案 A：放入默认 mirror 目录，让 `make build` 自动读取：
+浏览器或内部镜像下载出的文件名可能是带日期的快照名，例如 `guangxi-260726.osm.pbf`。这种文件名不会由 `REGION` 和 `YYYYMM` 自动推导，推荐直接用 `INPUT` 指定。
+
+方案 A：保留实际下载文件名，通过 `INPUT` 指定：
 
 ```bash
+export REPO_ROOT=/path/to/huavd-map-build
+cd "${REPO_ROOT}"
+export REGION=china/guangxi
+export YYYYMM=202607
+export WORKDIR=/tmp/huavd-map-build
+export INPUT=/path/to/guangxi-260726.osm.pbf
+
+make release
+```
+
+如果不想切换当前目录，也可以使用：
+
+```bash
+export REPO_ROOT=/path/to/huavd-map-build
+make -C "${REPO_ROOT}" release
+```
+
+方案 B：放入默认 mirror 目录，并按配置 basename 建立软链，让 `make build` 自动读取：
+
+```bash
+export REPO_ROOT=/path/to/huavd-map-build
+cd "${REPO_ROOT}"
 export REGION=china/guangxi
 export YYYYMM=202607
 export WORKDIR=/tmp/huavd-map-build
 
 mkdir -p "${WORKDIR}/mirror"
-# 将 guangxi-latest.osm.pbf 和 guangxi-latest.osm.pbf.md5 放入该目录后校验
-(cd "${WORKDIR}/mirror" && md5sum -c guangxi-latest.osm.pbf.md5)
+# 将实际下载的 PBF 和 MD5 放入 mirror 后，链接为配置中的默认输入名
+ln -sf guangxi-260726.osm.pbf "${WORKDIR}/mirror/guangxi-latest.osm.pbf"
+ln -sf guangxi-260726.osm.pbf.md5 "${WORKDIR}/mirror/guangxi-latest.osm.pbf.md5"
 
 make release
 ```
 
-方案 B：下载到任意路径，通过环境变量指定输入：
+如果下载源同时提供 `.md5`，先按 `.md5` 文件中的实际文件名校验：
 
 ```bash
-export REGION=china/guangxi
-export YYYYMM=202607
-export INPUT=/path/to/guangxi-latest.osm.pbf
-
-make release
+(cd "${WORKDIR}/mirror" && md5sum -c guangxi-260726.osm.pbf.md5)
 ```
 
 各 region 的 Geofabrik 下载 URL 定义在 `config/regions.yaml` 的 `geofabrik.pbf_url` 字段。手动下载只替代 `make fetch`，后续 `make build`、`make verify`、`make pack` 和 `make release` 的用法不变。
