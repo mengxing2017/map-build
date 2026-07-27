@@ -33,7 +33,7 @@ normalize_session_vars
 [[ -n "${INPUT}" ]] || die "${HUAVD_EXIT_INPUT}" "--input is required"
 INPUT="$(resolve_workspace_path "${INPUT}")"
 if [[ ! -f "${INPUT}" ]]; then
-  die "${HUAVD_EXIT_INPUT}" "required input PBF does not exist: ${INPUT}; run 'make fetch' first, place the file under ${WORKDIR}/mirror, or set INPUT=/path/to/input.osm.pbf"
+  die "${HUAVD_EXIT_INPUT}" "required input PBF does not exist: ${INPUT}; run 'make fetch', place/rename/symlink the PBF to this path, or set INPUT=/path/to/input.osm.pbf for manually downloaded files"
 fi
 require_cmd osmium tippecanoe pmtiles sha512sum
 
@@ -80,7 +80,7 @@ for role in "${roles_to_build[@]}"; do
   "${SCRIPT_DIR}/metadata.sh" --pmtiles="$(build_pmtiles_path "${role}")" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
   "${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
   "${SCRIPT_DIR}/attribution.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
-  "${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
   write_sha512_file "$(build_pmtiles_path "${role}")"
+  "${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
   printf 'build OK: %s\n' "$(build_pmtiles_path "${role}")"
 done
