@@ -1,0 +1,14 @@
+{
+  "name": "huavd-map-build-docs-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev": "pnpm --filter huavd-map-build-docs dev",
+    "docs": "pnpm --filter huavd-map-build-docs dev",
+    "dev:docs": "pnpm --filter huavd-map-build-docs dev",
+    "docs:dev": "pnpm --filter huavd-map-build-docs dev",
+    "docs:build": "pnpm --filter huavd-map-build-docs build",
+    "docs:preview": "pnpm --filter huavd-map-build-docs preview"
+  }
+}
