@@ -1,0 +1,304 @@
+schema_version: 1
+description: "source-layer to OSM tags-filter and osmium export field policy."
+
+global:
+  name_coalesce_order:
+    - "name:zh-Hans"
+    - "name:zh"
+    - "name:en"
+    - "name"
+  reject_unknown_fields_after_normalize: true
+  osmium_attributes:
+    type: false
+    id: false
+    version: false
+    changeset: false
+    timestamp: false
+    uid: false
+    user: false
+
+source_layers:
+  road:
+    order: 1
+    geometry: "line"
+    osm_tags:
+      - "highway=*"
+    geofabrik_shapefile: "gis_osm_roads_free_1.shp"
+    tags_filter:
+      - "w/highway"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "ref"
+      - "oneway"
+      - "maxspeed"
+      - "layer"
+      - "bridge"
+      - "tunnel"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+      ref: "String"
+      oneway: "Boolean"
+      maxspeed: "Number"
+      layer: "Number"
+      bridge: "Boolean"
+      tunnel: "Boolean"
+    renderer: "MapLibre"
+
+  railway:
+    order: 2
+    geometry: "line"
+    osm_tags:
+      - "railway=*"
+    geofabrik_shapefile: "gis_osm_railways_free_1.shp"
+    tags_filter:
+      - "w/railway"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "layer"
+      - "bridge"
+      - "tunnel"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+      layer: "Number"
+      bridge: "Boolean"
+      tunnel: "Boolean"
+    renderer: "MapLibre"
+
+  water:
+    order: 3
+    geometry: "polygon"
+    osm_tags:
+      - "natural=water"
+    geofabrik_shapefile: "gis_osm_water_a_free_1.shp"
+    tags_filter:
+      - "a/natural=water"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "width"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+      width: "Number"
+    renderer: "MapLibre"
+
+  waterway:
+    order: 4
+    geometry: "line"
+    osm_tags:
+      - "waterway=*"
+    geofabrik_shapefile: "gis_osm_waterways_free_1.shp"
+    tags_filter:
+      - "w/waterway"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "width"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+      width: "Number"
+    renderer: "MapLibre"
+
+  landuse:
+    order: 5
+    geometry: "polygon"
+    osm_tags:
+      - "landuse=*"
+    geofabrik_shapefile: "gis_osm_landuse_a_free_1.shp"
+    tags_filter:
+      - "a/landuse"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+    renderer: "MapLibre"
+
+  building:
+    order: 6
+    geometry: "polygon"
+    osm_tags:
+      - "building=*"
+    geofabrik_shapefile: "gis_osm_buildings_a_free_1.shp"
+    tags_filter:
+      - "a/building"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "type"
+      - "building"
+      - "height"
+      - "min_height"
+      - "building:levels"
+      - "levels"
+      - "roof:height"
+      - "roof_height"
+    normalize:
+      type_from: "building"
+      levels_from: "building:levels"
+      roof_height_from: "roof:height"
+      height_derivation: "height first, else building:levels * 3 + 1 meters for building-vector only"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+      type: "String"
+      height: "Number"
+      min_height: "Number"
+      levels: "Number"
+      roof_height: "Number"
+    renderer: "MapLibre fill-extrusion"
+
+  admin:
+    order: 7
+    geometry: "polygon"
+    osm_tags:
+      - "boundary=administrative"
+    geofabrik_shapefile: "gis_osm_adminareas_a_free_1.shp"
+    tags_filter:
+      - "r/boundary=administrative"
+      - "a/boundary=administrative"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+    renderer: "MapLibre"
+
+  natural_a:
+    order: 8
+    geometry: "polygon"
+    osm_tags:
+      - "natural=*"
+      - "natural!=water"
+    geofabrik_shapefile: "gis_osm_natural_a_free_1.shp"
+    tags_filter:
+      - "a/natural"
+    post_filter:
+      exclude:
+        natural:
+          - "water"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "natural"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+    renderer: "MapLibre"
+
+  leisure_a:
+    order: 9
+    geometry: "polygon"
+    osm_tags:
+      - "leisure=*"
+    geofabrik_shapefile: null
+    tags_filter:
+      - "a/leisure"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+    renderer: "MapLibre"
+
+  place_label:
+    order: 10
+    geometry: "point"
+    osm_tags:
+      - "place=*"
+    geofabrik_shapefile: "gis_osm_places_free_1.shp"
+    tags_filter:
+      - "n/place"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "population"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+      population: "Number"
+    renderer: "MapLibre symbol"
+
+  poi_label:
+    order: 11
+    geometry: "point"
+    osm_tags:
+      - "amenity=*"
+      - "shop=*"
+      - "tourism=*"
+    geofabrik_shapefile: "gis_osm_pois_free_1.shp"
+    tags_filter:
+      - "n/amenity"
+      - "n/shop"
+      - "n/tourism"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "amenity"
+      - "shop"
+      - "tourism"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+    renderer: "MapLibre symbol"
+
+  transport_label:
+    order: 12
+    geometry: "point"
+    osm_tags:
+      - "public_transport=*"
+    geofabrik_shapefile: "gis_osm_transport_free_1.shp"
+    tags_filter:
+      - "n/public_transport"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "public_transport"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:en": "String"
+    renderer: "MapLibre symbol"

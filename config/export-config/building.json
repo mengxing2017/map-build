@@ -1,0 +1,25 @@
+{
+  "attributes": {
+    "type": false,
+    "id": false,
+    "version": false,
+    "changeset": false,
+    "timestamp": false,
+    "uid": false,
+    "user": false
+  },
+  "include_tags": [
+    "name",
+    "name:zh-Hans",
+    "name:zh",
+    "name:en",
+    "type",
+    "building",
+    "height",
+    "min_height",
+    "building:levels",
+    "levels",
+    "roof:height",
+    "roof_height"
+  ]
+}

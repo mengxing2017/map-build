@@ -1,0 +1,105 @@
+schema_version: 1
+description: "tippecanoe defaults and region overrides for huavd-map-build."
+
+defaults:
+  min_zoom: 0
+  max_zoom: 15
+  drop_densest_as_needed: true
+  extend_zooms_if_still_dropping: true
+  detect_shared_borders: true
+  coalesce_densest_as_needed: true
+  read_parallel: true
+  maximum_tile_bytes: 1048576
+  no_tile_size_limit: false
+  force_feature_limit: false
+  attribution: "\u00a9 OpenStreetMap contributors"
+  output_role: "base"
+  layer_args_template: "-L {layer}:staging/{region-slug}-{yyyymm}/layers/{layer}.geojsonseq"
+  source_layers:
+    - "road"
+    - "railway"
+    - "water"
+    - "waterway"
+    - "landuse"
+    - "building"
+    - "admin"
+    - "natural_a"
+    - "leisure_a"
+    - "place_label"
+    - "poi_label"
+    - "transport_label"
+
+metadata:
+  data_license: "ODbL-1.0"
+  tile_type: "MVT"
+  tile_compression: "gzip"
+  vector_layer_count: 12
+
+high_density:
+  - region_match: "japan/tokyo"
+    max_zoom: 14
+    maximum_tile_bytes: 2097152
+    drop_densest_as_needed: true
+    coalesce_densest_as_needed: true
+    building_height_derivation: "levels * 3 + 1 meters when height is absent"
+  - region_match: "china/shanghai"
+    max_zoom: 14
+    maximum_tile_bytes: 2097152
+    drop_densest_as_needed: true
+    coalesce_densest_as_needed: true
+    building_height_derivation: "levels * 3 + 1 meters when height is absent"
+  - region_match: "china/guangdong/shenzhen"
+    max_zoom: 14
+    maximum_tile_bytes: 2097152
+    drop_densest_as_needed: true
+    coalesce_densest_as_needed: true
+    building_height_derivation: "levels * 3 + 1 meters when height is absent"
+  - region_match: "china/hong-kong"
+    max_zoom: 14
+    maximum_tile_bytes: 2097152
+    drop_densest_as_needed: true
+    coalesce_densest_as_needed: true
+    building_height_derivation: "levels * 3 + 1 meters when height is absent"
+
+rk3576_fallback:
+  trigger: "rk3576_perf_check==fail"
+  steps:
+    - order: 1
+      description: "lower maxzoom from 16 to 15"
+      max_zoom: 15
+    - order: 2
+      description: "raise building minzoom to 14 or 15"
+      building_min_zoom_candidates:
+        - 14
+        - 15
+    - order: 3
+      description: "limit POI to core amenity categories"
+      poi_categories:
+        - "office"
+        - "restaurant"
+        - "hospital"
+        - "school"
+        - "bank"
+        - "atm"
+    - order: 4
+      description: "keep density reduction flags enabled"
+      drop_densest_as_needed: true
+      coalesce_densest_as_needed: true
+    - order: 5
+      description: "split oversized region packages"
+      split_region_when_size_gt_bytes: 1073741824
+  versioning:
+    bump_package_version_patch: true
+    changelog_required: "BUILD-CHANGELOG.md"
+
+building_vector:
+  enabled_when:
+    capability_enable_3d: true
+    region_asset_role: "building-vector"
+    region_source_type: "derived-building"
+  min_zoom: 12
+  max_zoom: 18
+  maximum_tile_bytes: 2097152
+  output_role: "building"
+  source_layers:
+    - "building"

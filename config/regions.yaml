@@ -1,0 +1,265 @@
+schema_version: 1
+description: "huavd-map-build Geofabrik region catalog and HUAVD source-id mapping."
+
+naming:
+  region_id_case: "lowercase"
+  yyyymm_regex: "^[0-9]{6}$"
+  region_slug_separator: "-"
+  region_slug_examples:
+    "china/guangxi": "china-guangxi"
+    "japan": "japan"
+
+workdir:
+  default_home: "/opt/huavd-map-build"
+  mirror_retention_days: 14
+  session_template: "staging/{region-slug}-{yyyymm}"
+  layer_output_template: "staging/{region-slug}-{yyyymm}/layers/{layer}.geojsonseq"
+
+geofabrik:
+  base_url: "https://download.geofabrik.de"
+  mirror_dir: "mirror"
+  md5_suffix: ".md5"
+  download_strategy: "wget --timestamping"
+
+source_id_mappings:
+  "china/guangxi": "osm-dev"
+  "china": "osm-dev-cn"
+  "japan": "osm-dev-jp"
+
+regions:
+  - id: "asia"
+    slug: "asia"
+    display_name: "Asia"
+    priority: "split-source"
+    direct_tippecanoe: false
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia-latest.osm.pbf.md5"
+      basename: "asia-latest.osm.pbf"
+      parent_region: null
+      fallback: null
+    huavd:
+      source_id: null
+      mapping_status: "not-direct-pmtiles"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+
+  - id: "china"
+    slug: "china"
+    display_name: "China Mainland"
+    priority: "mainline"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/china-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china-latest.osm.pbf.md5"
+      basename: "china-latest.osm.pbf"
+      parent_region: "asia"
+      fallback: null
+    huavd:
+      source_id: "osm-dev-cn"
+      mapping_status: "defined"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: "0.3.0-cn.{yyyymm}"
+
+  - id: "china/guangxi"
+    slug: "china-guangxi"
+    display_name: "Guangxi"
+    priority: "first-release-sample"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/china/guangxi-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/guangxi-latest.osm.pbf.md5"
+      basename: "guangxi-latest.osm.pbf"
+      parent_region: "china"
+      fallback:
+        source_region: "china"
+        method: "osmium-extract-polygon"
+        polygon: "config/regions/china-guangxi.poly"
+    huavd:
+      source_id: "osm-dev"
+      mapping_status: "defined"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: "0.3.0-guangxi.{yyyymm}"
+
+  - id: "china/guangdong"
+    slug: "china-guangdong"
+    display_name: "Guangdong"
+    priority: "post-v0.3.0"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/china/guangdong-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/guangdong-latest.osm.pbf.md5"
+      basename: "guangdong-latest.osm.pbf"
+      parent_region: "china"
+      fallback:
+        source_region: "china"
+        method: "osmium-extract-polygon"
+        polygon: "config/regions/china-guangdong.poly"
+    huavd:
+      source_id: null
+      mapping_status: "pending-source-id"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+
+  - id: "china/yunnan"
+    slug: "china-yunnan"
+    display_name: "Yunnan"
+    priority: "post-v0.3.0"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/china/yunnan-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/yunnan-latest.osm.pbf.md5"
+      basename: "yunnan-latest.osm.pbf"
+      parent_region: "china"
+      fallback:
+        source_region: "china"
+        method: "osmium-extract-polygon"
+        polygon: "config/regions/china-yunnan.poly"
+    huavd:
+      source_id: null
+      mapping_status: "pending-source-id"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+
+  - id: "india"
+    slug: "india"
+    display_name: "India"
+    priority: "v0.6.0-poc"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/india-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/india-latest.osm.pbf.md5"
+      basename: "india-latest.osm.pbf"
+      parent_region: "asia"
+      fallback: null
+    huavd:
+      source_id: null
+      mapping_status: "pending-source-id"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+
+  - id: "japan"
+    slug: "japan"
+    display_name: "Japan"
+    priority: "poc-high-density"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/japan-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/japan-latest.osm.pbf.md5"
+      basename: "japan-latest.osm.pbf"
+      parent_region: "asia"
+      fallback: null
+    huavd:
+      source_id: "osm-dev-jp"
+      mapping_status: "defined"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: "0.3.0-jp.{yyyymm}"
+
+  - id: "indonesia"
+    slug: "indonesia"
+    display_name: "Indonesia"
+    priority: "poc"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/indonesia-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/indonesia-latest.osm.pbf.md5"
+      basename: "indonesia-latest.osm.pbf"
+      parent_region: "asia"
+      fallback: null
+    huavd:
+      source_id: null
+      mapping_status: "pending-source-id"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+
+  - id: "russia"
+    slug: "russia"
+    display_name: "Russia"
+    priority: "v0.7.0-plus"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/russia-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/russia-latest.osm.pbf.md5"
+      basename: "russia-latest.osm.pbf"
+      parent_region: null
+      fallback: null
+    huavd:
+      source_id: null
+      mapping_status: "pending-source-id"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+
+  - id: "taiwan"
+    slug: "taiwan"
+    display_name: "Taiwan"
+    priority: "provincial-sample"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/taiwan-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/taiwan-latest.osm.pbf.md5"
+      basename: "taiwan-latest.osm.pbf"
+      parent_region: "asia"
+      fallback: null
+    huavd:
+      source_id: null
+      mapping_status: "pending-source-id"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+
+  - id: "thailand"
+    slug: "thailand"
+    display_name: "Thailand"
+    priority: "post-v0.3.0"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/thailand-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/thailand-latest.osm.pbf.md5"
+      basename: "thailand-latest.osm.pbf"
+      parent_region: "asia"
+      fallback: null
+    huavd:
+      source_id: null
+      mapping_status: "pending-source-id"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+
+  - id: "philippines"
+    slug: "philippines"
+    display_name: "Philippines"
+    priority: "post-v0.3.0"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/philippines-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/philippines-latest.osm.pbf.md5"
+      basename: "philippines-latest.osm.pbf"
+      parent_region: "asia"
+      fallback: null
+    huavd:
+      source_id: null
+      mapping_status: "pending-source-id"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
