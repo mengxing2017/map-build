@@ -174,6 +174,10 @@ pack_cache_dir() {
   printf '%s/cache/pack\n' "${WORKDIR}"
 }
 
+import_cache_dir() {
+  printf '%s/cache/import\n' "${WORKDIR}"
+}
+
 staging_dir() {
   normalize_session_vars
   printf '%s/staging/%s\n' "${WORKDIR}" "${SESSION}"

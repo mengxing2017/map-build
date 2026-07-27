@@ -144,15 +144,10 @@ region_package_version() {
 }
 
 role_source_id() {
-  local region="$1"
+  local region="${1:-}"
   local role="${2:-base}"
-  local source_id
-  source_id="$(region_source_id "${region}")"
-  if [[ "${role}" == "building" && -n "${source_id}" ]]; then
-    printf '%s-building\n' "${source_id}"
-  else
-    printf '%s\n' "${source_id}"
-  fi
+  : "${region}" "${role}"
+  printf 'osm-dev\n'
 }
 
 role_asset_role() {
@@ -166,11 +161,8 @@ role_asset_role() {
 
 role_source_type() {
   local role="${1:-base}"
-  if [[ "${role}" == "building" ]]; then
-    printf 'derived-building\n'
-  else
-    printf 'osm-pbf\n'
-  fi
+  : "${role}"
+  printf 'osm-pbf\n'
 }
 
 building_role_enabled() {

@@ -4,6 +4,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/config.sh
+source "${SCRIPT_DIR}/lib/config.sh"
+# shellcheck source=lib/install_json.sh
+source "${SCRIPT_DIR}/lib/install_json.sh"
 
 FORMAT="${FORMAT:-both}"
 INCLUDE_BUILD_LOG=0
@@ -41,6 +45,7 @@ rm -rf "${pack_dir}"
 ensure_dir "${pack_dir}"
 
 copied=0
+roles_in_pack=()
 while IFS= read -r role; do
   stem="${SESSION}.${role}"
   files=(
@@ -57,6 +62,7 @@ while IFS= read -r role; do
     require_file "${file}"
     cp "${file}" "${pack_dir}/"
   done
+  roles_in_pack+=("${role}")
   copied=$((copied + 1))
 done < <(role_list "${ROLE}")
 
@@ -64,6 +70,29 @@ done < <(role_list "${ROLE}")
 
 if (( INCLUDE_BUILD_LOG )); then
   find "${out_dir}" -maxdepth 1 -type f -name "BUILD-*.log" -exec cp {} "${pack_dir}/" \;
+fi
+
+if ((${#roles_in_pack[@]} > 0)); then
+  if command -v jq >/dev/null 2>&1; then
+    if offline_maps_json="$(install_offline_maps_json 0 "${roles_in_pack[@]}")"; then
+      bundle_id="$(install_manifest_value_for_roles bundle_id "${roles_in_pack[@]}")"
+      activation="$(install_manifest_value_for_roles activation "${roles_in_pack[@]}")"
+      bundle_id="${bundle_id:-$(install_default_bundle_id)}"
+      activation="${activation:-manual}"
+      install_write_document \
+        "${pack_dir}/install.json" \
+        "$(install_transfer_id)" \
+        "${offline_maps_json}" \
+        "$(install_region_for_roles "${roles_in_pack[@]}")" \
+        "${bundle_id}" \
+        "${activation}"
+      log_info "install descriptor OK: ${pack_dir}/install.json"
+    else
+      log_warn "skip install.json generation for pack: no valid install records"
+    fi
+  else
+    log_warn "skip install.json generation for pack: jq is not available"
+  fi
 fi
 
 (

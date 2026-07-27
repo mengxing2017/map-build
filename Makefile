@@ -6,9 +6,10 @@ REGION_BASENAME ?= $(notdir $(REGION))
 INPUT          ?=
 ROLE           ?= both
 FORMAT         ?= both
+IMPORT_FORMAT  ?= zip
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor fetch build verify pack pack-tar pack-zip clean all release release-tar release-zip
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor fetch build verify pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip
 
 init: init-workdir
 
@@ -55,17 +56,30 @@ verify:
 	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)"
 
 pack:
-	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
+	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
 
 pack-tar:
-	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --session="$(SESSION)" --role="$(ROLE)" --format=tar
+	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)" --format=tar
 
 pack-zip:
-	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --session="$(SESSION)" --role="$(ROLE)" --format=zip
+	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)" --format=zip
+
+prepare-import:
+	role="$(ROLE)"; \
+	if [ "$$role" = "both" ]; then role="base"; fi; \
+	WORKDIR="$(WORKDIR)" ./scripts/prepare-import.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$$role" --format="$(IMPORT_FORMAT)"
+
+prepare-import-all:
+	WORKDIR="$(WORKDIR)" ./scripts/prepare-import.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role=both --format="$(IMPORT_FORMAT)"
 
 clean:
 	rm -rf "$(WORKDIR)/staging/$(SESSION)" \
+	  "$(WORKDIR)/cache/import/$(SESSION)" \
 	  "$(WORKDIR)/cache/pack/$(SESSION)" \
+	  "$(WORKDIR)/outputs/$(SESSION).import.tar.gz" \
+	  "$(WORKDIR)/outputs/$(SESSION).import.tar.gz.sha512" \
+	  "$(WORKDIR)/outputs/$(SESSION).import.zip" \
+	  "$(WORKDIR)/outputs/$(SESSION).import.zip.sha512" \
 	  "$(WORKDIR)/outputs/$(SESSION).bundle.tar.gz" \
 	  "$(WORKDIR)/outputs/$(SESSION).bundle.tar.gz.sha512" \
 	  "$(WORKDIR)/outputs/$(SESSION).bundle.zip" \

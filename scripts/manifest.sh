@@ -68,12 +68,17 @@ asset_role="$(role_asset_role "${ROLE}")"
 source_type="$(role_source_type "${ROLE}")"
 source_revision="geofabrik-$(region_basename "${REGION}")-$(yyyymm_dash "${YYYYMM}")"
 style_id="$(region_style_id "${REGION}")"
+artifact_name="${SESSION}.${ROLE}"
+offline_map_id="$(region_slug)-${YYYYMM}-${ROLE}"
+bundle_id="${HUAVD_MAP_BUNDLE_ID:-$(region_slug)-${YYYYMM}-standard}"
+activation="${HUAVD_MAP_ACTIVATION:-manual}"
+build_id="$(timestamp_utc)"
 
 jq -n \
   --arg schema "huavd-map-build/v1" \
   --arg region "${REGION}" \
   --arg yyyymm "${YYYYMM}" \
-  --arg build_id "$(timestamp_utc)" \
+  --arg build_id "${build_id}" \
   --arg source_url "${pbf_url}" \
   --argjson source_size "${source_size}" \
   --arg downloaded_at "${downloaded_at}" \
@@ -95,6 +100,11 @@ jq -n \
   --arg package_version "${package_version}" \
   --arg source_revision "${source_revision}" \
   --arg style_id "${style_id}" \
+  --arg artifact_name "${artifact_name}" \
+  --arg offline_map_id "${offline_map_id}" \
+  --arg bundle_id "${bundle_id}" \
+  --arg activation "${activation}" \
+  --arg released_at "${build_id}" \
   '{
     schema: $schema,
     region: $region,
@@ -127,15 +137,20 @@ jq -n \
     },
     vector_layers: $vector_layers,
     huavd_record: {
+      id: $offline_map_id,
+      name: $artifact_name,
       source_id: $source_id,
       asset_role: $asset_role,
       source_type: $source_type,
       package_version: $package_version,
       source_revision: $source_revision,
       transport: "offline",
-      coord_system: "WGS84",
+      coord_system: "EPSG:3857",
       style_id: $style_id,
-      format: "pmtiles"
+      format: "pmtiles",
+      released_at: $released_at,
+      activation: $activation,
+      bundle_id: $bundle_id
     },
     license: {
       data_license: "ODbL-1.0",
