@@ -114,6 +114,8 @@ make fetch
 make release
 ```
 
+`make release` 不包含下载步骤，它要求 PBF 已经存在于 `${WORKDIR}/mirror/`，或已通过 `INPUT` 指定本地 PBF。首次构建通常先执行 `make fetch`，再执行 `make release`。
+
 只需要其中一种打包格式时：
 
 ```bash
@@ -141,10 +143,10 @@ make pack
 `make build` 默认读取：
 
 ```text
-mirror/{region-basename}-latest.osm.pbf
+mirror/{geofabrik.basename}
 ```
 
-对于 `china/guangxi`，默认输入会解析为：
+其中 `geofabrik.basename` 来自 `config/regions.yaml`，与 `make fetch` 下载和校验的文件名保持一致。对于 `china/guangxi`，默认输入会解析为：
 
 ```text
 /tmp/huavd-map-build/mirror/guangxi-latest.osm.pbf
@@ -203,23 +205,51 @@ make fetch
 make release
 ```
 
+如果 CI 环境不能访问 Geofabrik，就不要执行 `make fetch`；应先把 PBF 作为 CI artifact 或缓存放入当前 `WORKDIR`，或通过 `INPUT` 指向已有文件：
+
+```bash
+export REGION=china/guangxi
+export YYYYMM=202607
+export WORKDIR=/tmp/huavd-map-build-ci
+export ROLE=base
+export INPUT=/cache/maps/guangxi-latest.osm.pbf
+
+devbox run doctor
+make release
+```
+
 现有的命令行变量覆盖方式仍然兼容，适合临时切换参数；推荐文档中的主流程使用环境变量继承模式。
 
-### 手动下载 PBF
+### 手动下载地图数据
 
-无法使用 `make fetch` 时，可以从 Geofabrik 手动下载 `.osm.pbf` 和 `.osm.pbf.md5` 文件。
+无法使用 `make fetch` 时，仍然可以手动准备地图数据。适用场景包括浏览器下载、内网中转、使用自定义镜像源，或在无网络环境导入已有 `.osm.pbf` 文件。
+
+需要准备两个文件：
+
+```text
+{geofabrik.basename}
+{geofabrik.basename}.md5
+```
+
+以 `china/guangxi` 为例，文件名是：
+
+```text
+guangxi-latest.osm.pbf
+guangxi-latest.osm.pbf.md5
+```
 
 方案 A：放入默认 mirror 目录，让 `make build` 自动读取：
 
 ```bash
 export REGION=china/guangxi
 export YYYYMM=202607
+export WORKDIR=/tmp/huavd-map-build
 
-mkdir -p /tmp/huavd-map-build/mirror
+mkdir -p "${WORKDIR}/mirror"
 # 将 guangxi-latest.osm.pbf 和 guangxi-latest.osm.pbf.md5 放入该目录后校验
-(cd /tmp/huavd-map-build/mirror && md5sum -c guangxi-latest.osm.pbf.md5)
+(cd "${WORKDIR}/mirror" && md5sum -c guangxi-latest.osm.pbf.md5)
 
-make build
+make release
 ```
 
 方案 B：下载到任意路径，通过环境变量指定输入：
@@ -229,10 +259,10 @@ export REGION=china/guangxi
 export YYYYMM=202607
 export INPUT=/path/to/guangxi-latest.osm.pbf
 
-make build
+make release
 ```
 
-各 region 的 Geofabrik 下载 URL 定义在 `config/regions.yaml` 的 `geofabrik.pbf_url` 字段。
+各 region 的 Geofabrik 下载 URL 定义在 `config/regions.yaml` 的 `geofabrik.pbf_url` 字段。手动下载只替代 `make fetch`，后续 `make build`、`make verify`、`make pack` 和 `make release` 的用法不变。
 
 ## 产物位置
 
