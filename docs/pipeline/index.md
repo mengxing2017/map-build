@@ -32,7 +32,7 @@
 | `${WORKDIR}/cache/tags-filter/` | per-layer 过滤后的 PBF |
 | `${WORKDIR}/cache/configs/` | YAML 转 JSON 缓存 |
 | `${WORKDIR}/staging/${SESSION}/layers/` | per-layer GeoJSONSeq |
-| `${WORKDIR}/outputs/` | PMTiles、manifest、attribution、bundle |
+| `${WORKDIR}/outputs/` | PMTiles、manifest、attribution、bundle、import archive |
 
 产物命名：
 
@@ -41,6 +41,8 @@
 {region-slug}-{yyyymm}.{role}.pmtiles.sha512
 {region-slug}-{yyyymm}.{role}.manifest.json
 {region-slug}-{yyyymm}.{role}.attribution.json
+{region-slug}-{yyyymm}.import.zip
+{region-slug}-{yyyymm}.import.tar.gz
 {region-slug}-{yyyymm}.bundle.tar.gz
 {region-slug}-{yyyymm}.bundle.zip
 ```
