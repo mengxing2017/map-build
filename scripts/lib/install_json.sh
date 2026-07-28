@@ -221,7 +221,7 @@ install_write_document() {
                   "offline-map-id": $base.id,
                   "asset-role": $base."asset-role",
                   required: true,
-                  "presentation-scope": "standard",
+                  "presentation-scope": ["standard"],
                   order: 0
                 }
               ]
@@ -229,7 +229,7 @@ install_write_document() {
                   "offline-map-id": .value.id,
                   "asset-role": .value."asset-role",
                   required: false,
-                  "presentation-scope": "standard",
+                  "presentation-scope": ["standard"],
                   order: (.key + 1)
                 }))
             )
