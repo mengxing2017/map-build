@@ -9,7 +9,7 @@ FORMAT         ?= both
 IMPORT_FORMAT  ?= zip
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor fetch build verify pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch build verify pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip
 
 init: init-workdir
 
@@ -40,6 +40,9 @@ setup:
 
 doctor:
 	WORKDIR="$(WORKDIR)" ./scripts/doctor.sh
+
+catalog:
+	./scripts/manifest-catalog.sh
 
 fetch: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/fetch.sh --region="$(REGION)"
