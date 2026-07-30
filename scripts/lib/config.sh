@@ -90,6 +90,25 @@ region_get() {
   region_json "${region}" | jq -r --arg key "${key}" 'getpath($key | split(".")) // empty'
 }
 
+region_get_inherited() {
+  local key="$1"
+  local region="$2"
+  local current="${region}"
+  local value parent
+
+  while [[ -n "${current}" && "${current}" != "null" ]]; do
+    value="$(region_get "${key}" "${current}")"
+    if [[ -n "${value}" && "${value}" != "null" ]]; then
+      printf '%s\n' "${value}"
+      return 0
+    fi
+    parent="$(region_get geofabrik.parent_region "${current}")"
+    current="${parent}"
+  done
+
+  return 1
+}
+
 region_slug_configured() {
   local region="$1"
   local configured
@@ -108,24 +127,35 @@ region_id_from_slug() {
 
 region_source_id() {
   local region="$1"
-  region_get huavd.source_id "${region}"
+  local source_id
+  source_id="$(region_get huavd.source_id "${region}")"
+  if [[ -n "${source_id}" && "${source_id}" != "null" ]]; then
+    printf '%s\n' "${source_id}"
+    return
+  fi
+  jq -r --arg id "${region}" '.source_id_mappings[$id] // empty' "$(regions_json)"
+}
+
+region_stable_id() {
+  local region="$1"
+  region_get huavd.region_id "${region}"
 }
 
 region_style_id() {
   local region="$1"
   local style_id
-  style_id="$(region_get huavd.style_id "${region}")"
+  style_id="$(region_get_inherited huavd.style_id "${region}" || true)"
   printf '%s\n' "${style_id:-osm-dev}"
 }
 
 region_asset_role() {
   local region="$1"
-  region_get huavd.asset_role "${region}"
+  region_get_inherited huavd.asset_role "${region}"
 }
 
 region_source_type() {
   local region="$1"
-  region_get huavd.source_type "${region}"
+  region_get_inherited huavd.source_type "${region}"
 }
 
 region_package_version() {
@@ -146,8 +176,8 @@ region_package_version() {
 role_source_id() {
   local region="${1:-}"
   local role="${2:-base}"
-  : "${region}" "${role}"
-  printf 'osm-dev\n'
+  : "${role}"
+  region_source_id "${region}"
 }
 
 role_asset_role() {
