@@ -7,6 +7,7 @@ global:
     - "name:zh"
     - "name:en"
     - "name"
+  per_region_name_overrides: {}
   reject_unknown_fields_after_normalize: true
   osmium_attributes:
     type: false
@@ -31,6 +32,8 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
       - "ref"
       - "oneway"
       - "maxspeed"
@@ -41,6 +44,8 @@ source_layers:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
       ref: "String"
       oneway: "Boolean"
       maxspeed: "Number"
@@ -62,6 +67,8 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
       - "layer"
       - "bridge"
       - "tunnel"
@@ -69,6 +76,8 @@ source_layers:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
       layer: "Number"
       bridge: "Boolean"
       tunnel: "Boolean"
@@ -87,11 +96,15 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
       - "width"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
       width: "Number"
     renderer: "MapLibre"
 
@@ -108,11 +121,15 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
       - "width"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
       width: "Number"
     renderer: "MapLibre"
 
@@ -129,10 +146,14 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
     renderer: "MapLibre"
 
   building:
@@ -148,6 +169,8 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
       - "type"
       - "building"
       - "height"
@@ -165,6 +188,8 @@ source_layers:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
       type: "String"
       height: "Number"
       min_height: "Number"
@@ -186,10 +211,14 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
     renderer: "MapLibre"
 
   natural_a:
@@ -210,11 +239,15 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
       - "natural"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
     renderer: "MapLibre"
 
   leisure_a:
@@ -230,10 +263,14 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
     renderer: "MapLibre"
 
   place_label:
@@ -249,11 +286,15 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
       - "population"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
       population: "Number"
     renderer: "MapLibre symbol"
 
@@ -274,6 +315,8 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
       - "amenity"
       - "shop"
       - "tourism"
@@ -281,6 +324,8 @@ source_layers:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
     renderer: "MapLibre symbol"
 
   transport_label:
@@ -296,9 +341,13 @@ source_layers:
       - "name:zh-Hans"
       - "name:zh"
       - "name:en"
+      - "name:ja"
+      - "name:ko"
       - "public_transport"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
     renderer: "MapLibre symbol"
