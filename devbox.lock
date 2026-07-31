@@ -1010,6 +1010,70 @@
         }
       }
     },
+    "python312Packages.fonttools@latest": {
+      "last_modified": "2025-11-23T21:50:36Z",
+      "resolved": "github:NixOS/nixpkgs/ee09932cedcef15aaf476f9343d1dea2cb77e261#python312Packages.fonttools",
+      "source": "devbox-search",
+      "version": "4.60.1",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/yigbp7zdm6n283wn7hgdkzkcdb6pj8k7-python3.12-fonttools-4.60.1",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/6g7ifvzj2n10f5dkih4qq623z0fkla45-python3.12-fonttools-4.60.1-dist"
+            }
+          ],
+          "store_path": "/nix/store/yigbp7zdm6n283wn7hgdkzkcdb6pj8k7-python3.12-fonttools-4.60.1"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/68jbdv2rls6rjv5d9574pks2q0wjxymq-python3.12-fonttools-4.60.1",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/wvmdkbjqkraqh5z9aswyq3pzy9is1s0s-python3.12-fonttools-4.60.1-dist"
+            }
+          ],
+          "store_path": "/nix/store/68jbdv2rls6rjv5d9574pks2q0wjxymq-python3.12-fonttools-4.60.1"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/yjviym03ay6n1pjas9pxmyhn01lyaqr4-python3.12-fonttools-4.60.1",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/j0qpihr300h6lqswdl4qn5nbnfjmasr5-python3.12-fonttools-4.60.1-dist"
+            }
+          ],
+          "store_path": "/nix/store/yjviym03ay6n1pjas9pxmyhn01lyaqr4-python3.12-fonttools-4.60.1"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/m20b5qp9g3xpg0pvs6r8cijda7vf206f-python3.12-fonttools-4.60.1",
+              "default": true
+            },
+            {
+              "name": "dist",
+              "path": "/nix/store/087mlimjr8vbqw0549hh6g9d60fhmgc0-python3.12-fonttools-4.60.1-dist"
+            }
+          ],
+          "store_path": "/nix/store/m20b5qp9g3xpg0pvs6r8cijda7vf206f-python3.12-fonttools-4.60.1"
+        }
+      }
+    },
     "python3@3.12": {
       "last_modified": "2025-01-06T03:40:18Z",
       "plugin_version": "0.0.4",
