@@ -89,6 +89,155 @@ sudo apt-get install -y build-essential pkg-config libsqlite3-dev zlib1g-dev
 
 只安装 `sqlite3` 或 `zlib1g` 运行库不够，缺少 `libsqlite3-dev` 或 `zlib1g-dev` 会导致 `sqlite3.h`、`zlib.h` 找不到。在 devbox/Nix 环境中优先使用 `devbox run setup`，不要混用系统 `/usr/lib` 的 sqlite/zlib。
 
+## 命令使用索引
+
+日常使用优先通过 `make` 入口执行。`scripts/*.sh` 是同一套能力的直连脚本，适合 CI、排障或只重跑某个内部阶段时使用。
+
+所有命令默认在仓库根目录执行。构建数据写入 `WORKDIR`，默认是 `/tmp/huavd-map-build`；仓库目录只保存脚本、配置和文档。
+
+### 通用变量
+
+`make` 变量可以通过环境变量声明，也可以在命令行临时覆盖：
+
+```bash
+export REGION=china/guangxi
+export YYYYMM=202607
+make build
+
+make build REGION=china/guangxi YYYYMM=202607 ROLE=base
+```
+
+| 变量 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `WORKDIR` | `/tmp/huavd-map-build` | 构建工作目录，包含 `mirror/`、`staging/`、`cache/`、`outputs/` |
+| `REGION` | `china/guangxi` | region id，必须存在于 `config/regions.yaml` |
+| `YYYYMM` | 当前 UTC 月 | 输出版本月份，格式为 6 位数字，例如 `202607` |
+| `SESSION` | `{region-slug}-{YYYYMM}` | 构建会话名，例如 `china-guangxi-202607`；通常不需要手动设置 |
+| `INPUT` | 空 | `make build` 的输入 PBF；为空时自动使用 `mirror/{geofabrik.basename}` |
+| `ROLE` | `both` | 构建或处理的资产角色：`base`、`building`、`both` |
+| `FORMAT` | `both` | `make pack` 的包格式：`tar`、`zip`、`both` |
+| `IMPORT_FORMAT` | `zip` | `make prepare-import` 的导入包格式：`zip` 或 `tar` |
+| `GLYPH` | `0` | `make build` 是否同时生成 glyph 和 style：`0` 或 `1` |
+| `HUAVD_MAP_BUILD_MACHINE_HOME` | `/opt/huavd-map-build` | 构建机初始化目标目录，用于 `init-build-machine-workdir` |
+
+`SESSION` 与 `YYYYMM` 同时设置时，以显式 `SESSION` 为准；脚本会从 `SESSION` 末尾反推 `YYYYMM`。`ROLE=both` 会处理 base 和 building，其中 building 只有在 region 配置为 `huavd.asset_role: building-vector` 且 `huavd.source_type: derived-building` 时才可用。
+
+### Makefile 入口
+
+| 命令 | 用途 | 常用示例 |
+| :--- | :--- | :--- |
+| `make setup` | 安装或检查 `osmium`、`tippecanoe`、`pmtiles` 等工具 | `make setup` |
+| `make doctor` | 检查外部命令、YAML/JSON 解析和关键配置 | `make doctor` |
+| `make init` | `make init-workdir` 的别名 | `make init` |
+| `make init-workdir` | 初始化当前 `WORKDIR` 目录结构 | `make init-workdir SESSION=china-guangxi-202607` |
+| `make install-config` | 初始化 `WORKDIR` 并复制当前 `config/` | `make install-config WORKDIR=/data/huavd-map-build` |
+| `make init-build-machine-workdir` | 初始化构建机固定目录 | `make init-build-machine-workdir SESSION=china-guangxi-202607` |
+| `make install-build-machine-config` | 初始化构建机固定目录并复制配置 | `make install-build-machine-config` |
+| `make catalog` | 从 `config/regions.yaml` 生成 region catalog 快照 | `make catalog` |
+| `make fetch` | 下载 region 配置中的 Geofabrik PBF 和 `.md5`，并执行 MD5 校验 | `make fetch REGION=china/guangxi` |
+| `make build` | 从 PBF 构建 PMTiles、metadata、manifest、attribution 和 sha512 | `make build REGION=china/guangxi YYYYMM=202607 ROLE=base` |
+| `make glyph` | 生成当前 session 的 glyphs 目录 | `make glyph REGION=china/guangxi YYYYMM=202607` |
+| `make style` | 生成当前 session 的 MapLibre style JSON | `make style REGION=china/guangxi YYYYMM=202607` |
+| `make verify` | 验证 PMTiles header、metadata、manifest 和 SHA-512 | `make verify REGION=china/guangxi YYYYMM=202607 ROLE=both` |
+| `make pack` | 生成 tar/zip 分发包 | `make pack SESSION=china-guangxi-202607 ROLE=both FORMAT=both` |
+| `make pack-tar` | 只生成 `.bundle.tar.gz` | `make pack-tar SESSION=china-guangxi-202607 ROLE=base` |
+| `make pack-zip` | 只生成 `.bundle.zip` | `make pack-zip SESSION=china-guangxi-202607 ROLE=base` |
+| `make prepare-import` | 为单个 role 生成 `huavd-map` 导入包；`ROLE=both` 时会转为 `base` | `make prepare-import ROLE=base IMPORT_FORMAT=zip` |
+| `make prepare-import-all` | 将当前 session 中可用的 base/building 聚合为一个导入包 | `make prepare-import-all IMPORT_FORMAT=tar` |
+| `make clean` | 删除当前 session 的 staging、pack/import cache 和 outputs | `make clean SESSION=china-guangxi-202607 ROLE=both` |
+| `make all` | 执行 `build` 和 `pack` | `make all REGION=china/guangxi YYYYMM=202607` |
+| `make release` | 执行 `build`、`pack`、`verify` | `make release REGION=china/guangxi YYYYMM=202607` |
+| `make release-tar` | 执行 `build`、`pack-tar`、`verify` | `make release-tar REGION=china/guangxi YYYYMM=202607` |
+| `make release-zip` | 执行 `build`、`pack-zip`、`verify` | `make release-zip REGION=china/guangxi YYYYMM=202607` |
+
+`make release`、`make release-tar`、`make release-zip` 不会自动下载 PBF。首次构建通常先执行 `make fetch`，或通过 `INPUT=/path/to/file.osm.pbf` 指向已有文件。
+
+`make catalog` 的默认输出是 `config/derived/catalog.json`，这是派生文件，不作为构建产物提交。需要写到其他位置时使用脚本直连入口的 `OUTPUT` 变量。
+
+### 脚本直连入口
+
+多数脚本支持以下通用参数：
+
+```text
+--workdir=<path>
+--region=<id>
+--yyyymm=YYYYMM
+--session=<session>
+--role=base|building|both
+```
+
+脚本也会读取同名环境变量。相对输入路径解析规则与 `make` 一致：`mirror/`、`cache/`、`staging/`、`outputs/` 开头的路径会按 `WORKDIR` 下的路径处理。
+
+| 脚本 | 用法 |
+| :--- | :--- |
+| `./scripts/setup-tools.sh` | 安装工具链；通过 `TIPPECANOE_VERSION`、`TIPPECANOE_SOURCE_TARBALL`、`TIPPECANOE_BINARY_URL`、`PMTILES_VERSION`、`INSTALL_PREFIX` 等环境变量控制 |
+| `./scripts/doctor.sh` | 检查命令和配置是否可用 |
+| `./scripts/fetch.sh` | `--region=<id> [--workdir=<path>] [--limit-rate=10m]` |
+| `./scripts/build.sh` | `--input=<path-to.osm.pbf> --region=<id> [--yyyymm=YYYYMM] [--role=base\|building\|both] [--workdir=<path>] [--glyph=0\|1] [--force]` |
+| `./scripts/glyph.sh` | `--region=<id> [--yyyymm=YYYYMM] [--workdir=<path>] [--locales=all\|tag[,tag...]] [--force]` |
+| `./scripts/style.sh` | `--region=<id> [--yyyymm=YYYYMM] [--workdir=<path>] [--locale=<tag>] [--pmtiles-url=<url>]` |
+| `./scripts/verify.sh` | `--region=<id> --role=<base\|building\|both> [--yyyymm=YYYYMM] [--session=<session>] [--strict]` |
+| `./scripts/pack.sh` | `--session=<session> [--role=base\|building\|both] [--format=tar\|zip\|both] [--workdir=<path>]` |
+| `./scripts/prepare-import.sh` | `--session=<session> [--role=base\|building\|both] [--format=tar\|zip] [--output=<archive-path>] [--transfer-id=<id>] [--workdir=<path>] [--region=<id>] [--yyyymm=YYYYMM]` |
+| `./scripts/region-pbf-basename.sh` | `[region]`，输出 region 配置中的 `geofabrik.basename` |
+| `./scripts/manifest-catalog.sh` | 生成 region catalog；默认读取 `config/regions.yaml`，写入 `config/derived/catalog.json`；可用 `CONFIG_PATH` 和 `OUTPUT` 覆盖 |
+| `./scripts/init-workdir.sh` | 初始化目录；通过 `HUAVD_MAP_BUILD_HOME`、`HUAVD_MAP_BUILD_SESSION`、`HUAVD_MAP_BUILD_COPY_CONFIG=1` 等环境变量控制 |
+| `./scripts/generate-region-skeletons.rb` | `--iso3166-2-csv=<path> [--existing-config=config/regions.yaml] [--output=config/regions.yaml]` |
+
+内部阶段脚本通常由 `build.sh` 调用。只有在排查某一层处理结果时才建议直接运行：
+
+| 阶段脚本 | 用法 |
+| :--- | :--- |
+| `./scripts/tags-filter.sh` | `--input=<pbf> --region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymm=YYYYMM]` |
+| `./scripts/export.sh` | `--region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymm=YYYYMM]` |
+| `./scripts/normalize.sh` | `--region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymm=YYYYMM]` |
+| `./scripts/tippecanoe.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymm=YYYYMM]` |
+| `./scripts/metadata.sh` | `--pmtiles=<path> --region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymm=YYYYMM]` |
+| `./scripts/manifest.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymm=YYYYMM]` |
+| `./scripts/attribution.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymm=YYYYMM]` |
+
+### 常用命令组合
+
+默认 region 快速构建：
+
+```bash
+make fetch
+make release
+```
+
+使用已有 PBF，不走网络下载：
+
+```bash
+make release REGION=china/guangxi YYYYMM=202607 INPUT=/data/osm/guangxi-260726.osm.pbf ROLE=base
+```
+
+生成 PMTiles 后再补 glyph 和 style：
+
+```bash
+make glyph REGION=china/guangxi YYYYMM=202607
+make style REGION=china/guangxi YYYYMM=202607
+make pack REGION=china/guangxi YYYYMM=202607 ROLE=base FORMAT=zip
+```
+
+构建时同时生成 glyph 和 style：
+
+```bash
+make build REGION=china/guangxi YYYYMM=202607 GLYPH=1
+make pack REGION=china/guangxi YYYYMM=202607 ROLE=base FORMAT=zip
+```
+
+准备 `huavd-map` 导入包：
+
+```bash
+make prepare-import REGION=china/guangxi YYYYMM=202607 ROLE=base IMPORT_FORMAT=zip
+```
+
+只重跑基础 PMTiles 验证：
+
+```bash
+./scripts/verify.sh --region=china/guangxi --yyyymm=202607 --role=base --strict
+```
+
 ## 构建一次地图数据
 
 推荐使用“一次声明、自动继承”的操作模式。先声明构建上下文，后续 `make` 命令会自动读取这些环境变量，无需在每条命令里重复传参。
