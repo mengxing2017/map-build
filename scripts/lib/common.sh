@@ -215,6 +215,10 @@ build_attribution_path() {
   printf '%s/%s.attribution.json\n' "$(outputs_dir)" "$(artifact_stem "${role}")"
 }
 
+build_glyphs_dir() {
+  printf '%s/%s.glyphs\n' "$(outputs_dir)" "${SESSION}"
+}
+
 build_sha512_path() {
   local role="${1:-${ROLE}}"
   printf '%s/%s.pmtiles.sha512\n' "$(outputs_dir)" "$(artifact_stem "${role}")"

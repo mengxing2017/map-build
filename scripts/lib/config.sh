@@ -69,6 +69,10 @@ tippecanoe_json() {
   config_json_path tippecanoe
 }
 
+glyphs_json() {
+  config_json_path glyphs
+}
+
 region_json() {
   local region="$1"
   jq -e --arg id "${region}" '.regions[] | select(.id == $id)' "$(regions_json)"
@@ -146,6 +150,14 @@ region_style_id() {
   local style_id
   style_id="$(region_get_inherited huavd.style_id "${region}" || true)"
   printf '%s\n' "${style_id:-osm-dev}"
+}
+
+available_locales_json() {
+  jq -c '[.locales[].tag] | reduce .[] as $tag ([]; if index($tag) then . else . + [$tag] end)' "$(glyphs_json)"
+}
+
+glyphs_url_template() {
+  jq -r '.generator.url_template // "huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf"' "$(glyphs_json)"
 }
 
 region_asset_role() {

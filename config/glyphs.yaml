@@ -1,0 +1,39 @@
+schema_version: 1
+generator:
+  command: "build-glyphs"
+  url_template: "huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf"
+
+fonts:
+  - id: "noto-sans-regular"
+    fontstack: "NotoSans-Regular"
+    file: "fonts/NotoSans-Regular.ttf"
+  - id: "noto-sans-cjk-sc-regular"
+    fontstack: "NotoSansCJKsc-Regular"
+    file: "fonts/NotoSansCJKsc-Regular.otf"
+  - id: "noto-sans-cjk-jp-regular"
+    fontstack: "NotoSansCJKjp-Regular"
+    file: "fonts/NotoSansCJKjp-Regular.otf"
+  - id: "noto-sans-cjk-kr-regular"
+    fontstack: "NotoSansCJKkr-Regular"
+    file: "fonts/NotoSansCJKkr-Regular.otf"
+
+ranges:
+  - { start: 0, end: 255 }
+  - { start: 256, end: 65279 }
+
+locales:
+  - tag: "zh-Hans"
+    fonts:
+      - "noto-sans-cjk-sc-regular"
+      - "noto-sans-regular"
+  - tag: "en"
+    fonts:
+      - "noto-sans-regular"
+  - tag: "ja"
+    fonts:
+      - "noto-sans-cjk-jp-regular"
+      - "noto-sans-regular"
+  - tag: "ko"
+    fonts:
+      - "noto-sans-cjk-kr-regular"
+      - "noto-sans-regular"

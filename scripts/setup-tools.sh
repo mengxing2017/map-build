@@ -553,6 +553,20 @@ install_pmtiles() {
   return 1
 }
 
+check_glyph_tooling() {
+  if command -v build-glyphs >/dev/null 2>&1; then
+    log_info "build-glyphs already installed: $(tool_version_line build-glyphs)"
+  else
+    log_warn "build-glyphs is not installed; glyph.sh requires a local MapLibre glyph generator"
+  fi
+
+  if command -v fonttools >/dev/null 2>&1; then
+    log_info "fonttools already installed: $(tool_version_line fonttools)"
+  else
+    log_warn "fonttools is not installed; add it through devbox before validating custom font files"
+  fi
+}
+
 main() {
   mkdir -p "${BIN_DIR}" "${BUILD_ROOT}"
 
@@ -566,6 +580,7 @@ main() {
   if ! install_pmtiles; then
     failed=1
   fi
+  check_glyph_tooling
 
   if ((failed)); then
     log_error "some tools failed to install; check the errors above, then see README.md environment setup"
