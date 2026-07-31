@@ -1,0 +1,34 @@
+schema_version: 1
+source:
+  id: "huavd-offline"
+  type: "vector"
+  url: "pmtiles://{pmtiles}"
+glyphs_url: "huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf"
+sprite: null
+
+locales:
+  - tag: "zh-Hans"
+    name_fields: ["name:zh-Hans", "name:en", "name"]
+  - tag: "en"
+    name_fields: ["name:en", "name:zh-Hans", "name"]
+  - tag: "ja"
+    name_fields: ["name:ja", "name:en", "name:zh-Hans", "name"]
+  - tag: "ko"
+    name_fields: ["name:ko", "name:en", "name:zh-Hans", "name"]
+
+text_layers:
+  - id: "place-label"
+    source_layer: "place_label"
+    minzoom: 2
+    font_stack: ["NotoSans-Regular"]
+    text_size: 12
+  - id: "poi-label"
+    source_layer: "poi_label"
+    minzoom: 14
+    font_stack: ["NotoSans-Regular"]
+    text_size: 11
+  - id: "transport-label"
+    source_layer: "transport_label"
+    minzoom: 13
+    font_stack: ["NotoSans-Regular"]
+    text_size: 11

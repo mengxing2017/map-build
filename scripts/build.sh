@@ -9,6 +9,7 @@ source "${SCRIPT_DIR}/lib/config.sh"
 
 INPUT=""
 FORCE=0
+GLYPH="${GLYPH:-0}"
 
 for arg in "$@"; do
   if parse_common_arg "${arg}"; then
@@ -16,9 +17,10 @@ for arg in "$@"; do
   fi
   case "${arg}" in
     --input=*) INPUT="${arg#*=}" ;;
+    --glyph=*) GLYPH="${arg#*=}" ;;
     --force) FORCE=1 ;;
     -h|--help)
-      printf 'usage: %s --input=<path-to.osm.pbf> --region=<id> [--yyyymm=YYYYMM] [--role=base|building|both] [--workdir=<path>] [--force]\n' "$0"
+      printf 'usage: %s --input=<path-to.osm.pbf> --region=<id> [--yyyymm=YYYYMM] [--role=base|building|both] [--workdir=<path>] [--glyph=0|1] [--force]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -26,6 +28,10 @@ for arg in "$@"; do
 done
 
 ROLE="${ROLE:-both}"
+case "${GLYPH}" in
+  0|1) ;;
+  *) die "${HUAVD_EXIT_INPUT}" "invalid glyph flag: ${GLYPH}; expected 0 or 1" ;;
+esac
 require_cmd jq
 require_region "${REGION}"
 normalize_session_vars
@@ -84,3 +90,8 @@ for role in "${roles_to_build[@]}"; do
   "${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
   printf 'build OK: %s\n' "$(build_pmtiles_path "${role}")"
 done
+
+if [[ "${GLYPH}" == "1" ]]; then
+  "${SCRIPT_DIR}/glyph.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --workdir="${WORKDIR}" --force
+  "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --workdir="${WORKDIR}"
+fi

@@ -7,9 +7,10 @@ INPUT          ?=
 ROLE           ?= both
 FORMAT         ?= both
 IMPORT_FORMAT  ?= zip
+GLYPH          ?= 0
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch build verify pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch build glyph style verify pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip
 
 init: init-workdir
 
@@ -53,7 +54,13 @@ build: init-workdir
 	  basename="$$(WORKDIR="$(WORKDIR)" REGION="$(REGION)" ./scripts/region-pbf-basename.sh "$(REGION)" 2>/dev/null || printf '%s-latest.osm.pbf\n' "$(REGION_BASENAME)")"; \
 	  input="mirror/$$basename"; \
 	fi; \
-	WORKDIR="$(WORKDIR)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymm="$(YYYYMM)" --role="$(ROLE)"
+	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymm="$(YYYYMM)" --role="$(ROLE)" --glyph="$(GLYPH)"
+
+glyph: init-workdir
+	WORKDIR="$(WORKDIR)" ./scripts/glyph.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --force
+
+style: init-workdir
+	WORKDIR="$(WORKDIR)" ./scripts/style.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)"
 
 verify:
 	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)"
@@ -94,7 +101,10 @@ clean:
 	  "$(WORKDIR)/outputs/$(SESSION).building.pmtiles" \
 	  "$(WORKDIR)/outputs/$(SESSION).building.pmtiles.sha512" \
 	  "$(WORKDIR)/outputs/$(SESSION).building.manifest.json" \
-	  "$(WORKDIR)/outputs/$(SESSION).building.attribution.json"
+	  "$(WORKDIR)/outputs/$(SESSION).building.attribution.json" \
+	  "$(WORKDIR)/outputs/$(SESSION).glyphs" \
+	  "$(WORKDIR)/outputs/$(SESSION).style.json" \
+	  "$(WORKDIR)/outputs/$(SESSION).style.json.sha512"
 
 all: build pack
 

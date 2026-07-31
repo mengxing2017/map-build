@@ -105,6 +105,14 @@ verify_role() {
       fail "metadata attribution missing OpenStreetMap contributors"
     fi
     check_eq "metadata huavd:data-license" "$(jq -r '."huavd:data-license"' <<< "${metadata}")" "ODbL-1.0"
+    if ((STRICT)); then
+      jq -e '."huavd:available-locales" | type == "array" and length > 0' >/dev/null <<< "${metadata}" \
+        && ok "metadata huavd:available-locales" \
+        || fail "metadata huavd:available-locales missing or empty"
+      jq -e '."huavd:style-locales" | type == "array" and length > 0' >/dev/null <<< "${metadata}" \
+        && ok "metadata huavd:style-locales" \
+        || fail "metadata huavd:style-locales missing or empty"
+    fi
     header_bounds="$(pmtiles_bounds "${pmtiles}")"
     metadata_bounds="$(jq -c '.bounds' <<< "${metadata}")"
     if jq -n -e --argjson header "${header_bounds}" --argjson meta "${metadata_bounds}" '
@@ -117,6 +125,29 @@ verify_role() {
     fi
   else
     fail "pmtiles metadata JSON"
+  fi
+
+  if ((STRICT)); then
+    style_file="$(build_style_path)"
+    if [[ -f "${style_file}" ]]; then
+      jq -e '.version == 8 and (.sources | type == "object") and (.glyphs | strings | contains("{fontstack}") and contains("{range}.pbf"))' "${style_file}" >/dev/null \
+        && ok "style.json MapLibre glyph template" \
+        || fail "style.json is missing MapLibre version/source/glyph template"
+    fi
+
+    glyphs_dir="$(build_glyphs_dir)"
+    if [[ -d "${glyphs_dir}" ]]; then
+      if find "${glyphs_dir}" -type f -name '*.pbf' | grep -q .; then
+        ok "glyph pbf files present"
+      else
+        fail "glyph output directory has no pbf files"
+      fi
+      if find "${glyphs_dir}" -type f -name '*.pbf.sha512' | grep -q .; then
+        ok "glyph sha512 sidecars present"
+      else
+        fail "glyph output directory has no sha512 sidecars"
+      fi
+    fi
   fi
 
   actual_sha="$(sha512_value "${pmtiles}")"

@@ -72,6 +72,17 @@ if (( INCLUDE_BUILD_LOG )); then
   find "${out_dir}" -maxdepth 1 -type f -name "BUILD-*.log" -exec cp {} "${pack_dir}/" \;
 fi
 
+style_file="$(build_style_path)"
+if [[ -f "${style_file}" ]]; then
+  ensure_dir "${pack_dir}/styles"
+  cp "${style_file}" "${style_file}.sha512" "${pack_dir}/styles/"
+fi
+
+glyphs_dir="$(build_glyphs_dir)"
+if [[ -d "${glyphs_dir}" ]]; then
+  cp -R "${glyphs_dir}" "${pack_dir}/glyphs"
+fi
+
 if ((${#roles_in_pack[@]} > 0)); then
   if command -v jq >/dev/null 2>&1; then
     if offline_maps_json="$(install_offline_maps_json 0 "${roles_in_pack[@]}")"; then

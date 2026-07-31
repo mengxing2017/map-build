@@ -124,6 +124,8 @@ install_role_record_json() {
     --arg fallback_coord_system "EPSG:3857" \
     --arg fallback_style_id "osm-dev" \
     --arg fallback_released_at "$(timestamp_utc)" \
+    --arg fallback_glyphs_url "$(glyphs_url_template)" \
+    --arg fallback_styles_url "$(styles_url)" \
     --arg sha512 "${file_sha}" \
     --arg file "${stem}.pmtiles" \
     '
@@ -141,6 +143,10 @@ install_role_record_json() {
           "coord-system": (($h.coord_system // "") | if . == "" then $fallback_coord_system else . end),
           transport: (($h.transport // "") | if . == "" then $fallback_transport else . end),
           "style-id": (($h.style_id // "") | if . == "" then $fallback_style_id else . end),
+          "available-locales": (($h.available_locales // []) | if type == "array" then . else [] end),
+          "style-locales": (($h.style_locales // []) | if type == "array" then . else [] end),
+          "glyphs-url": (($h.glyphs_url // "") | if . == "" then $fallback_glyphs_url else . end),
+          "styles-url": (($h.styles_url // "") | if . == "" then $fallback_styles_url else . end),
           checksum: {
             algorithm: "sha512",
             value: $sha512
@@ -251,6 +257,7 @@ install_write_document() {
                 "coord-system": $base."coord-system",
                 "supported-presentations": ["standard"],
                 "default-presentation": "standard",
+                "style-locales": ($base."style-locales" // []),
                 "license-status": "not-required",
                 activation: $activation,
                 assets: bundle_assets($maps)

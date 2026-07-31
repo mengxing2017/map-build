@@ -73,6 +73,10 @@ glyphs_json() {
   config_json_path glyphs
 }
 
+styles_json() {
+  config_json_path styles
+}
+
 region_json() {
   local region="$1"
   jq -e --arg id "${region}" '.regions[] | select(.id == $id)' "$(regions_json)"
@@ -152,12 +156,31 @@ region_style_id() {
   printf '%s\n' "${style_id:-osm-dev}"
 }
 
+region_name_locale_priority_json() {
+  local region="$1"
+  local override
+  override="$(region_json "${region}" | jq -c '.huavd.name_locale_priority // []')"
+  if jq -e 'type == "array" and length > 0' >/dev/null <<< "${override}"; then
+    printf '%s\n' "${override}"
+  else
+    jq -c '.global.name_coalesce_order' "$(layers_json)"
+  fi
+}
+
 available_locales_json() {
   jq -c '[.locales[].tag] | reduce .[] as $tag ([]; if index($tag) then . else . + [$tag] end)' "$(glyphs_json)"
 }
 
+style_locales_json() {
+  jq -c '[.locales[].tag] | reduce .[] as $tag ([]; if index($tag) then . else . + [$tag] end)' "$(styles_json)"
+}
+
 glyphs_url_template() {
   jq -r '.generator.url_template // "huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf"' "$(glyphs_json)"
+}
+
+styles_url() {
+  printf 'huavd-map://styles/%s\n' "$(basename -- "$(build_style_path)")"
 }
 
 region_asset_role() {

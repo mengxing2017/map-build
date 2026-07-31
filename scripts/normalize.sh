@@ -29,7 +29,7 @@ normalize_session_vars
 
 stage_layers="$(layers_dir)"
 require_dir "${stage_layers}"
-name_order="$(jq -c '.global.name_coalesce_order' "$(layers_json)")"
+name_order="$(region_name_locale_priority_json "${REGION}")"
 
 while IFS= read -r layer; do
   input="${stage_layers}/${layer}.geojsonseq"

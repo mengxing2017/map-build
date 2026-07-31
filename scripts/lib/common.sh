@@ -219,6 +219,10 @@ build_glyphs_dir() {
   printf '%s/%s.glyphs\n' "$(outputs_dir)" "${SESSION}"
 }
 
+build_style_path() {
+  printf '%s/%s.style.json\n' "$(outputs_dir)" "${SESSION}"
+}
+
 build_sha512_path() {
   local role="${1:-${ROLE}}"
   printf '%s/%s.pmtiles.sha512\n' "$(outputs_dir)" "$(artifact_stem "${role}")"

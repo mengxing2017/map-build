@@ -142,6 +142,19 @@ while IFS= read -r entry; do
     || die "${HUAVD_EXIT_VERIFY}" "staged PMTiles sha512 mismatch: ${target_file}"
 done < <(jq -c '.[]' <<< "${offline_maps_json}")
 
+style_file="$(build_style_path)"
+if [[ -f "${style_file}" ]]; then
+  ensure_dir "${import_dir}/styles"
+  cp "${style_file}" "${style_file}.sha512" "${import_dir}/styles/" \
+    || die "${HUAVD_EXIT_DISK}" "failed to copy style into import package"
+fi
+
+glyphs_dir="$(build_glyphs_dir)"
+if [[ -d "${glyphs_dir}" ]]; then
+  cp -R "${glyphs_dir}" "${import_dir}/glyphs" \
+    || die "${HUAVD_EXIT_DISK}" "failed to copy glyphs into import package"
+fi
+
 install_write_document "${install_json}" "${TRANSFER_ID}" "${offline_maps_json}" "${document_region}" "${bundle_id}" "${activation}"
 
 case "${FORMAT}" in

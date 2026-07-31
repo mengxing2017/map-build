@@ -75,6 +75,8 @@ offline_map_id="$(region_stable_id "${REGION}")"
 bundle_id="${HUAVD_MAP_BUNDLE_ID:-$(region_slug)-${YYYYMM}-standard}"
 activation="${HUAVD_MAP_ACTIVATION:-manual}"
 build_id="$(timestamp_utc)"
+available_locales="$(available_locales_json)"
+style_locales="$(style_locales_json)"
 
 jq -n \
   --arg schema "huavd-map-build/v1" \
@@ -107,6 +109,8 @@ jq -n \
   --arg bundle_id "${bundle_id}" \
   --arg activation "${activation}" \
   --arg released_at "${build_id}" \
+  --argjson available_locales "${available_locales}" \
+  --argjson style_locales "${style_locales}" \
   '{
     schema: $schema,
     region: $region,
@@ -150,6 +154,8 @@ jq -n \
       coord_system: "EPSG:3857",
       style_id: $style_id,
       format: "pmtiles",
+      available_locales: $available_locales,
+      style_locales: $style_locales,
       released_at: $released_at,
       activation: $activation,
       bundle_id: $bundle_id

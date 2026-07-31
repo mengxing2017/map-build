@@ -46,6 +46,8 @@ center="$(pmtiles_center "${PMTILES}")"
 vector_layers="$(vector_layers_json "${ROLE}" "${max_zoom}")"
 source_id="$(role_source_id "${REGION}" "${ROLE}")"
 asset_role="$(role_asset_role "${ROLE}")"
+available_locales="$(available_locales_json)"
+style_locales="$(style_locales_json)"
 
 [[ -n "${source_id}" ]] \
   || die "${HUAVD_EXIT_INPUT}" "region has no source_id for metadata: ${REGION}"
@@ -63,6 +65,8 @@ jq -n \
   --argjson vector_layers "${vector_layers}" \
   --arg source_id "${source_id}" \
   --arg asset_role "${asset_role}" \
+  --argjson available_locales "${available_locales}" \
+  --argjson style_locales "${style_locales}" \
   --arg build_time "$(timestamp_utc)" \
   --arg region "${REGION}" \
   '{
@@ -76,6 +80,8 @@ jq -n \
     vector_layers: $vector_layers,
     "huavd:source-id": $source_id,
     "huavd:asset-role": $asset_role,
+    "huavd:available-locales": $available_locales,
+    "huavd:style-locales": $style_locales,
     "huavd:build-time": $build_time,
     "huavd:region": $region,
     "huavd:data-license": "ODbL-1.0"

@@ -19,6 +19,10 @@ REQUIRED=(
   osmium
   tippecanoe
   pmtiles
+  node
+  pnpm
+  fonttools
+  build-glyphs
 )
 
 WARNINGS=0
@@ -152,6 +156,51 @@ check_regions_config() {
 }
 
 check_regions_config
+
+check_multilingual_config() {
+  local glyphs styles
+  if ! glyphs="$(glyphs_json)"; then
+    printf 'FAIL %-12s %s\n' "glyphs" "failed to parse config/glyphs.yaml"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+  if ! styles="$(styles_json)"; then
+    printf 'FAIL %-12s %s\n' "styles" "failed to parse config/styles.yaml"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+
+  if jq -e '
+    .schema_version == 1
+    and (.fonts | type == "array" and length > 0)
+    and (.fonts | all(.id and .fontstack and .file))
+    and (.ranges | type == "array" and length > 0)
+    and (.ranges | all((.start | type == "number") and (.end | type == "number") and (.start <= .end)))
+    and (.locales | type == "array" and length > 0)
+    and (.locales | all(.tag and (.fonts | type == "array" and length > 0)))
+  ' "${glyphs}" >/dev/null; then
+    printf 'OK   %-12s %s\n' "glyphs" "schema"
+  else
+    printf 'FAIL %-12s %s\n' "glyphs" "schema invalid"
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  if jq -e '
+    .schema_version == 1
+    and (.source.id | type == "string")
+    and (.glyphs_url | strings | contains("{fontstack}") and contains("{range}.pbf"))
+    and (.locales | type == "array" and length > 0)
+    and (.locales | all(.tag and (.name_fields | type == "array" and length > 0)))
+    and (.text_layers | type == "array" and length > 0)
+  ' "${styles}" >/dev/null; then
+    printf 'OK   %-12s %s\n' "styles" "schema"
+  else
+    printf 'FAIL %-12s %s\n' "styles" "schema invalid"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+
+check_multilingual_config
 
 if ((FAILURES > 0)); then
   printf 'doctor: FAIL (%d config error(s), %d missing item warning(s))\n' "${FAILURES}" "${WARNINGS}"
