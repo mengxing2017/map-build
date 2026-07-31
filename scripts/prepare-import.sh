@@ -12,6 +12,7 @@ source "${SCRIPT_DIR}/lib/install_json.sh"
 OUTPUT_PATH=""
 FORMAT="${FORMAT:-}"
 TRANSFER_ID=""
+AGGREGATE_MANIFEST="${AGGREGATE_MANIFEST:-0}"
 
 resolve_import_output_path() {
   local path="$1"
@@ -39,8 +40,11 @@ for arg in "$@"; do
     --output=*) OUTPUT_PATH="${arg#*=}" ;;
     --format=*) FORMAT="${arg#*=}" ;;
     --transfer-id=*) TRANSFER_ID="${arg#*=}" ;;
+    --aggregate) AGGREGATE_MANIFEST="1" ;;
+    --aggregate=true) AGGREGATE_MANIFEST="1" ;;
+    --aggregate=false) AGGREGATE_MANIFEST="0" ;;
     -h|--help)
-      printf 'usage: %s --session=<session> [--role=base|building|both] [--format=tar|zip] [--output=<archive-path>] [--transfer-id=<id>] [--workdir=<path>] [--region=<id>] [--yyyymm=YYYYMM]\n' "$0"
+      printf 'usage: %s --session=<session> [--role=base|building|both] [--format=tar|zip] [--output=<archive-path>] [--transfer-id=<id>] [--aggregate] [--workdir=<path>] [--region=<id>] [--yyyymm=YYYYMM]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -155,7 +159,11 @@ if [[ -d "${glyphs_dir}" ]]; then
     || die "${HUAVD_EXIT_DISK}" "failed to copy glyphs into import package"
 fi
 
-install_write_document "${install_json}" "${TRANSFER_ID}" "${offline_maps_json}" "${document_region}" "${bundle_id}" "${activation}"
+case "${AGGREGATE_MANIFEST}" in
+  0) install_write_document "${install_json}" "${TRANSFER_ID}" "${offline_maps_json}" "${document_region}" "${bundle_id}" "${activation}" ;;
+  1) install_write_aggregate_document "${install_json}" "${TRANSFER_ID}" "${offline_maps_json}" "${document_region}" "${bundle_id}" "${activation}" ;;
+  *) die "${HUAVD_EXIT_INPUT}" "invalid aggregate manifest mode: ${AGGREGATE_MANIFEST}" ;;
+esac
 
 case "${FORMAT}" in
   tar)
