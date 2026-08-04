@@ -21,7 +21,6 @@ geofabrik:
   md5_suffix: ".md5"
   download_strategy: "wget --timestamping"
 source_id_mappings:
-  china/guangxi: "osm-dev"
   china: "osm-dev-cn"
   japan: "osm-dev-jp"
 regions:
@@ -11020,7 +11019,7 @@ regions:
         method: "osmium-extract-polygon"
         polygon: "config/regions/china-guangxi.poly"
     huavd:
-      source_id: "osm-dev"
+      source_id: null
       mapping_status: "defined"
       asset_role: "base-vector"
       source_type: "osm-pbf"
