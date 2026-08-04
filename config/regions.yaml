@@ -11106,6 +11106,23 @@ regions:
       source_id: null
       mapping_status: "pending-source-id"
       package_version_template: null
+  - id: "china/macau"
+    slug: "china-macau"
+    display_name: "Macau"
+    display_name_zh: "中国澳门"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china"
+      fallback: null
+    huavd:
+      region_id: "cn-92-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
   - id: "christmas-island"
     slug: "christmas-island"
     display_name: "Christmas Island"
@@ -36856,38 +36873,6 @@ regions:
       fallback: null
     huavd:
       region_id: "lu-0l-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "macau"
-    slug: "macau"
-    display_name: "Macau"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "asia"
-      fallback: null
-    huavd:
-      region_id: "mo-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "macau/macau"
-    slug: "macau-macau"
-    display_name: "Macau"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "macau"
-      fallback: null
-    huavd:
-      region_id: "mo-mo-base"
       source_id: null
       mapping_status: "pending-source-id"
       package_version_template: null
