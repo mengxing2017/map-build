@@ -1,33 +1,33 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.2/.schema/devbox.schema.json",
   "packages": {
-    "pnpm":       "latest",
-    "nodejs":     "22",
-    "python3":    "3.12",
+    "pnpm":                        "latest",
+    "nodejs":                      "22",
     "python312Packages.fonttools": "latest",
-    "jq":         "1.7.1",
-    "wget":       "1.21.4",
-    "zip":        "3.0",
-    "gnumake":    "4.4.1",
-    "gnused":     "4.9",
-    "coreutils":  "latest",
-    "cmake":      "latest",
-    "pkg-config": "latest",
-    "boost":      "latest",
-    "expat":      "latest",
-    "bzip2":      "latest",
-    "zlib":       {
-      "version":  "latest",
-      "outputs":  ["out", "dev"]
+    "jq":                          "1.7.1",
+    "wget":                        "1.21.4",
+    "zip":                         "3.0",
+    "gnumake":                     "4.4.1",
+    "gnused":                      "4.9",
+    "coreutils":                   "latest",
+    "cmake":                       "latest",
+    "pkg-config":                  "latest",
+    "boost":                       "latest",
+    "expat":                       "latest",
+    "bzip2":                       "latest",
+    "zlib": {
+      "version": "latest",
+      "outputs": ["out", "dev"]
     },
-    "sqlite":     {
-      "version":  "latest",
-      "outputs":  ["out", "dev"]
+    "sqlite": {
+      "version": "latest",
+      "outputs": ["out", "dev"]
     },
-    "go":         "1.25",
-    "git":        "latest",
-    "gcc":        "latest",
-    "yq-go":      "latest"
+    "go":      "1.25",
+    "git":     "latest",
+    "gcc":     "latest",
+    "yq-go":   "latest",
+    "python3": "latest"
   },
   "shell": {
     "init_hook": [
@@ -35,10 +35,10 @@
       "export PATH=\"$HOME/.local/bin:$GOPATH/bin:$PATH\""
     ],
     "scripts": {
-      "setup": "bash scripts/setup-tools.sh",
+      "setup":  "bash scripts/setup-tools.sh",
       "doctor": "make doctor",
-      "build": "make build",
-      "pack": "make pack"
+      "build":  "make build",
+      "pack":   "make pack"
     }
   }
 }

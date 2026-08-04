@@ -10,6 +10,7 @@
 - 推荐 Linux x86_64。Ubuntu/Debian 可通过 `apt-get` 安装 osmium；其他 Linux 发行版会回退到源码编译。
 - macOS 可进入 devbox 环境后使用源码编译 fallback，或自行用系统包管理器安装同名工具。
 - 网络需要能访问 GitHub、GitHub Releases，以及 Go module 下载源。
+- 如需生成 MapLibre glyph/style，还需要本机 `PATH` 中存在 `build-glyphs`，并准备 `config/glyphs.yaml` 指向的字体文件。
 
 ### 快速启动
 
@@ -40,6 +41,33 @@ devbox run doctor
 TIPPECANOE_VERSION=2.79.0 PMTILES_VERSION=v1.31.2 devbox run setup
 TIPPECANOE_SOURCE_TARBALL=/path/to/tippecanoe.tar.gz devbox run setup
 ```
+
+`setup` 只检查 glyph 生成器，不会自动安装 `build-glyphs`。如果 `devbox run setup` 或 `devbox run doctor` 输出：
+
+```text
+build-glyphs is not installed; glyph.sh requires a local MapLibre glyph generator
+```
+
+默认 `make build` 不受影响，因为 `GLYPH=0`。只有执行 `make glyph` 或 `make build GLYPH=1` 时，才必须先安装一个提供 `build-glyphs` 命令的 MapLibre glyph 生成器。
+
+在 devbox/Nix 环境中，不建议把 `npm install --global fontnik` 作为标准安装流程。fontnik 属于 native Node module，直接全局安装容易和 Nix 提供的 Node、glibc 或二进制依赖产生混用问题。推荐做法是由团队选定并固定 glyph 生成器来源，例如：
+
+- 将可复现的 `build-glyphs` 工具加入 `devbox.json` 并提交 lock 更新。
+- 在构建机镜像或内部制品中预装受控版本的 `build-glyphs`。
+- 使用内部 wrapper 暴露同名 `build-glyphs` 命令，并确保它在 devbox shell 的 `PATH` 中。
+
+fontnik 可以作为候选实现评估，但应在团队确认 devbox/Nix 兼容性后再写入自动化安装流程。仅把 fontnik 加入 `package.json` 依赖并不等同于让 `scripts/glyph.sh` 可用；当前脚本不会调用 `pnpm exec`，仍要求 `build-glyphs` 作为普通命令出现在 `PATH` 中。
+
+生成 glyph 还需要字体文件。默认配置读取以下路径，文件名必须与 `config/glyphs.yaml` 一致：
+
+```text
+fonts/NotoSans-Regular.ttf
+fonts/NotoSansCJKsc-Regular.otf
+fonts/NotoSansCJKjp-Regular.otf
+fonts/NotoSansCJKkr-Regular.otf
+```
+
+字体可来自团队内部制品库或官方 Noto 发布包；在分发 bundle 前需要确认字体和生成出的 glyph PBF 的再分发许可。
 
 ### 手动安装参考
 

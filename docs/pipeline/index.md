@@ -16,6 +16,12 @@
 10. `scripts/verify.sh` 校验 PMTiles 和伴随文件。
 11. 写出 `.sha512` sidecar。
 
+当 `make build GLYPH=1` 或直接运行 `make glyph`/`make style` 时，会额外执行离线文字资源阶段：
+
+1. `scripts/glyph.sh` 读取 `config/glyphs.yaml`，调用本地 `build-glyphs` 生成 MapLibre glyph PBF。
+2. `scripts/style.sh` 读取 `config/styles.yaml`，生成带 `glyphs` URL 模板的 MapLibre style JSON。
+3. `scripts/pack.sh` 在这些产物已存在时，把 style 和 glyphs 一起复制进 bundle。
+
 ## 输入输出
 
 默认工作目录：
@@ -41,6 +47,9 @@
 {region-slug}-{yyyymm}.{role}.pmtiles.sha512
 {region-slug}-{yyyymm}.{role}.manifest.json
 {region-slug}-{yyyymm}.{role}.attribution.json
+{region-slug}-{yyyymm}.glyphs/
+{region-slug}-{yyyymm}.style.json
+{region-slug}-{yyyymm}.style.json.sha512
 {region-slug}-{yyyymm}.import.zip
 {region-slug}-{yyyymm}.import.tar.gz
 {region-slug}-{yyyymm}.bundle.tar.gz

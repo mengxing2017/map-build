@@ -10,5 +10,8 @@
     "docs:dev": "pnpm --filter huavd-map-build-docs dev",
     "docs:build": "pnpm --filter huavd-map-build-docs build",
     "docs:preview": "pnpm --filter huavd-map-build-docs preview"
+  },
+  "dependencies": {
+    "fontnik": "^0.7.7"
   }
 }
