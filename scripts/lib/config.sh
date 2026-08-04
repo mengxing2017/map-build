@@ -51,7 +51,7 @@ config_json_path() {
   local source="${CONFIG_DIR}/${name}.yaml"
   local target="$(configs_cache_dir)/${name}.json"
   require_file "${source}"
-  if [[ ! -f "${target}" || "${source}" -nt "${target}" ]]; then
+  if [[ ! -s "${target}" || "${source}" -nt "${target}" ]]; then
     yaml_to_json "${source}" "${target}"
   fi
   printf '%s\n' "${target}"
@@ -135,13 +135,25 @@ region_id_from_slug() {
 
 region_source_id() {
   local region="$1"
-  local source_id
-  source_id="$(region_get huavd.source_id "${region}")"
-  if [[ -n "${source_id}" && "${source_id}" != "null" ]]; then
-    printf '%s\n' "${source_id}"
-    return
-  fi
-  jq -r --arg id "${region}" '.source_id_mappings[$id] // empty' "$(regions_json)"
+  local current="${region}"
+  local source_id mapped parent
+
+  while [[ -n "${current}" && "${current}" != "null" ]]; do
+    source_id="$(region_get huavd.source_id "${current}")"
+    if [[ -n "${source_id}" && "${source_id}" != "null" ]]; then
+      printf '%s\n' "${source_id}"
+      return 0
+    fi
+
+    mapped="$(jq -r --arg id "${current}" '.source_id_mappings[$id] // empty' "$(regions_json)")"
+    if [[ -n "${mapped}" && "${mapped}" != "null" ]]; then
+      printf '%s\n' "${mapped}"
+      return 0
+    fi
+
+    parent="$(region_get geofabrik.parent_region "${current}")"
+    current="${parent}"
+  done
 }
 
 region_stable_id() {

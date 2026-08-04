@@ -99,6 +99,26 @@ def inherited(index, id, *path)
   nil
 end
 
+def source_id_for(index, source_id_mappings, id)
+  current = id
+  seen = {}
+
+  while current
+    abort("parent cycle while resolving source_id for #{id}") if seen[current]
+    seen[current] = true
+    region = index.fetch(current)
+    source_id = region.dig("huavd", "source_id")
+    return source_id unless source_id.nil? || source_id == ""
+
+    mapped = source_id_mappings[current]
+    return mapped unless mapped.nil? || mapped == ""
+
+    current = region.dig("geofabrik", "parent_region")
+  end
+
+  nil
+end
+
 def depth_for(index, id, memo, visiting)
   return memo[id] if memo.key?(id)
   abort("parent cycle while computing depth for #{id}") if visiting.include?(id)
@@ -134,7 +154,7 @@ catalog_regions = regions.map do |region|
     "depth" => depth_for(index, id, depths, []),
     "parent_region" => parent_region_id,
     "asset_role" => inherited(index, id, "huavd", "asset_role") || "base-vector",
-    "source_id" => huavd["source_id"] || source_id_mappings[id],
+    "source_id" => source_id_for(index, source_id_mappings, id),
     "source_type" => inherited(index, id, "huavd", "source_type") || "osm-pbf",
     "style_id" => inherited(index, id, "huavd", "style_id") || "osm-dev",
     "mapping_status" => huavd["mapping_status"] || inherited(index, id, "huavd", "mapping_status") || "pending-source-id",
