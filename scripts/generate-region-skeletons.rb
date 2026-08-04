@@ -56,15 +56,17 @@ COUNTRY_ID_OVERRIDES = {
   "PH" => "philippines",
   "RU" => "russia",
   "TH" => "thailand",
-  "TW" => "taiwan"
+  "TW" => "china/taiwan"
 }.freeze
 
 COUNTRY_PARENT_OVERRIDES = {
-  "MO" => "china"
+  "MO" => "china",
+  "TW" => "china"
 }.freeze
 
 COUNTRY_REGION_ID_OVERRIDES = {
-  "MO" => "cn-92-base"
+  "MO" => "cn-92-base",
+  "TW" => "cn-71-base"
 }.freeze
 
 SUBDIVISION_ID_OVERRIDES = {
