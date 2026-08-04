@@ -10953,16 +10953,309 @@ regions:
   - id: "china/taiwan"
     slug: "china-taiwan"
     display_name: "Taiwan"
+    display_name_zh: "台湾省"
+    priority: "provincial-sample"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/taiwan-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/taiwan-latest.osm.pbf.md5"
+      basename: "taiwan-latest.osm.pbf"
+      parent_region: "china"
+      fallback: null
+    huavd:
+      source_id: null
+      mapping_status: "pending-source-id"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+      region_id: "cn-71-base"
+  - id: "china/taiwan/kaohsiung"
+    slug: "china-taiwan-kaohsiung"
+    display_name: "Kaohsiung"
+    display_name_zh: "高雄市"
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
       pbf_url: null
       md5_url: null
       basename: null
-      parent_region: "china"
+      parent_region: "china/taiwan"
       fallback: null
     huavd:
-      region_id: "cn-71-base"
+      region_id: "tw-khh-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/taipei"
+    slug: "china-taiwan-taipei"
+    display_name: "Taipei"
+    display_name_zh: "台北市"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-tpe-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/chiayi"
+    slug: "china-taiwan-chiayi"
+    display_name: "Chiayi"
+    display_name_zh: "嘉义市"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-cyi-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/hsinchu"
+    slug: "china-taiwan-hsinchu"
+    display_name: "Hsinchu"
+    display_name_zh: "新竹市"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-hsz-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/keelung"
+    slug: "china-taiwan-keelung"
+    display_name: "Keelung"
+    display_name_zh: "基隆市"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-kee-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/taichung"
+    slug: "china-taiwan-taichung"
+    display_name: "Taichung"
+    display_name_zh: "台中市"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-txg-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/tainan"
+    slug: "china-taiwan-tainan"
+    display_name: "Tainan"
+    display_name_zh: "台南市"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-tnn-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/changhua"
+    slug: "china-taiwan-changhua"
+    display_name: "Changhua"
+    display_name_zh: "彰化县"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-cha-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/hualien"
+    slug: "china-taiwan-hualien"
+    display_name: "Hualien"
+    display_name_zh: "花莲县"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-hua-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/ilan"
+    slug: "china-taiwan-ilan"
+    display_name: "Ilan"
+    display_name_zh: "宜兰县"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-ila-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/miaoli"
+    slug: "china-taiwan-miaoli"
+    display_name: "Miaoli"
+    display_name_zh: "苗栗县"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-mia-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/nantou"
+    slug: "china-taiwan-nantou"
+    display_name: "Nantou"
+    display_name_zh: "南投县"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-nan-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/penghu"
+    slug: "china-taiwan-penghu"
+    display_name: "Penghu"
+    display_name_zh: "澎湖县"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-pen-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/pingtung"
+    slug: "china-taiwan-pingtung"
+    display_name: "Pingtung"
+    display_name_zh: "屏东县"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-pif-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/taitung"
+    slug: "china-taiwan-taitung"
+    display_name: "Taitung"
+    display_name_zh: "台东县"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-ttt-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/taoyuan"
+    slug: "china-taiwan-taoyuan"
+    display_name: "Taoyuan"
+    display_name_zh: "桃园市"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-tao-base"
+      source_id: null
+      mapping_status: "pending-source-id"
+      package_version_template: null
+  - id: "china/taiwan/yunlin"
+    slug: "china-taiwan-yunlin"
+    display_name: "Yunlin"
+    display_name_zh: "云林县"
+    priority: "global-skeleton"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/taiwan"
+      fallback: null
+    huavd:
+      region_id: "tw-yun-base"
       source_id: null
       mapping_status: "pending-source-id"
       package_version_template: null
@@ -11109,7 +11402,7 @@ regions:
   - id: "china/macau"
     slug: "china-macau"
     display_name: "Macau"
-    display_name_zh: "中国澳门"
+    display_name_zh: "澳门特别行政区"
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
@@ -55695,297 +55988,6 @@ regions:
       fallback: null
     huavd:
       region_id: "sy-ta-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan"
-    slug: "taiwan"
-    display_name: "Taiwan"
-    priority: "provincial-sample"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: "https://download.geofabrik.de/asia/taiwan-latest.osm.pbf"
-      md5_url: "https://download.geofabrik.de/asia/taiwan-latest.osm.pbf.md5"
-      basename: "taiwan-latest.osm.pbf"
-      parent_region: "asia"
-      fallback: null
-    huavd:
-      source_id: null
-      mapping_status: "pending-source-id"
-      asset_role: "base-vector"
-      source_type: "osm-pbf"
-      style_id: "osm-dev"
-      package_version_template: null
-      region_id: "tw-base"
-  - id: "taiwan/kaohsiung"
-    slug: "taiwan-kaohsiung"
-    display_name: "Kaohsiung"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-khh-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/taipei"
-    slug: "taiwan-taipei"
-    display_name: "Taipei"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-tpe-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/chiayi"
-    slug: "taiwan-chiayi"
-    display_name: "Chiayi"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-cyi-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/hsinchu"
-    slug: "taiwan-hsinchu"
-    display_name: "Hsinchu"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-hsz-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/keelung"
-    slug: "taiwan-keelung"
-    display_name: "Keelung"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-kee-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/taichung"
-    slug: "taiwan-taichung"
-    display_name: "Taichung"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-txg-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/tainan"
-    slug: "taiwan-tainan"
-    display_name: "Tainan"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-tnn-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/changhua"
-    slug: "taiwan-changhua"
-    display_name: "Changhua"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-cha-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/hualien"
-    slug: "taiwan-hualien"
-    display_name: "Hualien"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-hua-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/ilan"
-    slug: "taiwan-ilan"
-    display_name: "Ilan"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-ila-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/miaoli"
-    slug: "taiwan-miaoli"
-    display_name: "Miaoli"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-mia-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/nantou"
-    slug: "taiwan-nantou"
-    display_name: "Nantou"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-nan-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/penghu"
-    slug: "taiwan-penghu"
-    display_name: "Penghu"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-pen-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/pingtung"
-    slug: "taiwan-pingtung"
-    display_name: "Pingtung"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-pif-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/taitung"
-    slug: "taiwan-taitung"
-    display_name: "Taitung"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-ttt-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/taoyuan"
-    slug: "taiwan-taoyuan"
-    display_name: "Taoyuan"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-tao-base"
-      source_id: null
-      mapping_status: "pending-source-id"
-      package_version_template: null
-  - id: "taiwan/yunlin"
-    slug: "taiwan-yunlin"
-    display_name: "Yunlin"
-    priority: "global-skeleton"
-    direct_tippecanoe: true
-    geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
-      parent_region: "taiwan"
-      fallback: null
-    huavd:
-      region_id: "tw-yun-base"
       source_id: null
       mapping_status: "pending-source-id"
       package_version_template: null
