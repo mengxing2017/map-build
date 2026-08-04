@@ -27,7 +27,9 @@
     "git":     "latest",
     "gcc":     "latest",
     "yq-go":   "latest",
-    "python3": "latest"
+    "python3": "latest",
+    "yq":      "latest",
+    "libyaml": "latest"
   },
   "shell": {
     "init_hook": [
