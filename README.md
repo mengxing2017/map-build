@@ -33,6 +33,22 @@ devbox run doctor
 devbox run doctor
 ```
 
+### 发布构建工作目录
+
+`make release`、`make release-tar`、`make release-zip` 会默认把实际工作目录隔离到 `${WORKDIR}/${SESSION}`。例如：
+
+```bash
+make release WORKDIR=/home/dev/data/map REGION=china/anhui YYYYMM=202608 INPUT=/path/to/anhui.osm.pbf
+```
+
+产物会写入：
+
+```text
+/home/dev/data/map/china-anhui-202608/outputs/
+```
+
+如需指定完整发布目录，可覆盖 `RELEASE_WORKDIR`。单独执行 `make build`、`make pack`、`make verify` 时仍直接使用 `WORKDIR`，便于对已有工作目录做增量操作。
+
 ### 自动安装行为
 
 `devbox run setup` 会优先尝试预编译二进制或系统二进制包，失败后再回退到源码编译。tippecanoe 官方 Releases 当前不提供 Linux 预编译资产，默认会走源码编译；如果 `/tmp/tippecanoe.tar.gz` 已存在，setup 会直接复用，也可通过 `TIPPECANOE_SOURCE_TARBALL` 指定其他本地源码包。如果有内部制品库，可通过 `TIPPECANOE_BINARY_URL` 指定二进制包。默认版本由 `scripts/setup-tools.sh` 维护，可通过环境变量覆盖：
