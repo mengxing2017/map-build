@@ -42,6 +42,7 @@ ZH_BY_ID = {
   "china/heilongjiang" => "黑龙江省",
   "china/henan" => "河南省",
   "china/hong-kong" => "香港特别行政区",
+  "china/macau" => "中国澳门",
   "china/hubei" => "湖北省",
   "china/hunan" => "湖南省",
   "china/jiangsu" => "江苏省",
@@ -146,6 +147,7 @@ catalog_regions = regions.map do |region|
   parent_id = region.dig("geofabrik", "parent_region")
   parent_region_id = parent_id.nil? ? nil : required(index.fetch(parent_id).dig("huavd", "region_id"), "parent huavd.region_id", id)
   display_name = required(region["display_name"], "display_name", id)
+  display_name_zh = region["display_name_zh"] || ZH_BY_ID[id] || ZH_BY_NAME[display_name] || display_name
 
   {
     "id" => id,
@@ -162,7 +164,7 @@ catalog_regions = regions.map do |region|
     "deprecated" => huavd.fetch("deprecated", false),
     "replacement_region_id" => huavd["replacement_region_id"],
     "display_name" => display_name,
-    "display_name_zh" => ZH_BY_ID[id] || ZH_BY_NAME[display_name] || display_name
+    "display_name_zh" => display_name_zh
   }.tap do |entry|
     entry.delete("parent_region") if entry["parent_region"].nil?
     entry.delete("asset_role") if entry["asset_role"] == "base-vector"

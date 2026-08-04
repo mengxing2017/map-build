@@ -52,10 +52,19 @@ COUNTRY_ID_OVERRIDES = {
   "ID" => "indonesia",
   "IN" => "india",
   "JP" => "japan",
+  "MO" => "china/macau",
   "PH" => "philippines",
   "RU" => "russia",
   "TH" => "thailand",
   "TW" => "taiwan"
+}.freeze
+
+COUNTRY_PARENT_OVERRIDES = {
+  "MO" => "china"
+}.freeze
+
+COUNTRY_REGION_ID_OVERRIDES = {
+  "MO" => "cn-92-base"
 }.freeze
 
 SUBDIVISION_ID_OVERRIDES = {
@@ -63,6 +72,10 @@ SUBDIVISION_ID_OVERRIDES = {
   "CN-45" => "china/guangxi",
   "CN-53" => "china/yunnan"
 }.freeze
+
+SUBDIVISION_COUNTRY_EXCLUDES = %w[
+  MO
+].freeze
 
 SOUTH_AMERICA = %w[
   AR BO BR CL CO EC FK GF GY PE PY SR UY VE
@@ -384,10 +397,18 @@ country_region_ids = {}
 country_info.each do |code, info|
   next if code == "AQ"
 
-  parent = continent_by_country[code]
+  parent = COUNTRY_PARENT_OVERRIDES[code] || continent_by_country[code]
   abort "country has no continent mapping: #{code} #{info.fetch("name")}" if parent.nil? || parent.empty?
   id = country_ids.fetch(code)
-  country_region_ids[code] = unique_stable_id_from_iso(code, info.fetch("name"), used_region_ids)
+  country_region_ids[code] =
+    if COUNTRY_REGION_ID_OVERRIDES.key?(code)
+      region_id = COUNTRY_REGION_ID_OVERRIDES.fetch(code)
+      abort "duplicate region_id override: #{region_id}" if used_region_ids.key?(region_id)
+      used_region_ids[region_id] = true
+      region_id
+    else
+      unique_stable_id_from_iso(code, info.fetch("name"), used_region_ids)
+    end
   generated_by_id[id] = skeleton_entry(
     id: id,
     display_name: info.fetch("name"),
@@ -398,6 +419,8 @@ end
 
 subdivision_region_ids = {}
 subdivision_info.each do |info|
+  next if SUBDIVISION_COUNTRY_EXCLUDES.include?(info.fetch("country_code"))
+
   id = subdivision_ids.fetch(info.fetch("key"))
   parent =
     if info.fetch("level") == 1
@@ -445,7 +468,10 @@ if options[:output]
   end
   country_info.each do |code, _info|
     ordered_regions << merged_by_id.fetch(country_ids.fetch(code)) unless code == "AQ"
-    subdivision_info.select { |info| info.fetch("country_code") == code }.each do |info|
+    subdivision_info.select do |info|
+      info.fetch("country_code") == code &&
+        !SUBDIVISION_COUNTRY_EXCLUDES.include?(info.fetch("country_code"))
+    end.each do |info|
       ordered_regions << merged_by_id.fetch(subdivision_ids.fetch(info.fetch("key")))
     end
   end
