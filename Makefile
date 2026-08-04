@@ -2,6 +2,9 @@ WORKDIR        ?= /tmp/huavd-map-build
 REGION         ?= china/guangxi
 YYYYMM         ?= $(shell date -u +%Y%m)
 SESSION        ?= $(shell echo $(REGION) | tr '/' '-')-$(YYYYMM)
+WORKDIR_ROOT   ?= $(WORKDIR)
+WORKDIR_ROOT   := $(WORKDIR_ROOT)
+RELEASE_WORKDIR ?= $(WORKDIR_ROOT)/$(SESSION)
 REGION_BASENAME ?= $(notdir $(REGION))
 INPUT          ?=
 ROLE           ?= both
@@ -107,6 +110,8 @@ clean:
 	  "$(WORKDIR)/outputs/$(SESSION).style.json.sha512"
 
 all: build pack
+
+release release-tar release-zip: override WORKDIR := $(RELEASE_WORKDIR)
 
 release: build pack verify
 
