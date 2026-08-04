@@ -47,6 +47,37 @@ ensure_dir "$(outputs_dir)"
 ensure_dir "$(tags_filter_cache_dir)"
 ensure_dir "$(layers_dir)"
 
+cleanup_role_artifacts() {
+  local role="$1"
+  local output
+  output="$(build_pmtiles_path "${role}")"
+  rm -f \
+    "${output}" \
+    "${output}.sha512" \
+    "$(build_manifest_path "${role}")" \
+    "$(build_attribution_path "${role}")"
+}
+
+role_artifacts_complete() {
+  local role="$1"
+  local output
+  output="$(build_pmtiles_path "${role}")"
+  [[ -f "${output}" \
+    && -f "${output}.sha512" \
+    && -f "$(build_manifest_path "${role}")" \
+    && -f "$(build_attribution_path "${role}")" ]]
+}
+
+role_artifacts_exist() {
+  local role="$1"
+  local output
+  output="$(build_pmtiles_path "${role}")"
+  [[ -e "${output}" \
+    || -e "${output}.sha512" \
+    || -e "$(build_manifest_path "${role}")" \
+    || -e "$(build_attribution_path "${role}")" ]]
+}
+
 roles_to_build=()
 while IFS= read -r role; do
   if [[ "${role}" == "building" ]] && ! building_role_enabled "${REGION}"; then
@@ -57,11 +88,16 @@ while IFS= read -r role; do
     continue
   fi
   output="$(build_pmtiles_path "${role}")"
-  if [[ -e "${output}" && "${FORCE}" != "1" ]]; then
+  if role_artifacts_complete "${role}" && [[ "${FORCE}" != "1" ]]; then
     die "${HUAVD_EXIT_ERROR}" "output already exists: ${output}; pass --force or clean first"
   fi
-  if [[ -e "${output}" && "${FORCE}" == "1" ]]; then
-    rm -f "${output}" "${output}.sha512" "$(build_manifest_path "${role}")" "$(build_attribution_path "${role}")"
+  if role_artifacts_exist "${role}"; then
+    if [[ "${FORCE}" == "1" ]]; then
+      cleanup_role_artifacts "${role}"
+    else
+      log_warn "remove incomplete output artifacts from previous failed build: ${output}"
+      cleanup_role_artifacts "${role}"
+    fi
   fi
   roles_to_build+=("${role}")
 done < <(role_list "${ROLE}")
