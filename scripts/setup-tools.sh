@@ -9,12 +9,16 @@ TIPPECANOE_VERSION="${TIPPECANOE_VERSION:-2.79.0}"
 TIPPECANOE_BINARY_URL="${TIPPECANOE_BINARY_URL:-}"
 TIPPECANOE_SOURCE_TARBALL="${TIPPECANOE_SOURCE_TARBALL:-/tmp/tippecanoe.tar.gz}"
 PMTILES_VERSION="${PMTILES_VERSION:-v1.31.2}"
+BUILD_GLYPHS_CRATE="${BUILD_GLYPHS_CRATE:-versatiles_glyphs}"
+BUILD_GLYPHS_BINARY="${BUILD_GLYPHS_BINARY:-versatiles_glyphs}"
+BUILD_GLYPHS_VERSION="${BUILD_GLYPHS_VERSION:-0.9.1}"
 INSTALL_PREFIX="${INSTALL_PREFIX:-$HOME/.local}"
 BIN_DIR="${BIN_DIR:-${INSTALL_PREFIX}/bin}"
 BUILD_ROOT="${BUILD_ROOT:-/tmp/huavd-map-build-tools}"
 
 export GOPATH="${GOPATH:-$HOME/go}"
-export PATH="${BIN_DIR}:${GOPATH}/bin:${PATH}"
+export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
+export PATH="${BIN_DIR}:${GOPATH}/bin:${CARGO_HOME}/bin:${PATH}"
 
 jobs() {
   if command -v nproc >/dev/null 2>&1; then
@@ -553,13 +557,77 @@ install_pmtiles() {
   return 1
 }
 
-check_glyph_tooling() {
-  if command -v build-glyphs >/dev/null 2>&1; then
-    log_info "build-glyphs already installed: $(tool_version_line build-glyphs)"
-  else
-    log_warn "build-glyphs is not installed; glyph.sh requires a local MapLibre glyph generator"
+ensure_cargo_toolchain() {
+  if command -v cargo >/dev/null 2>&1; then
+    return 0
   fi
 
+  if command -v rustup >/dev/null 2>&1; then
+    log_info "installing Rust stable toolchain with rustup"
+    rustup default stable || return 1
+  fi
+
+  require_tooling cargo || return 1
+}
+
+install_build_glyphs() {
+  if command -v build-glyphs >/dev/null 2>&1; then
+    log_info "build-glyphs already installed: $(tool_version_line build-glyphs)"
+    return 0
+  fi
+
+  if ! command -v "${BUILD_GLYPHS_BINARY}" >/dev/null 2>&1; then
+    ensure_cargo_toolchain || {
+      log_error "cargo is required to install build-glyphs; run setup inside devbox"
+      return 1
+    }
+
+    log_info "installing glyph generator with cargo crate ${BUILD_GLYPHS_CRATE}${BUILD_GLYPHS_VERSION:+ ${BUILD_GLYPHS_VERSION}}"
+    local cargo_args=("${BUILD_GLYPHS_CRATE}")
+    if [[ -n "${BUILD_GLYPHS_VERSION}" ]]; then
+      cargo_args+=(--version "${BUILD_GLYPHS_VERSION}")
+    fi
+
+    if ! cargo install "${cargo_args[@]}"; then
+      log_error "glyph generator cargo install failed"
+      return 1
+    fi
+  fi
+
+  command -v "${BUILD_GLYPHS_BINARY}" >/dev/null 2>&1 || {
+    log_error "glyph generator installation completed but ${BUILD_GLYPHS_BINARY} is not on PATH"
+    return 1
+  }
+
+  mkdir -p "${BIN_DIR}"
+  if ! cat > "${BIN_DIR}/build-glyphs" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "\${1:-}" == "--version" || "\${1:-}" == "-V" ]]; then
+  exec ${BUILD_GLYPHS_BINARY} --version
+fi
+
+if [[ "\$#" -ne 2 ]]; then
+  printf 'usage: build-glyphs <font-file> <output-dir>\\n' >&2
+  exit 2
+fi
+
+exec ${BUILD_GLYPHS_BINARY} merge --no-families --no-index -o "\$2" "\$1"
+EOF
+  then
+    log_error "failed to write build-glyphs wrapper to ${BIN_DIR}/build-glyphs"
+    return 1
+  fi
+  if ! chmod 0755 "${BIN_DIR}/build-glyphs"; then
+    log_error "failed to make build-glyphs wrapper executable: ${BIN_DIR}/build-glyphs"
+    return 1
+  fi
+
+  log_info "build-glyphs installed: $(tool_version_line build-glyphs)"
+}
+
+check_glyph_tooling() {
   if command -v fonttools >/dev/null 2>&1; then
     log_info "fonttools already installed: $(tool_version_line fonttools)"
   else
@@ -578,6 +646,9 @@ main() {
     failed=1
   fi
   if ! install_pmtiles; then
+    failed=1
+  fi
+  if ! install_build_glyphs; then
     failed=1
   fi
   check_glyph_tooling
