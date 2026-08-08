@@ -1,6 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.2/.schema/devbox.schema.json",
   "packages": {
+    "rustup":                      "1.29.0",
     "pnpm":                        "latest",
     "nodejs":                      "22",
     "python312Packages.fonttools": "latest",
@@ -34,7 +35,8 @@
   "shell": {
     "init_hook": [
       "export GOPATH=\"${GOPATH:-$HOME/go}\"",
-      "export PATH=\"$HOME/.local/bin:$GOPATH/bin:$PATH\""
+      "export CARGO_HOME=\"${CARGO_HOME:-$HOME/.cargo}\"",
+      "export PATH=\"$HOME/.local/bin:$GOPATH/bin:$CARGO_HOME/bin:$PATH\""
     ],
     "scripts": {
       "setup":  "bash scripts/setup-tools.sh",
