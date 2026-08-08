@@ -20,9 +20,9 @@ china/guangxi
 
 - `devbox >= 0.14.2`。
 - 推荐 Linux x86_64。Ubuntu/Debian 可通过系统包安装部分工具；其他发行版会更多依赖源码编译。
-- 网络需要能访问 GitHub、GitHub Releases、Geofabrik 下载源和 Go module 下载源。
+- 网络需要能访问 GitHub、GitHub Releases、Geofabrik 下载源、Go module 下载源和 Rust crate 下载源。
 - 构建 tippecanoe 需要 C++ 编译器、`make`、`pkg-config`、SQLite3 开发头文件/库和 zlib 开发头文件/库。
-- 如需生成 MapLibre glyph/style，还需要本机 `build-glyphs` 命令，以及 `config/glyphs.yaml` 指向的字体文件；如果选择 fontnik 等 Node 实现，还需要匹配的 Node/native module 环境。
+- 如需生成 MapLibre glyph/style，还需要通过 cargo 安装出的 `build-glyphs` 命令，以及 `config/glyphs.yaml` 指向的字体文件。
 - `pnpm` 只用于本文档预览和构建，不参与 PMTiles 数据构建。
 
 如果系统已经全局安装了 `osmium`、`tippecanoe`、`pmtiles`，只要它们在 `PATH` 中且 `devbox run doctor` 通过，就可以复用。`devbox.json` 中的 `gcc`、`sqlite`、`zlib` 等声明仍用于提供稳定的编译和运行依赖，不建议仅因为本机全局存在同名软件就删除。
@@ -53,7 +53,7 @@ devbox run doctor
 | `tippecanoe` | 将 GeoJSONSeq 转换为 PMTiles |
 | `pmtiles` | 读取和修改 PMTiles metadata |
 
-它也会检查 glyph 相关工具，但不会自动安装 `build-glyphs`：
+它也会安装并检查 glyph 相关工具，其中 `versatiles_glyphs` 通过 cargo 安装，并由 setup 写入 `build-glyphs` wrapper：
 
 | 命令 | 用途 | 缺失影响 |
 | :--- | :--- | :--- |
@@ -66,7 +66,7 @@ devbox run doctor
 devbox run doctor
 ```
 
-优先在输出 `doctor: OK` 后再开始下载和构建数据。如果 `doctor` 只报告 `build-glyphs missing`，默认 `make build` 仍可运行，因为 `GLYPH=0` 不生成 glyph/style。准备生成离线文字渲染资源前必须先处理该 warning。
+优先在输出 `doctor: OK` 后再开始下载和构建数据。如果 `doctor` 只报告 `build-glyphs missing`，默认 `make build` 仍可运行，因为 `GLYPH=0` 不生成 glyph/style。准备生成离线文字渲染资源前必须先处理 cargo 安装或 PATH 问题。
 
 ## tippecanoe 安装说明
 
@@ -99,17 +99,15 @@ sudo apt-get install -y build-essential pkg-config libsqlite3-dev zlib1g-dev
 
 ## Glyph 和 Style 前置条件
 
-`scripts/glyph.sh` 默认读取 `config/glyphs.yaml` 中的 `generator.command`，当前值是 `build-glyphs`。`setup` 只检查该命令是否存在；安装需要在本机或构建机上单独完成。
+`scripts/glyph.sh` 默认读取 `config/glyphs.yaml` 中的 `generator.command`，当前值是 `build-glyphs`。`setup` 会通过 cargo 安装 `versatiles_glyphs`，并在 `$HOME/.local/bin/build-glyphs` 写入兼容 wrapper。devbox shell 会把 `$HOME/.local/bin` 和 `$CARGO_HOME/bin` 加入 `PATH`。
 
-在 devbox/Nix 环境中，不建议把 `npm install --global fontnik` 作为标准安装方式。fontnik 是 native Node module，直接全局安装容易和 Nix 提供的 Node、glibc 或二进制依赖混用。
+可用环境变量覆盖 cargo 安装来源：
 
-推荐团队选择一种可复现的工具供应方式：
+```bash
+BUILD_GLYPHS_CRATE=versatiles_glyphs BUILD_GLYPHS_VERSION=0.9.1 devbox run setup
+```
 
-- 如果 devbox/Nix 可提供稳定包，将 glyph 生成器加入 `devbox.json` 并提交 lock 更新。
-- 在构建机镜像或内部制品中预装受控版本的 `build-glyphs`。
-- 提供内部 wrapper，暴露同名 `build-glyphs` 命令，并确保它在 devbox shell 的 `PATH` 中。
-
-fontnik 可以作为候选实现评估，但应在团队确认 devbox/Nix 兼容性后再写入自动化安装流程。仅把 fontnik 加入 `package.json` 依赖并不等同于让 `scripts/glyph.sh` 可用；当前脚本不会调用 `pnpm exec`，仍要求 `build-glyphs` 作为普通命令出现在 `PATH` 中。
+如果使用内部 fork，可同时设置 `BUILD_GLYPHS_BINARY` 指定 cargo 安装出的二进制名；setup 仍会提供 `build-glyphs` wrapper。
 
 默认 glyph 配置需要以下字体文件存在于仓库根目录下的 `fonts/`：
 

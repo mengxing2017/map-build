@@ -8,12 +8,12 @@
 | osmium | OSM PBF tags-filter、export |
 | tippecanoe | GeoJSONSeq 到 PMTiles |
 | pmtiles | PMTiles metadata edit、header show |
-| build-glyphs | 从字体生成 MapLibre glyph PBF；当前 setup 只检查，不自动安装 |
+| build-glyphs | 从字体生成 MapLibre glyph PBF；setup 通过 cargo 安装 |
 | fonttools | 字体文件检查和调试 |
 | jq/yq | JSON/YAML 解析 |
 | wget | Geofabrik 和 release 下载 |
 
-`build-glyphs` 可以由 fontnik 等 MapLibre/Mapbox glyph 生成工具提供。构建机需要保证该命令在 `PATH` 中。若选择 fontnik 这类 native Node module，应先确认它与 devbox/Nix 提供的 Node 和系统库兼容；不要默认使用全局 npm 安装作为标准构建机流程。
+`versatiles_glyphs` 由 cargo 安装，devbox 通过 `rustup` 提供 cargo。setup 会在 `$HOME/.local/bin` 写入 `build-glyphs` wrapper；构建机需要保证 `$HOME/.local/bin` 和 `$CARGO_HOME/bin` 在 `PATH` 中。
 
 ## 外部数据源
 
@@ -42,7 +42,6 @@ huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf
 参考：
 
 - MapLibre Style Spec: `glyphs`，https://maplibre.org/maplibre-style-spec/glyphs/
-- fontnik package，https://www.npmjs.com/package/fontnik
 - Noto fonts，https://github.com/notofonts
 
 ## HUAVD 契约

@@ -63,27 +63,25 @@ devbox run doctor
 build-glyphs is not installed; glyph.sh requires a local MapLibre glyph generator
 ```
 
-这是 glyph/style 生成前置条件缺失。默认 `make build` 使用 `GLYPH=0`，只构建 PMTiles 时可以暂时忽略；以下命令会失败，必须先安装：
+这是 glyph/style 生成前置条件缺失。`devbox run setup` 会通过 cargo 安装 `versatiles_glyphs`，再写入兼容的 `build-glyphs` wrapper；devbox 环境由 `rustup` 提供 cargo。默认 `make build` 使用 `GLYPH=0`，只构建 PMTiles 时可以暂时忽略；以下命令会失败，必须先修复 setup 安装问题：
 
 ```bash
 make glyph REGION=china/guangxi YYYYMM=202607
 make build REGION=china/guangxi YYYYMM=202607 GLYPH=1
 ```
 
-在 devbox/Nix 环境中，不建议用全局 npm 安装作为标准处理方式。应先确认团队选择的 glyph 生成器来源，并让它在 devbox shell 的 `PATH` 中可见：
+先确认 cargo 安装产物在 devbox shell 的 `PATH` 中可见：
 
 ```bash
 command -v build-glyphs
 devbox run doctor
 ```
 
-推荐处理方式：
+常见处理方式：
 
-- 如果 devbox/Nix 可提供稳定包，将 glyph 生成器加入 `devbox.json` 并提交 lock 更新。
-- 在构建机镜像或内部制品中预装受控版本的 `build-glyphs`。
-- 提供内部 wrapper，暴露同名 `build-glyphs` 命令。
-
-fontnik 可以作为候选实现评估，但不要在未确认 Nix 兼容性时把 `npm install --global fontnik` 写入构建机标准流程。仅把 fontnik 加入 `package.json` 依赖也不够；当前 `glyph.sh` 不会调用 `pnpm exec`，仍要求 `build-glyphs` 作为普通命令出现在 `PATH` 中。
+- 重新执行 `devbox run setup`，确认 cargo 可以访问 crates.io 或内部镜像。
+- 使用 `BUILD_GLYPHS_VERSION=... devbox run setup` 固定版本。
+- 使用 `BUILD_GLYPHS_CRATE=... BUILD_GLYPHS_BINARY=... devbox run setup` 指向内部 fork，并通过 wrapper 暴露 `build-glyphs` 命令。
 
 如果安装后 `glyph.sh` 报字体文件不存在，请按 `config/glyphs.yaml` 准备默认字体：
 
