@@ -129,6 +129,17 @@ install_role_record_json() {
     --arg sha512 "${file_sha}" \
     --arg file "${stem}.pmtiles" \
     '
+      def install_tile_range($range):
+        if $range == null then
+          null
+        else
+          {
+            "min-zoom": $range.min_zoom,
+            "max-zoom": $range.max_zoom,
+            bounds: $range.bounds
+          }
+        end;
+
       ($manifest[0]) as $m
       | ($m.huavd_record // {}) as $h
       | {
@@ -148,7 +159,7 @@ install_role_record_json() {
           "glyphs-url": (($h.glyphs_url // "") | if . == "" then $fallback_glyphs_url else . end),
           "styles-url": (($h.styles_url // "") | if . == "" then $fallback_styles_url else . end),
           "coverage-region-id": (($m.region // "") | if . == "" then null else . end),
-          "tile-range": ($m.output.tile_range // null),
+          "tile-range": install_tile_range($m.output.tile_range // null),
           checksum: {
             algorithm: "sha512",
             value: $sha512
@@ -261,6 +272,17 @@ install_manifest_record_json() {
     --arg file "$(basename -- "${pmtiles}")" \
     --arg fallback_name "${stem}" \
     '
+      def install_tile_range($range):
+        if $range == null then
+          null
+        else
+          {
+            "min-zoom": $range.min_zoom,
+            "max-zoom": $range.max_zoom,
+            bounds: $range.bounds
+          }
+        end;
+
       ($manifest[0]) as $m
       | ($m.huavd_record // {}) as $h
       | {
@@ -278,7 +300,7 @@ install_manifest_record_json() {
           "available-locales": (($h.available_locales // []) | if type == "array" then . else [] end),
           "style-locales": (($h.style_locales // []) | if type == "array" then . else [] end),
           "coverage-region-id": $stable_region_id,
-          "tile-range": ($m.output.tile_range // null),
+          "tile-range": install_tile_range($m.output.tile_range // null),
           checksum: {
             algorithm: "sha512",
             value: $sha512
