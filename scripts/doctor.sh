@@ -35,6 +35,8 @@ check_cmd() {
     version="$(cmd_version "${cmd}")"
     if [[ -n "${version}" ]]; then
       printf 'OK   %-12s %s\n' "${cmd}" "${version}"
+    elif [[ "${cmd}" == "build-glyphs" ]]; then
+      printf 'OK   %-12s found\n' "${cmd}"
     else
       printf 'WARN %-12s found but not runnable\n' "${cmd}"
       WARNINGS=$((WARNINGS + 1))

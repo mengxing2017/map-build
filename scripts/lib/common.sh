@@ -295,6 +295,10 @@ cmd_version() {
   fi
   if output="$("${cmd}" -version 2>&1)" && [[ -n "${output}" ]]; then
     printf '%s\n' "${output}" | head -n 1 | sed 's/[[:space:]]*$//'
+    return
+  fi
+  if [[ "${cmd}" == "fonttools" ]] && output="$("${cmd}" -h 2>&1)" && [[ -n "${output}" ]]; then
+    printf '%s\n' "${output}" | head -n 1 | sed 's/[[:space:]]*$//'
   fi
 }
 
