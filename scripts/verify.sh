@@ -60,6 +60,48 @@ check_eq() {
   fi
 }
 
+check_metadata_layer_field() {
+  local metadata="$1"
+  local layer_id="$2"
+  local field="$3"
+  if jq -e --arg layer "${layer_id}" --arg field "${field}" '
+    .vector_layers[] | select(.id == $layer) | .fields[$field]
+  ' >/dev/null <<< "${metadata}"; then
+    ok "metadata layer=${layer_id} field=${field}"
+  else
+    fail "metadata layer=${layer_id} missing field=${field}"
+  fi
+}
+
+verify_label_metadata_fields() {
+  local metadata="$1"
+  check_metadata_layer_field "${metadata}" "place_label" "place"
+  check_metadata_layer_field "${metadata}" "poi_label" "amenity"
+  check_metadata_layer_field "${metadata}" "poi_label" "shop"
+  check_metadata_layer_field "${metadata}" "poi_label" "tourism"
+  check_metadata_layer_field "${metadata}" "transport_label" "public_transport"
+}
+
+check_config_final_field_in_include_tags() {
+  local layer_id="$1"
+  local field="$2"
+  if jq -e --arg layer "${layer_id}" --arg field "${field}" '
+    (.source_layers[$layer].include_tags // []) | index($field)
+  ' "$(layers_json)" >/dev/null; then
+    ok "config layer=${layer_id} include_tags has ${field}"
+  else
+    fail "config layer=${layer_id} final field ${field} missing from include_tags"
+  fi
+}
+
+verify_label_config_fields() {
+  check_config_final_field_in_include_tags "place_label" "place"
+  check_config_final_field_in_include_tags "poi_label" "amenity"
+  check_config_final_field_in_include_tags "poi_label" "shop"
+  check_config_final_field_in_include_tags "poi_label" "tourism"
+  check_config_final_field_in_include_tags "transport_label" "public_transport"
+}
+
 verify_role() {
   local role="$1"
   local pmtiles manifest sha_file metadata header_bounds metadata_bounds expected_layers actual_layers actual_sha manifest_sha file_sha manifest_size stat_size
@@ -112,6 +154,10 @@ verify_role() {
       jq -e '."huavd:style-locales" | type == "array" and length > 0' >/dev/null <<< "${metadata}" \
         && ok "metadata huavd:style-locales" \
         || fail "metadata huavd:style-locales missing or empty"
+      if [[ "${role}" == "base" ]]; then
+        verify_label_config_fields
+        verify_label_metadata_fields "${metadata}"
+      fi
     fi
     header_bounds="$(pmtiles_bounds "${pmtiles}")"
     metadata_bounds="$(jq -c '.bounds' <<< "${metadata}")"
