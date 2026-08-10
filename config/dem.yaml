@@ -1,0 +1,23 @@
+schema_version: 1
+
+dem:
+  default_source: local-authorized-terrain-rgb
+  default_encoding: mapbox-terrain-rgb
+  allowed_encodings:
+    - mapbox-terrain-rgb
+    - terrarium
+    - heightmap-u16
+
+  sources:
+    - id: local-authorized-terrain-rgb
+      name: "Authorized local DEM terrain-rgb"
+      description: "已完成授权审查的内网或本地 DEM 输入"
+      input_type: raster
+      output_encoding: mapbox-terrain-rgb
+      vertical_datum: EGM96
+      attribution: "TBD by licensed DEM provider"
+      data_license: "TBD"
+      min_zoom: 0
+      max_zoom: 12
+      tile_size: 256
+      uri: "file://${HUAVD_MAP_BUILD_DEM_MIRROR}/terrain-rgb"
