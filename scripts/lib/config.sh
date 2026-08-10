@@ -342,7 +342,7 @@ layer_final_field_names_json() {
 layer_min_zoom() {
   local layer="$1"
   case "${layer}" in
-    building) printf '13\n' ;;
+    building) printf '12\n' ;;
     leisure_a) printf '10\n' ;;
     place_label) printf '2\n' ;;
     poi_label) printf '14\n' ;;
