@@ -77,6 +77,10 @@ styles_json() {
   config_json_path styles
 }
 
+dem_json() {
+  config_json_path dem
+}
+
 region_json() {
   local region="$1"
   jq -e --arg id "${region}" '.regions[] | select(.id == $id)' "$(regions_json)"
@@ -216,6 +220,8 @@ region_package_version() {
   fi
   if [[ "${role}" == "building" ]]; then
     template="${template/.{yyyymm}/-building.{yyyymm}}"
+  elif [[ "${role}" == "dem" ]]; then
+    template="${template/.{yyyymm}/-dem.{yyyymm}}"
   fi
   printf '%s\n' "${template//\{yyyymm\}/${YYYYMM}}"
 }
@@ -231,6 +237,8 @@ role_asset_role() {
   local role="${1:-base}"
   if [[ "${role}" == "building" ]]; then
     printf 'building-vector\n'
+  elif [[ "${role}" == "dem" ]]; then
+    printf 'dem-raster\n'
   else
     printf 'base-vector\n'
   fi
@@ -238,8 +246,53 @@ role_asset_role() {
 
 role_source_type() {
   local role="${1:-base}"
-  : "${role}"
-  printf 'osm-pbf\n'
+  if [[ "${role}" == "dem" ]]; then
+    printf 'dem\n'
+  else
+    printf 'osm-pbf\n'
+  fi
+}
+
+dem_default_source_id() {
+  jq -r '.dem.default_source // empty' "$(dem_json)"
+}
+
+dem_default_encoding() {
+  jq -r '.dem.default_encoding // empty' "$(dem_json)"
+}
+
+dem_source_json() {
+  local source_id="$1"
+  jq -e --arg id "${source_id}" '.dem.sources[] | select(.id == $id)' "$(dem_json)"
+}
+
+dem_source_value() {
+  local source_id="$1"
+  local key="$2"
+  dem_source_json "${source_id}" | jq -r --arg key "${key}" 'getpath($key | split(".")) // empty'
+}
+
+dem_region_required() {
+  local region="$1"
+  local value
+  value="$(region_get huavd.dem_required "${region}")"
+  [[ "${value}" == "true" ]]
+}
+
+dem_region_source_id() {
+  local region="$1"
+  local source_id
+  source_id="$(region_get_inherited huavd.dem_source_id "${region}" || true)"
+  if [[ -n "${source_id}" && "${source_id}" != "null" ]]; then
+    printf '%s\n' "${source_id}"
+  else
+    dem_default_source_id
+  fi
+}
+
+dem_allowed_encoding() {
+  local encoding="$1"
+  jq -e --arg encoding "${encoding}" '(.dem.allowed_encodings // []) | index($encoding)' "$(dem_json)" >/dev/null
 }
 
 building_role_enabled() {

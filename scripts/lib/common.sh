@@ -259,7 +259,9 @@ role_list() {
     base) printf 'base\n' ;;
     building) printf 'building\n' ;;
     both) printf 'base\nbuilding\n' ;;
-    *) die "${HUAVD_EXIT_INPUT}" "invalid role: ${role}; expected base, building, or both" ;;
+    dem) printf 'dem\n' ;;
+    all) printf 'base\nbuilding\ndem\n' ;;
+    *) die "${HUAVD_EXIT_INPUT}" "invalid role: ${role}; expected base, building, both, dem, or all" ;;
   esac
 }
 
