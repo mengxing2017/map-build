@@ -284,13 +284,86 @@ verify_role() {
   fi
 }
 
+verify_dem_role() {
+  local pmtiles manifest sha_file metadata actual_sha file_sha manifest_sha stat_size manifest_size tile_type header_bounds metadata_bounds header_json
+  pmtiles="$(build_pmtiles_path dem)"
+  manifest="$(build_manifest_path dem)"
+  sha_file="$(build_sha512_path dem)"
+
+  require_file "${pmtiles}"
+  require_file "${manifest}"
+  require_file "${sha_file}"
+  require_cmd pmtiles
+
+  printf 'verify role=dem file=%s\n' "${pmtiles}"
+
+  check_eq "pmtiles magic" "$(pmtiles_magic "${pmtiles}")" "PMTiles"
+  check_eq "pmtiles spec_version" "$(pmtiles_spec_version "${pmtiles}")" "3"
+  tile_type="$(pmtiles_tile_type "${pmtiles}")"
+  case "${tile_type}" in
+    2|3|4|5) ok "dem pmtiles tile_type raster" ;;
+    *) fail "dem pmtiles tile_type must be raster, got ${tile_type}" ;;
+  esac
+
+  stat_size="$(stat -c %s "${pmtiles}")"
+  manifest_size="$(jq -r '.output.size_bytes' "${manifest}")"
+  check_eq "manifest output.size_bytes" "${manifest_size}" "${stat_size}"
+
+  metadata="$(pmtiles_cli_metadata "${pmtiles}")" || fail "dem metadata readable"
+  if [[ -n "${metadata}" ]] && jq -e . >/dev/null 2>&1 <<< "${metadata}"; then
+    ok "dem metadata JSON"
+    jq -e '."dem-encoding" | IN("mapbox-terrain-rgb","terrarium","heightmap-u16")' >/dev/null <<< "${metadata}" \
+      && ok "dem metadata dem-encoding" \
+      || fail "dem metadata missing or invalid dem-encoding"
+    jq -e '."huavd:vertical-datum" | type == "string" and length > 0' >/dev/null <<< "${metadata}" \
+      && ok "dem metadata vertical datum" \
+      || fail "dem metadata missing huavd:vertical-datum"
+    jq -e '.attribution | type == "string" and length > 0' >/dev/null <<< "${metadata}" \
+      && ok "dem metadata attribution" \
+      || fail "dem metadata attribution"
+    header_bounds="$(pmtiles_bounds "${pmtiles}")"
+    metadata_bounds="$(jq -c '.bounds' <<< "${metadata}")"
+    if jq -n -e --argjson header "${header_bounds}" --argjson meta "${metadata_bounds}" '
+      def abs: if . < 0 then -. else . end;
+      [0,1,2,3] | map((($header[.] - $meta[.]) | abs) <= 0.0000001) | all
+    ' >/dev/null; then
+      ok "dem metadata bounds match PMTiles header"
+    else
+      fail "dem metadata bounds mismatch"
+    fi
+  else
+    fail "dem metadata JSON"
+  fi
+
+  actual_sha="$(sha512_value "${pmtiles}")"
+  file_sha="$(awk '{print $1; exit}' "${sha_file}")"
+  manifest_sha="$(jq -r '.output.sha512' "${manifest}")"
+  check_eq "sha512 sidecar" "${file_sha}" "${actual_sha}"
+  check_eq "manifest output.sha512" "${manifest_sha}" "${actual_sha}"
+
+  if ((STRICT)); then
+    if header_json="$(pmtiles_cli_header_json "${pmtiles}")" && jq -e . >/dev/null 2>&1 <<< "${header_json}"; then
+      ok "dem pmtiles header-json"
+      jq -e '.tile_type | IN(2,3,4,5)' >/dev/null <<< "${header_json}" \
+        && ok "dem pmtiles header-json tile_type" \
+        || fail "dem pmtiles header-json tile_type"
+    else
+      fail "dem pmtiles header-json"
+    fi
+  fi
+}
+
 verified_any=0
 while IFS= read -r role; do
   if [[ "${ROLE}" == "both" && ! -f "$(build_pmtiles_path "${role}")" && "${role}" == "building" ]]; then
     log_warn "skip missing optional building role"
     continue
   fi
-  verify_role "${role}"
+  if [[ "${role}" == "dem" ]]; then
+    verify_dem_role
+  else
+    verify_role "${role}"
+  fi
   verified_any=1
 done < <(role_list "${ROLE}")
 
