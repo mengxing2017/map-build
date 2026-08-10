@@ -49,6 +49,47 @@ while IFS= read -r layer; do
           | map($props[.])
           | map(select(. != null and . != ""))
           | .[0]);
+      def trim_name_separators:
+        gsub("^[[:space:]()（）\\[\\]【】,，、/|·:：;；-]+"; "")
+        | gsub("[[:space:]()（）\\[\\]【】,，、/|·:：;；-]+$"; "");
+      def has_local_script:
+        test("[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]");
+      def has_latin:
+        test("[A-Za-z]");
+      def strip_english_suffix($english):
+        if (($english // "") | type == "string" and length > 0) and endswith($english) then
+          .[0:((length) - ($english | length))] | trim_name_separators
+        else
+          .
+        end;
+      def strip_trailing_latin:
+        sub("[[:space:]()（）\\[\\]【】,，、/|·:：;；-]*[A-Za-z][A-Za-z0-9 .&/()\\-]+$"; "")
+        | trim_name_separators;
+      def clean_bilingual_name($props; $candidate):
+        if ($candidate | type) == "string"
+          and ($props.name // "") == $candidate
+          and ($candidate | has_local_script)
+          and ($candidate | has_latin)
+        then
+          (
+            ($props["name:zh-Hans"] // $props["name:zh"])
+            // (
+              ($candidate | strip_english_suffix($props["name:en"])) as $without_en
+              | if ($without_en != "" and $without_en != $candidate and ($without_en | has_local_script)) then
+                  $without_en
+                else
+                  ($candidate | strip_trailing_latin) as $without_latin
+                  | if ($without_latin != "" and $without_latin != $candidate and ($without_latin | has_local_script)) then
+                      $without_latin
+                    else
+                      $candidate
+                    end
+                end
+            )
+          )
+        else
+          $candidate
+        end;
 
       if .properties then
         if $layer == "natural_a" and .properties.natural == "water" then
@@ -56,6 +97,7 @@ while IFS= read -r layer; do
         else
           .properties as $props
           | .properties.name = (coalesced_name($props) // $props.name)
+          | .properties.name = clean_bilingual_name($props; .properties.name)
           | if $layer == "building" then
               .properties.type = (.properties.type // .properties.building)
               | .properties.levels = (.properties.levels // .properties["building:levels"])
