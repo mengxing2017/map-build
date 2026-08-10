@@ -21,6 +21,7 @@
 1. `scripts/glyph.sh` 读取 `config/glyphs.yaml`，调用本地 `build-glyphs` 生成 MapLibre glyph PBF。
 2. `scripts/style.sh` 读取 `config/styles.yaml`，生成带 `glyphs` URL 模板的 MapLibre style JSON。
 3. `scripts/pack.sh` 在这些产物已存在时，把 style 和 glyphs 一起复制进 bundle。
+4. `scripts/prepare-import.sh` 在这些产物已存在时，把 style 和 glyphs 一起复制进 import 包，供 `huavd-map` 安装后服务 `/api/v1/map/glyphs/{locale}/{fontstack}/{range}.pbf`。
 
 ## 输入输出
 
@@ -78,6 +79,7 @@ huavd:
 - root directory 是否完整位于前 16KiB。
 - PMTiles metadata JSON 是否可读。
 - metadata bounds 是否与 header bounds 匹配。
+- `--strict` 模式下,metadata 是否包含文字标注必需字段:`place_label.place`、`poi_label.amenity`、`poi_label.shop`、`poi_label.tourism`、`transport_label.public_transport`。
 - manifest `output.size_bytes` 是否匹配文件大小。
 - manifest `output.sha512` 和 sidecar SHA512 是否匹配。
 
