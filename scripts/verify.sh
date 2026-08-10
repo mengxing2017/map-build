@@ -117,6 +117,40 @@ check_config_final_field() {
   fi
 }
 
+check_export_config_include_tag() {
+  local layer_id="$1"
+  local field="$2"
+  local export_config="${CONFIG_DIR}/export-config/${layer_id}.json"
+  if jq -e --arg field "${field}" '
+    (.include_tags // []) | index($field)
+  ' "${export_config}" >/dev/null; then
+    ok "export-config layer=${layer_id} include_tags has ${field}"
+  else
+    fail "export-config layer=${layer_id} include_tags missing ${field}"
+  fi
+}
+
+verify_config_final_fields_declared() {
+  local mismatch
+  mismatch="$(jq -r '
+    .source_layers
+    | to_entries[]
+    | .key as $layer
+    | ((.value.include_tags // []) + ((.value.normalize // {}) | keys)) as $allowed
+    | (.value.final_fields // {})
+    | keys[]
+    | select($allowed | index(.) | not)
+    | "\($layer).\(.): final_fields must be declared by include_tags or normalize"
+  ' "$(layers_json)")"
+  if [[ -z "${mismatch}" ]]; then
+    ok "config final_fields declared by include_tags or normalize"
+  else
+    while IFS= read -r line; do
+      [[ -n "${line}" ]] && fail "${line}"
+    done <<< "${mismatch}"
+  fi
+}
+
 verify_name_locale_config_fields() {
   local layer_id
   if jq -e '
@@ -126,7 +160,7 @@ verify_name_locale_config_fields() {
   else
     fail "config global.name_coalesce_order must be name:zh-Hans, name:zh, name, name:en"
   fi
-  for layer_id in road railway water waterway landuse building admin natural_a leisure_a place_label poi_label transport_label; do
+  for layer_id in road railway water waterway landuse building admin natural_a natural_line leisure_a place_label poi_label transport_label; do
     check_config_final_field_in_include_tags "${layer_id}" "name:zh"
     check_config_final_field "${layer_id}" "name:zh"
   done
@@ -143,6 +177,9 @@ verify_label_config_fields() {
 verify_base_fill_config_fields() {
   check_config_final_field_in_include_tags "landuse" "landuse"
   check_config_final_field_in_include_tags "natural_a" "natural"
+  check_config_final_field "natural_a" "natural"
+  check_config_final_field_in_include_tags "natural_line" "natural"
+  check_config_final_field "natural_line" "natural"
   check_config_final_field_in_include_tags "leisure_a" "leisure"
   check_config_final_field_in_include_tags "building" "building"
 }
@@ -151,18 +188,39 @@ verify_base_fill_metadata_fields() {
   local metadata="$1"
   check_metadata_layer_field "${metadata}" "landuse" "landuse"
   check_metadata_layer_field "${metadata}" "natural_a" "natural"
+  check_metadata_layer_field "${metadata}" "natural_line" "natural"
   check_metadata_layer_field "${metadata}" "leisure_a" "leisure"
   check_metadata_layer_field "${metadata}" "building" "building"
+  check_metadata_layer_minzoom "${metadata}" "natural_line" "10"
   check_metadata_layer_minzoom "${metadata}" "building" "12"
+}
+
+verify_road_config_fields() {
+  check_config_final_field_in_include_tags "road" "highway"
+  check_config_final_field "road" "highway"
+  check_export_config_include_tag "road" "highway"
+}
+
+verify_road_metadata_fields() {
+  local metadata="$1"
+  check_metadata_layer_field "${metadata}" "road" "highway"
+  check_metadata_layer_field "${metadata}" "road" "bridge"
+  check_metadata_layer_field "${metadata}" "road" "tunnel"
 }
 
 verify_railway_config_fields() {
   check_config_final_field_in_include_tags "railway" "railway"
+  check_config_final_field "railway" "railway"
+  check_export_config_include_tag "railway" "railway"
+  check_config_final_field_in_include_tags "railway" "highspeed"
+  check_config_final_field "railway" "highspeed"
+  check_export_config_include_tag "railway" "highspeed"
 }
 
 verify_railway_metadata_fields() {
   local metadata="$1"
   check_metadata_layer_field "${metadata}" "railway" "railway"
+  check_metadata_layer_field "${metadata}" "railway" "highspeed"
   check_metadata_layer_field "${metadata}" "railway" "bridge"
   check_metadata_layer_field "${metadata}" "railway" "tunnel"
 }
@@ -202,7 +260,7 @@ verify_role() {
   metadata="$(pmtiles_cli_metadata "${pmtiles}")" || fail "pmtiles metadata readable"
   if [[ -n "${metadata}" ]] && jq -e . >/dev/null 2>&1 <<< "${metadata}"; then
     ok "pmtiles metadata JSON"
-    expected_layers=12
+    expected_layers=13
     [[ "${role}" == "building" ]] && expected_layers=1
     actual_layers="$(jq -r '.vector_layers | length' <<< "${metadata}")"
     check_eq "metadata vector_layers length" "${actual_layers}" "${expected_layers}"
@@ -220,11 +278,14 @@ verify_role() {
         && ok "metadata huavd:style-locales" \
         || fail "metadata huavd:style-locales missing or empty"
       if [[ "${role}" == "base" ]]; then
+        verify_config_final_fields_declared
         verify_name_locale_config_fields
         verify_label_config_fields
         verify_label_metadata_fields "${metadata}"
         verify_base_fill_config_fields
         verify_base_fill_metadata_fields "${metadata}"
+        verify_road_config_fields
+        verify_road_metadata_fields "${metadata}"
         verify_railway_config_fields
         verify_railway_metadata_fields "${metadata}"
       fi
