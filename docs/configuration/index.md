@@ -17,8 +17,28 @@
 | `regions[].huavd.asset_role` | `base-vector` 或 `building-vector` |
 | `regions[].huavd.source_type` | `osm-pbf` 或 `derived-building` |
 | `regions[].huavd.package_version_template` | manifest package version 模板 |
+| `regions[].huavd.dem_required` | 可选;为 `true` 时 DEM 打包 / 校验缺失会失败 |
+| `regions[].huavd.dem_source_id` | 可选;引用 `config/dem.yaml` 中已授权 DEM source |
 
 `source_id: null` 的 region 当前无法完整跑完标准 build，因为 `metadata.sh` 会在 metadata 阶段失败。
+
+## dem.yaml
+
+`config/dem.yaml` 定义 DEM source、输出编码、授权说明、zoom 范围、tile size 和垂直基准。默认配置只指向本地或内网授权 mirror,不得把未确认授权、测绘、分发和出口合规的公网 DEM URL 作为生产默认。
+
+关键字段：
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `dem.default_source` | 默认 DEM source id |
+| `dem.default_encoding` | 默认输出编码,必须在 `allowed_encodings` 中 |
+| `dem.allowed_encodings[]` | 允许的 DEM encoding:`mapbox-terrain-rgb`、`terrarium`、`heightmap-u16` |
+| `dem.sources[].id` | 稳定 source id,由 region `huavd.dem_source_id` 引用 |
+| `dem.sources[].output_encoding` | 输出到 PMTiles metadata 的 `dem-encoding` |
+| `dem.sources[].vertical_datum` | 高程垂直基准,写入 `huavd:vertical-datum` |
+| `dem.sources[].attribution` | DEM attribution,进入 PMTiles metadata 和 attribution JSON |
+| `dem.sources[].data_license` | DEM 数据许可说明 |
+| `dem.sources[].uri` | 本地或内网 mirror 入口;公网 URL 只允许在完成合规确认后显式配置 |
 
 ## layers.yaml
 
@@ -34,6 +54,8 @@
 | `source_layers.*.final_fields` | normalize 后保留的字段和类型 |
 
 当前 `include_tags` 同时维护在 `config/layers.yaml` 和 `config/export-config/*.json`。两边目前一致，但修改时需要同步。
+
+名称字段必须同时保留 `name`、`name:zh-Hans`、`name:zh`、`name:en`、`name:ja` 和 `name:ko`。`normalize.sh` 会按 region 的 `name_locale_priority` 或全局 `name_coalesce_order` 把优先语言写入通用 `name`;中文顺序必须是 `name:zh-Hans`、`name:zh`、`name`、`name:en`,避免原始中文 `name` 被 `name:en` 覆盖。
 
 ## export-config
 
@@ -54,7 +76,7 @@ config/export-config/building.json
 
 base role 的 `building` metadata minzoom 当前为 12,用于 HMI 在常用 zoom 下显示低透明度建筑底色。实际 tippecanoe base 打包仍使用全局 `defaults.min_zoom`;如需物理 per-layer minzoom,必须另行改造 tippecanoe 管线并重新评估 tile size / drop 策略。
 
-底色相关 layer 必须保留分类字段:`landuse.final_fields.landuse`、`natural_a.final_fields.natural`、`leisure_a.final_fields.leisure` 和 `building.final_fields.building`。HMI style-loader 直接使用这些字段做 MapLibre `match` 表达式。
+底色和铁路相关 layer 必须保留分类字段:`landuse.final_fields.landuse`、`natural_a.final_fields.natural`、`leisure_a.final_fields.leisure`、`building.final_fields.building` 和 `railway.final_fields.railway`。HMI style-loader 直接使用这些字段做 MapLibre `match` 表达式；铁路桥梁 / 隧道样式使用 `railway.final_fields.bridge` 和 `railway.final_fields.tunnel`。
 
 ## glyphs.yaml
 
@@ -90,6 +112,8 @@ base role 的 `building` metadata minzoom 当前为 12,用于 HMI 在常用 zoom
 | `locales[].name_fields` | symbol 文本字段优先级 |
 | `text_layers[]` | 需要渲染文字的 MapLibre symbol layer |
 | `text_layers[].font_stack` | MapLibre `text-font` 数组，应与 `glyphs.yaml` 中的 `fonts[].fontstack` 对齐 |
+
+`zh-Hans` 的 `name_fields` 顺序必须是 `name:zh-Hans`、`name:zh`、`name`、`name:en`。其中 `name` 已经由 normalize 阶段按中文优先级回填;如果把 `name:en` 放在 `name` 前面，会造成地图上中文和英文标注混排。
 
 ## 配置联动
 
