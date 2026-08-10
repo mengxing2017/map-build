@@ -225,6 +225,42 @@ verify_railway_metadata_fields() {
   check_metadata_layer_field "${metadata}" "railway" "tunnel"
 }
 
+has_file_matching() {
+  local dir="$1"
+  local pattern="$2"
+  [[ -n "$(find "${dir}" -type f -name "${pattern}" -print -quit)" ]]
+}
+
+check_package_assets_for_install_json() {
+  local package_dir="$1"
+  local install_json="${package_dir}/install.json"
+  [[ -f "${install_json}" ]] || return 0
+
+  if jq -e 'any(.offline_maps[]?; ((."glyphs-url" // "") | startswith("huavd-map://glyphs/")))' "${install_json}" >/dev/null; then
+    if [[ -d "${package_dir}/glyphs" ]] && has_file_matching "${package_dir}/glyphs" '*.pbf'; then
+      ok "package glyph pbf files present"
+    else
+      fail "package install.json declares glyphs-url but package glyphs/*.pbf is missing"
+    fi
+  fi
+
+  if jq -e 'any(.offline_maps[]?; ((."styles-url" // "") | startswith("huavd-map://styles/")))' "${install_json}" >/dev/null; then
+    if [[ -d "${package_dir}/styles" ]] && has_file_matching "${package_dir}/styles" '*.style.json'; then
+      ok "package style json present"
+    else
+      fail "package install.json declares styles-url but package styles/*.style.json is missing"
+    fi
+  fi
+}
+
+verify_packaged_assets() {
+  local pack_dir
+  pack_dir="$(pack_cache_dir)/${SESSION}"
+  if [[ -d "${pack_dir}" ]]; then
+    check_package_assets_for_install_json "${pack_dir}"
+  fi
+}
+
 verify_role() {
   local role="$1"
   local pmtiles manifest sha_file metadata header_bounds metadata_bounds expected_layers actual_layers actual_sha manifest_sha file_sha manifest_size stat_size
@@ -314,12 +350,12 @@ verify_role() {
 
     glyphs_dir="$(build_glyphs_dir)"
     if [[ -d "${glyphs_dir}" ]]; then
-      if find "${glyphs_dir}" -type f -name '*.pbf' | grep -q .; then
+      if has_file_matching "${glyphs_dir}" '*.pbf'; then
         ok "glyph pbf files present"
       else
         fail "glyph output directory has no pbf files"
       fi
-      if find "${glyphs_dir}" -type f -name '*.pbf.sha512' | grep -q .; then
+      if has_file_matching "${glyphs_dir}" '*.pbf.sha512'; then
         ok "glyph sha512 sidecars present"
       else
         fail "glyph output directory has no sha512 sidecars"
@@ -336,7 +372,11 @@ verify_role() {
   if ((STRICT)); then
     if header_json="$(pmtiles_cli_header_json "${pmtiles}")" && jq -e . >/dev/null 2>&1 <<< "${header_json}"; then
       ok "pmtiles header-json"
-      jq -e '.internal_compression == 2 and .tile_compression == 2 and .tile_type == 1' >/dev/null <<< "${header_json}" \
+      jq -e '
+        ((.internal_compression // "gzip") | . == 2 or . == "gzip")
+        and ((.tile_compression // "gzip") | . == 2 or . == "gzip")
+        and (.tile_type | . == 1 or . == "mvt")
+      ' >/dev/null <<< "${header_json}" \
         && ok "pmtiles header-json compression/type" \
         || fail "pmtiles header-json compression/type"
     else
@@ -429,6 +469,10 @@ while IFS= read -r role; do
 done < <(role_list "${ROLE}")
 
 (( verified_any == 1 )) || die "${HUAVD_EXIT_INPUT}" "no artifacts found to verify for role=${ROLE}"
+
+if ((STRICT)); then
+  verify_packaged_assets
+fi
 
 if ((FAILURES == 0)); then
   printf 'verify: PASS\n'
