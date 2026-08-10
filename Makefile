@@ -6,6 +6,7 @@ WORKDIR_ROOT   ?= $(WORKDIR)
 WORKDIR_ROOT   := $(WORKDIR_ROOT)
 RELEASE_WORKDIR ?= $(WORKDIR_ROOT)/$(SESSION)
 REGION_BASENAME ?= $(notdir $(REGION))
+REGION_SLUG     ?= $(shell echo $(REGION) | tr '/' '-')
 INPUT          ?=
 ROLE           ?= both
 FORMAT         ?= both
@@ -13,7 +14,7 @@ IMPORT_FORMAT  ?= zip
 GLYPH          ?= 0
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch build glyph style verify pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem glyph style verify verify-dem pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip
 
 init: init-workdir
 
@@ -51,6 +52,9 @@ catalog:
 fetch: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/fetch.sh --region="$(REGION)"
 
+fetch-dem: init-workdir
+	WORKDIR="$(WORKDIR)" ./scripts/fetch-dem.sh --region="$(REGION)" --session="$(SESSION)" --source="$(DEM_SOURCE)" $(if $(DEM_INPUT),--input="$(DEM_INPUT)",)
+
 build: init-workdir
 	input="$(INPUT)"; \
 	if [ -z "$$input" ]; then \
@@ -58,6 +62,9 @@ build: init-workdir
 	  input="mirror/$$basename"; \
 	fi; \
 	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymm="$(YYYYMM)" --role="$(ROLE)" --glyph="$(GLYPH)"
+
+build-dem: init-workdir
+	WORKDIR="$(WORKDIR)" ./scripts/build-dem.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" $(if $(DEM_SOURCE),--source="$(DEM_SOURCE)",) $(if $(DEM_INPUT),--input="$(DEM_INPUT)",) $(if $(DEM_ENCODING),--encoding="$(DEM_ENCODING)",)
 
 glyph: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/glyph.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --force
@@ -67,6 +74,9 @@ style: init-workdir
 
 verify:
 	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)"
+
+verify-dem:
+	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role=dem --strict
 
 pack:
 	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
@@ -87,8 +97,10 @@ prepare-import-all:
 
 clean:
 	rm -rf "$(WORKDIR)/staging/$(SESSION)" \
+	  "$(WORKDIR)/cache/configs" \
 	  "$(WORKDIR)/cache/import/$(SESSION)" \
 	  "$(WORKDIR)/cache/pack/$(SESSION)" \
+	  "$(WORKDIR)/cache/tags-filter/$(REGION_SLUG)-"*.osm.pbf \
 	  "$(WORKDIR)/outputs/$(SESSION).import.tar.gz" \
 	  "$(WORKDIR)/outputs/$(SESSION).import.tar.gz.sha512" \
 	  "$(WORKDIR)/outputs/$(SESSION).import.zip" \
@@ -105,9 +117,14 @@ clean:
 	  "$(WORKDIR)/outputs/$(SESSION).building.pmtiles.sha512" \
 	  "$(WORKDIR)/outputs/$(SESSION).building.manifest.json" \
 	  "$(WORKDIR)/outputs/$(SESSION).building.attribution.json" \
+	  "$(WORKDIR)/outputs/$(SESSION).dem.pmtiles" \
+	  "$(WORKDIR)/outputs/$(SESSION).dem.pmtiles.sha512" \
+	  "$(WORKDIR)/outputs/$(SESSION).dem.manifest.json" \
+	  "$(WORKDIR)/outputs/$(SESSION).dem.attribution.json" \
 	  "$(WORKDIR)/outputs/$(SESSION).glyphs" \
 	  "$(WORKDIR)/outputs/$(SESSION).style.json" \
 	  "$(WORKDIR)/outputs/$(SESSION).style.json.sha512"
+	find "$(WORKDIR)/cache" "$(WORKDIR)/staging" "$(WORKDIR)/outputs" -depth -type d -empty -delete 2>/dev/null || true
 
 all: build pack
 
