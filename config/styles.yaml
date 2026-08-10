@@ -9,12 +9,16 @@ sprite: null
 locales:
   - tag: "zh-Hans"
     name_fields: ["name:zh-Hans", "name:zh", "name", "name:en"]
+    font_stack: ["NotoSansCJKsc-Regular"]
   - tag: "en"
     name_fields: ["name:en", "name:zh-Hans", "name"]
+    font_stack: ["NotoSans-Regular"]
   - tag: "ja"
     name_fields: ["name:ja", "name:en", "name:zh-Hans", "name"]
+    font_stack: ["NotoSansCJKjp-Regular"]
   - tag: "ko"
     name_fields: ["name:ko", "name:en", "name:zh-Hans", "name"]
+    font_stack: ["NotoSansCJKkr-Regular"]
 
 text_layers:
   - id: "place-label"
@@ -32,3 +36,31 @@ text_layers:
     minzoom: 13
     font_stack: ["NotoSans-Regular"]
     text_size: 11
+  - id: "road-labels"
+    source_layer: "road"
+    minzoom: 12
+    font_stack: ["NotoSans-Regular"]
+    text_size: 11
+    placement: "line"
+    symbol_spacing: 240
+    text_optional: true
+  - id: "building-labels"
+    source_layer: "building"
+    minzoom: 15
+    font_stack: ["NotoSans-Regular"]
+    text_size: 10
+    text_optional: true
+  - id: "waterway-labels"
+    source_layer: "waterway"
+    minzoom: 12
+    font_stack: ["NotoSans-Regular"]
+    text_size: 11
+    placement: "line"
+    symbol_spacing: 600
+    text_optional: true
+  - id: "water-labels"
+    source_layer: "water"
+    minzoom: 10
+    font_stack: ["NotoSans-Regular"]
+    text_size: 12
+    text_optional: true

@@ -52,7 +52,9 @@ jq -n \
   --arg locale "${STYLE_LOCALE}" \
   '
     ($config[0]) as $c
-    | ($c.locales[] | select(.tag == $locale) | .name_fields) as $name_fields
+    | ($c.locales[] | select(.tag == $locale)) as $locale_config
+    | ($locale_config.name_fields) as $name_fields
+    | (($locale_config.font_stack // ["NotoSans-Regular"]) | if type == "array" and length > 0 then . else ["NotoSans-Regular"] end) as $locale_font_stack
     | def text_field($fields): ["coalesce"] + ($fields | map(["get", .]));
     {
       version: 8,
@@ -78,12 +80,15 @@ jq -n \
           source: $source_id,
           "source-layer": .source_layer,
           minzoom: (.minzoom // 0),
-          layout: {
+          layout: ({
             "text-field": text_field($name_fields),
-            "text-font": (.font_stack // ["NotoSans-Regular"]),
+            "text-font": (.font_stack_by_locale[$locale] // $locale_font_stack // .font_stack // ["NotoSans-Regular"]),
             "text-size": (.text_size // 12),
             "text-anchor": "center"
-          },
+          }
+          + (if .placement then {"symbol-placement": .placement} else {} end)
+          + (if .symbol_spacing then {"symbol-spacing": .symbol_spacing} else {} end)
+          + (if .text_optional == true then {"text-optional": true} else {} end)),
           paint: {
             "text-color": "#1f2933",
             "text-halo-color": "#ffffff",
