@@ -16,6 +16,7 @@
     "name:ja",
     "name:ko",
     "ref",
+    "highway",
     "oneway",
     "maxspeed",
     "layer",
