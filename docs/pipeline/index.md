@@ -80,6 +80,7 @@ huavd:
 - PMTiles metadata JSON 是否可读。
 - metadata bounds 是否与 header bounds 匹配。
 - `--strict` 模式下,metadata 是否包含文字标注必需字段:`place_label.place`、`poi_label.amenity`、`poi_label.shop`、`poi_label.tourism`、`transport_label.public_transport`。
+- `--strict` 模式下,metadata 是否包含底色 / 建筑样式必需字段:`landuse.landuse`、`natural_a.natural`、`leisure_a.leisure`、`building.building`,并校验 `building` metadata minzoom 为 12。
 - manifest `output.size_bytes` 是否匹配文件大小。
 - manifest `output.sha512` 和 sidecar SHA512 是否匹配。
 
