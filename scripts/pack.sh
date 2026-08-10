@@ -78,20 +78,27 @@ if (( INCLUDE_BUILD_LOG )); then
   find "${out_dir}" -maxdepth 1 -type f -name "BUILD-*.log" -exec cp {} "${pack_dir}/" \;
 fi
 
-style_file="$(build_style_path)"
-if [[ -f "${style_file}" ]]; then
-  ensure_dir "${pack_dir}/styles"
-  cp "${style_file}" "${style_file}.sha512" "${pack_dir}/styles/"
-fi
+copy_declared_assets() {
+  local style_file glyphs_dir
+  style_file="$(build_style_path)"
+  if [[ -f "${style_file}" ]]; then
+    rm -rf "${pack_dir}/styles"
+    ensure_dir "${pack_dir}/styles"
+    cp "${style_file}" "${style_file}.sha512" "${pack_dir}/styles/"
+  fi
 
-glyphs_dir="$(build_glyphs_dir)"
-if [[ -d "${glyphs_dir}" ]]; then
-  cp -R "${glyphs_dir}" "${pack_dir}/glyphs"
-fi
+  glyphs_dir="$(build_glyphs_dir)"
+  if [[ -d "${glyphs_dir}" ]]; then
+    rm -rf "${pack_dir}/glyphs"
+    cp -R "${glyphs_dir}" "${pack_dir}/glyphs"
+  fi
+}
 
 if ((${#roles_in_pack[@]} > 0)); then
   if command -v jq >/dev/null 2>&1; then
     if offline_maps_json="$(install_offline_maps_json 0 "${roles_in_pack[@]}")"; then
+      install_ensure_declared_outputs "${offline_maps_json}"
+      copy_declared_assets
       bundle_id="$(install_manifest_value_for_roles bundle_id "${roles_in_pack[@]}")"
       activation="$(install_manifest_value_for_roles activation "${roles_in_pack[@]}")"
       bundle_id="${bundle_id:-$(install_default_bundle_id)}"
@@ -103,6 +110,7 @@ if ((${#roles_in_pack[@]} > 0)); then
         "$(install_region_for_roles "${roles_in_pack[@]}")" \
         "${bundle_id}" \
         "${activation}"
+      install_require_declared_assets "${pack_dir}" "${offline_maps_json}"
       log_info "install descriptor OK: ${pack_dir}/install.json"
     else
       log_warn "skip install.json generation for pack: no valid install records"
@@ -115,7 +123,7 @@ fi
 (
   cd -- "${pack_dir}"
   rm -f SHA256SUMS
-  sha256sum * > SHA256SUMS
+  find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
 )
 
 if [[ "${FORMAT}" == "tar" || "${FORMAT}" == "both" ]]; then

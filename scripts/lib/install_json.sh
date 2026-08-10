@@ -211,6 +211,67 @@ install_offline_maps_json() {
   rm -f "${tmp}"
 }
 
+install_offline_maps_require_glyphs() {
+  local offline_maps_json="$1"
+  jq -e '
+    any(.[]; ((."glyphs-url" // "") | startswith("huavd-map://glyphs/")))
+  ' >/dev/null <<< "${offline_maps_json}"
+}
+
+install_offline_maps_require_styles() {
+  local offline_maps_json="$1"
+  jq -e '
+    any(.[]; ((."styles-url" // "") | startswith("huavd-map://styles/")))
+  ' >/dev/null <<< "${offline_maps_json}"
+}
+
+install_package_has_glyphs() {
+  local package_dir="$1"
+  [[ -d "${package_dir}/glyphs" ]] \
+    && [[ -n "$(find "${package_dir}/glyphs" -type f -name '*.pbf' -print -quit)" ]]
+}
+
+install_package_has_style() {
+  local package_dir="$1"
+  [[ -d "${package_dir}/styles" ]] \
+    && [[ -n "$(find "${package_dir}/styles" -type f -name '*.style.json' -print -quit)" ]]
+}
+
+install_require_declared_assets() {
+  local package_dir="$1"
+  local offline_maps_json="$2"
+
+  if install_offline_maps_require_glyphs "${offline_maps_json}" && ! install_package_has_glyphs "${package_dir}"; then
+    die "${HUAVD_EXIT_INPUT}" "install.json declares huavd-map glyphs-url, but package is missing glyphs/*.pbf; run glyph generation before packaging"
+  fi
+  if install_offline_maps_require_styles "${offline_maps_json}" && ! install_package_has_style "${package_dir}"; then
+    die "${HUAVD_EXIT_INPUT}" "install.json declares huavd-map styles-url, but package is missing styles/*.style.json; run style generation before packaging"
+  fi
+}
+
+install_outputs_have_glyphs() {
+  local glyphs_dir
+  glyphs_dir="$(build_glyphs_dir)"
+  [[ -d "${glyphs_dir}" ]] && [[ -n "$(find "${glyphs_dir}" -type f -name '*.pbf' -print -quit)" ]]
+}
+
+install_outputs_have_style() {
+  [[ -f "$(build_style_path)" ]]
+}
+
+install_ensure_declared_outputs() {
+  local offline_maps_json="$1"
+
+  if install_offline_maps_require_glyphs "${offline_maps_json}" && ! install_outputs_have_glyphs; then
+    log_warn "glyph output missing; generating glyphs before packaging"
+    "${SCRIPT_DIR}/glyph.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --session="${SESSION}" --workdir="${WORKDIR}" --force
+  fi
+  if install_offline_maps_require_styles "${offline_maps_json}" && ! install_outputs_have_style; then
+    log_warn "style output missing; generating style before packaging"
+    "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --session="${SESSION}" --workdir="${WORKDIR}"
+  fi
+}
+
 install_region_is_descendant() {
   local region="$1"
   local root="$2"

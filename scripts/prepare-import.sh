@@ -146,6 +146,14 @@ while IFS= read -r entry; do
     || die "${HUAVD_EXIT_VERIFY}" "staged PMTiles sha512 mismatch: ${target_file}"
 done < <(jq -c '.[]' <<< "${offline_maps_json}")
 
+case "${AGGREGATE_MANIFEST}" in
+  0) install_write_document "${install_json}" "${TRANSFER_ID}" "${offline_maps_json}" "${document_region}" "${bundle_id}" "${activation}" ;;
+  1) install_write_aggregate_document "${install_json}" "${TRANSFER_ID}" "${offline_maps_json}" "${document_region}" "${bundle_id}" "${activation}" ;;
+  *) die "${HUAVD_EXIT_INPUT}" "invalid aggregate manifest mode: ${AGGREGATE_MANIFEST}" ;;
+esac
+
+install_ensure_declared_outputs "${offline_maps_json}"
+
 style_file="$(build_style_path)"
 if [[ -f "${style_file}" ]]; then
   ensure_dir "${import_dir}/styles"
@@ -159,11 +167,7 @@ if [[ -d "${glyphs_dir}" ]]; then
     || die "${HUAVD_EXIT_DISK}" "failed to copy glyphs into import package"
 fi
 
-case "${AGGREGATE_MANIFEST}" in
-  0) install_write_document "${install_json}" "${TRANSFER_ID}" "${offline_maps_json}" "${document_region}" "${bundle_id}" "${activation}" ;;
-  1) install_write_aggregate_document "${install_json}" "${TRANSFER_ID}" "${offline_maps_json}" "${document_region}" "${bundle_id}" "${activation}" ;;
-  *) die "${HUAVD_EXIT_INPUT}" "invalid aggregate manifest mode: ${AGGREGATE_MANIFEST}" ;;
-esac
+install_require_declared_assets "${import_dir}" "${offline_maps_json}"
 
 case "${FORMAT}" in
   tar)
