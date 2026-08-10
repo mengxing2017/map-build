@@ -296,6 +296,7 @@ source_layers:
       "name:ja": "String"
       "name:ko": "String"
       population: "Number"
+      place: "String"
     renderer: "MapLibre symbol"
 
   poi_label:
@@ -326,6 +327,9 @@ source_layers:
       "name:en": "String"
       "name:ja": "String"
       "name:ko": "String"
+      amenity: "String"
+      shop: "String"
+      tourism: "String"
     renderer: "MapLibre symbol"
 
   transport_label:
@@ -350,4 +354,5 @@ source_layers:
       "name:en": "String"
       "name:ja": "String"
       "name:ko": "String"
+      public_transport: "String"
     renderer: "MapLibre symbol"
