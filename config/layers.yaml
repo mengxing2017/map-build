@@ -148,12 +148,14 @@ source_layers:
       - "name:en"
       - "name:ja"
       - "name:ko"
+      - "landuse"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
       "name:ja": "String"
       "name:ko": "String"
+      landuse: "String"
     renderer: "MapLibre"
 
   building:
@@ -191,6 +193,7 @@ source_layers:
       "name:ja": "String"
       "name:ko": "String"
       type: "String"
+      building: "String"
       height: "Number"
       min_height: "Number"
       levels: "Number"
@@ -219,6 +222,7 @@ source_layers:
       "name:en": "String"
       "name:ja": "String"
       "name:ko": "String"
+      natural: "String"
     renderer: "MapLibre"
 
   natural_a:
@@ -265,12 +269,14 @@ source_layers:
       - "name:en"
       - "name:ja"
       - "name:ko"
+      - "leisure"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
       "name:en": "String"
       "name:ja": "String"
       "name:ko": "String"
+      leisure: "String"
     renderer: "MapLibre"
 
   place_label:
