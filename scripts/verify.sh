@@ -73,6 +73,17 @@ check_metadata_layer_field() {
   fi
 }
 
+check_metadata_layer_minzoom() {
+  local metadata="$1"
+  local layer_id="$2"
+  local expected="$3"
+  local actual
+  actual="$(jq -r --arg layer "${layer_id}" '
+    .vector_layers[] | select(.id == $layer) | .minzoom
+  ' <<< "${metadata}")"
+  check_eq "metadata layer=${layer_id} minzoom" "${actual}" "${expected}"
+}
+
 verify_label_metadata_fields() {
   local metadata="$1"
   check_metadata_layer_field "${metadata}" "place_label" "place"
@@ -100,6 +111,22 @@ verify_label_config_fields() {
   check_config_final_field_in_include_tags "poi_label" "shop"
   check_config_final_field_in_include_tags "poi_label" "tourism"
   check_config_final_field_in_include_tags "transport_label" "public_transport"
+}
+
+verify_base_fill_config_fields() {
+  check_config_final_field_in_include_tags "landuse" "landuse"
+  check_config_final_field_in_include_tags "natural_a" "natural"
+  check_config_final_field_in_include_tags "leisure_a" "leisure"
+  check_config_final_field_in_include_tags "building" "building"
+}
+
+verify_base_fill_metadata_fields() {
+  local metadata="$1"
+  check_metadata_layer_field "${metadata}" "landuse" "landuse"
+  check_metadata_layer_field "${metadata}" "natural_a" "natural"
+  check_metadata_layer_field "${metadata}" "leisure_a" "leisure"
+  check_metadata_layer_field "${metadata}" "building" "building"
+  check_metadata_layer_minzoom "${metadata}" "building" "12"
 }
 
 verify_role() {
@@ -157,6 +184,8 @@ verify_role() {
       if [[ "${role}" == "base" ]]; then
         verify_label_config_fields
         verify_label_metadata_fields "${metadata}"
+        verify_base_fill_config_fields
+        verify_base_fill_metadata_fields "${metadata}"
       fi
     fi
     header_bounds="$(pmtiles_bounds "${pmtiles}")"
