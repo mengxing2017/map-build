@@ -23,6 +23,14 @@
 3. `scripts/pack.sh` 在这些产物已存在时，把 style 和 glyphs 一起复制进 bundle。
 4. `scripts/prepare-import.sh` 在这些产物已存在时，把 style 和 glyphs 一起复制进 import 包，供 `huavd-map` 安装后服务 `/api/v1/map/glyphs/{locale}/{fontstack}/{range}.pbf`。
 
+DEM 资产使用独立入口，不参与 OSM PBF 矢量构建：
+
+1. `scripts/fetch-dem.sh` 从已授权的本地或内网 mirror 准备 DEM 输入，不默认访问未确认公网 URL。
+2. `scripts/build-dem.sh` 接受已授权 DEM PMTiles、MBTiles 或瓦片目录，标准化输出 `${WORKDIR}/outputs/{region-slug}-{yyyymm}.dem.pmtiles`。
+3. DEM metadata 必须包含 `dem-encoding`、`huavd:vertical-datum`、`bounds` 和 `attribution`。
+4. `scripts/verify.sh --role=dem --strict` 校验 raster tile type、metadata、bounds、manifest 和 SHA512。
+5. `scripts/pack.sh --role=all` 会把 DEM 作为 `install.json.offline_maps[]` 中的 `dem-raster` 单资产，并在 bundle assets 中关联；不得新增私有顶层 size 字段。
+
 ## 输入输出
 
 默认工作目录：
@@ -61,6 +69,8 @@
 
 `ROLE=base` 生成基础地图 PMTiles。`ROLE=building` 生成建筑专用 PMTiles。`ROLE=both` 会依次处理可构建的 role。
 
+`ROLE=dem` 只处理 DEM PMTiles 四件套。`ROLE=all` 用于打包或校验 base、building 和 dem 三类资产；其中 building 仍是可选派生产物，DEM 只有在显式请求或 region `huavd.dem_required=true` 时才作为必需产物。
+
 building role 只有在 `config/regions.yaml` 中同时满足以下配置时才启用：
 
 ```yaml
@@ -80,7 +90,10 @@ huavd:
 - PMTiles metadata JSON 是否可读。
 - metadata bounds 是否与 header bounds 匹配。
 - `--strict` 模式下,metadata 是否包含文字标注必需字段:`place_label.place`、`poi_label.amenity`、`poi_label.shop`、`poi_label.tourism`、`transport_label.public_transport`。
+- `--strict` 模式下,配置是否保留所有 label 可用的 `name:zh` 字段,防止中文 locale 下被 `name:en` 抢先显示。
 - `--strict` 模式下,metadata 是否包含底色 / 建筑样式必需字段:`landuse.landuse`、`natural_a.natural`、`leisure_a.leisure`、`building.building`,并校验 `building` metadata minzoom 为 12。
+- `--strict` 模式下,metadata 是否包含铁路样式必需字段:`railway.railway`、`railway.bridge`、`railway.tunnel`。
+- `--role=dem` 时,PMTiles `tile_type` 必须是 raster (`2`/`3`/`4`/`5`),metadata 必须包含合法 `dem-encoding`、`huavd:vertical-datum`、`attribution` 和与 header 一致的 bounds。
 - manifest `output.size_bytes` 是否匹配文件大小。
 - manifest `output.sha512` 和 sidecar SHA512 是否匹配。
 
