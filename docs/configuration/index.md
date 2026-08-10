@@ -52,6 +52,10 @@ config/export-config/building.json
 
 `scripts/tippecanoe.sh` 当前传入全局 `-Z/-z`，没有传 per-layer minzoom/maxzoom。`metadata.vector_layers[].minzoom/maxzoom` 来自 `scripts/lib/config.sh` 的配置计算，可能不等于 tippecanoe 实际瓦片内每个 layer 的出现范围。
 
+base role 的 `building` metadata minzoom 当前为 12,用于 HMI 在常用 zoom 下显示低透明度建筑底色。实际 tippecanoe base 打包仍使用全局 `defaults.min_zoom`;如需物理 per-layer minzoom,必须另行改造 tippecanoe 管线并重新评估 tile size / drop 策略。
+
+底色相关 layer 必须保留分类字段:`landuse.final_fields.landuse`、`natural_a.final_fields.natural`、`leisure_a.final_fields.leisure` 和 `building.final_fields.building`。HMI style-loader 直接使用这些字段做 MapLibre `match` 表达式。
+
 ## glyphs.yaml
 
 `config/glyphs.yaml` 定义离线 MapLibre glyph 生成输入。`scripts/glyph.sh` 会把 YAML 转为 JSON 后读取该配置，并调用 `generator.command` 指定的本地命令。
