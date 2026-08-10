@@ -20,7 +20,7 @@ for arg in "$@"; do
     --format=*) FORMAT="${arg#*=}" ;;
     --include-build-log) INCLUDE_BUILD_LOG=1 ;;
     -h|--help)
-      printf 'usage: %s --session=<session> [--role=base|building|both] [--format=tar|zip|both] [--workdir=<path>]\n' "$0"
+      printf 'usage: %s --session=<session> [--role=base|building|both|dem|all] [--format=tar|zip|both] [--workdir=<path>]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -57,6 +57,12 @@ while IFS= read -r role; do
   if [[ ! -f "${files[0]}" && "${ROLE}" == "both" && "${role}" == "building" ]]; then
     log_warn "skip missing optional building role for pack"
     continue
+  fi
+  if [[ ! -f "${files[0]}" && "${role}" == "dem" ]]; then
+    if [[ "${ROLE}" != "dem" && "${ROLE}" != "all" ]] && ! dem_region_required "${REGION}"; then
+      log_warn "skip missing optional DEM role for pack"
+      continue
+    fi
   fi
   for file in "${files[@]}"; do
     require_file "${file}"

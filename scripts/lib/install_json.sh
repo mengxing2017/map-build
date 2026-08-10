@@ -126,6 +126,7 @@ install_role_record_json() {
     --arg fallback_released_at "$(timestamp_utc)" \
     --arg fallback_glyphs_url "$(glyphs_url_template)" \
     --arg fallback_styles_url "$(styles_url)" \
+    --arg role "${role}" \
     --arg sha512 "${file_sha}" \
     --arg file "${stem}.pmtiles" \
     '
@@ -167,7 +168,8 @@ install_role_record_json() {
           file: $file,
           "released-at": (($h.released_at // $m.build_id // "") | if . == "" then $fallback_released_at else . end)
         }
-    ' | jq -e '
+        + (if ($h.dem_encoding // "") == "" then {} else {"dem-encoding": $h.dem_encoding} end)
+    ' | jq -e --arg role "${role}" '
       if (.id == "" or .name == "" or ."source-id" == "" or ."package-version" == "" or ."asset-role" == "" or ."coord-system" == "" or ."style-id" == "") then
         error("required install.json offline-map field is empty")
       elif has("url") then
@@ -176,8 +178,10 @@ install_role_record_json() {
         error("install.json offline-map name must not include .pmtiles")
       elif (."coord-system" != "EPSG:3857") then
         error("install.json coord-system must be EPSG:3857")
-      elif (."source-type" != "osm-pbf") then
-        error("install.json source-type must be osm-pbf")
+      elif ($role == "dem" and (."source-type" != "dem" or ."asset-role" != "dem-raster" or (."dem-encoding" // "") == "")) then
+        error("install.json DEM entry must use source-type=dem, asset-role=dem-raster and dem-encoding")
+      elif ($role != "dem" and ."source-type" != "osm-pbf") then
+        error("install.json vector source-type must be osm-pbf")
       else
         .
       end
@@ -308,6 +312,7 @@ install_manifest_record_json() {
           file: $file,
           "released-at": (($h.released_at // $m.build_id // "") | if . == "" then $fallback_released_at else . end)
         }
+        + (if ($h.dem_encoding // "") == "" then {} else {"dem-encoding": $h.dem_encoding} end)
     ' | jq -e '
       if (.id == "" or .name == "" or ."source-id" == "" or ."package-version" == "" or ."asset-role" == "" or ."coord-system" == "" or ."style-id" == "") then
         error("required aggregate install.json offline-map field is empty")
@@ -395,16 +400,6 @@ install_write_document_impl() {
       def region_id($map):
         (($map."coverage-region-id" // "") | if . == "" or . == null then "" else . end);
 
-      def asset_record($entry; $required; $order; $include_region):
-        {
-          "offline-map-id": $entry.value.id,
-          "asset-role": $entry.value."asset-role",
-          required: $required,
-          "presentation-scope": ["standard"],
-          order: $order
-        }
-        + (if ($include_region == "1" and region_id($entry.value) != "") then {"coverage-region-id": region_id($entry.value)} else {} end);
-
       def coverage_bounds($maps):
         ($maps | map(."tile-range".bounds? // empty)) as $bounds
         | if ($bounds | length) == 0 then
@@ -429,24 +424,51 @@ install_write_document_impl() {
           []
         end;
 
+      def presentation_scope($role):
+        if $role == "dem-raster" then
+          ["terrain-3d", "terrain-3d-buildings", "satellite-3d", "city-3d"]
+        elif $role == "building-vector" then
+          ["standard-buildings", "terrain-3d-buildings", "city-3d"]
+        else
+          ["standard", "standard-buildings", "terrain-3d", "terrain-3d-buildings"]
+        end;
+
+      def asset_required($role):
+        if $role == "base-vector" then true else false end;
+
+      def asset_record($entry; $required; $order; $include_region):
+        {
+          "offline-map-id": $entry.value.id,
+          "asset-role": $entry.value."asset-role",
+          required: $required,
+          "presentation-scope": presentation_scope($entry.value."asset-role"),
+          order: $order
+        }
+        + (if ($include_region == "1" and region_id($entry.value) != "") then {"coverage-region-id": region_id($entry.value)} else {} end);
+
       def bundle_assets($maps; $aggregate):
         ($maps | map(select(."asset-role" == "base-vector")) | .[0]) as $base
         | ($maps | map(select(."asset-role" == "base-vector"))) as $bases
         | ($maps | map(select(."asset-role" == "building-vector"))) as $buildings
+        | ($maps | map(select(."asset-role" == "dem-raster"))) as $dems
         | if $base == null then
             []
           elif $aggregate == "1" then
             (($bases | to_entries | map(asset_record(.; true; .key; "1")))
-             + ($buildings | to_entries | map(asset_record(.; false; (.key + ($bases | length)); "1"))))
+             + ($buildings | to_entries | map(asset_record(.; false; (.key + ($bases | length)); "1")))
+             + ($dems | to_entries | map(asset_record(.; false; (.key + ($bases | length) + ($buildings | length)); "1"))))
           else
             (
               [({key: 0, value: $base} | asset_record(.; true; 0; "0"))]
               + ($buildings | to_entries | map(asset_record(.; false; (.key + 1); "0")))
+              + ($dems | to_entries | map(asset_record(.; false; (.key + 1 + ($buildings | length)); "0")))
             )
           end;
 
       def bundles($maps; $aggregate):
         ($maps | map(select(."asset-role" == "base-vector")) | .[0]) as $base
+        | ($maps | any(."asset-role" == "dem-raster")) as $has_dem
+        | ($maps | any(."asset-role" == "building-vector")) as $has_building
         | if $base == null then
             []
           else
@@ -459,7 +481,12 @@ install_write_document_impl() {
                 "source-revision": ($base."source-revision" // null),
                 transport: ($base.transport // "offline"),
                 "coord-system": $base."coord-system",
-                "supported-presentations": ["standard"],
+                "supported-presentations": (
+                  ["standard"]
+                  + (if $has_building then ["standard-buildings"] else [] end)
+                  + (if $has_dem then ["terrain-3d"] else [] end)
+                  + (if ($has_dem and $has_building) then ["terrain-3d-buildings", "city-3d"] else [] end)
+                ),
                 "default-presentation": "standard",
                 "style-locales": ($base."style-locales" // []),
                 "coverage-bounds": coverage_bounds($maps),
