@@ -39,6 +39,8 @@ huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf
 
 `scripts/glyph.sh` 会按 locale/fontstack 生成对应目录和 PBF，并为每个 PBF 写 `.sha512` sidecar。`scripts/pack.sh` 只在 glyph/style 产物已经存在时将它们复制进 bundle。
 
+HMI 的 MapLibre `text-font` 必须与 `config/glyphs.yaml` 中的 `fonts[].fontstack` 完全一致。当前默认产物是单 fontstack 目录,例如 `zh-Hans/NotoSansCJKsc-Regular/0-255.pbf`;如果前端使用多个字体组成 fallback 数组,需要同步生成对应组合 fontstack 目录,否则 MapLibre 会请求不存在的 glyph 路径。
+
 参考：
 
 - MapLibre Style Spec: `glyphs`，https://maplibre.org/maplibre-style-spec/glyphs/
