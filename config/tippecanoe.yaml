@@ -24,6 +24,7 @@ defaults:
     - "building"
     - "admin"
     - "natural_a"
+    - "natural_line"
     - "leisure_a"
     - "place_label"
     - "poi_label"
@@ -33,7 +34,7 @@ metadata:
   data_license: "ODbL-1.0"
   tile_type: "MVT"
   tile_compression: "gzip"
-  vector_layer_count: 12
+  vector_layer_count: 13
 
 high_density:
   - region_match: "japan/tokyo"

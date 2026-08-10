@@ -231,7 +231,6 @@ source_layers:
       "name:en": "String"
       "name:ja": "String"
       "name:ko": "String"
-      natural: "String"
     renderer: "MapLibre"
 
   natural_a:
@@ -262,10 +261,39 @@ source_layers:
       "name:en": "String"
       "name:ja": "String"
       "name:ko": "String"
+      natural: "String"
+    renderer: "MapLibre"
+
+  natural_line:
+    order: 9
+    geometry: "line"
+    osm_tags:
+      - "natural=cliff"
+      - "natural=tree_row"
+    geofabrik_shapefile: null
+    tags_filter:
+      - "w/natural=cliff"
+      - "w/natural=tree_row"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "name:ja"
+      - "name:ko"
+      - "natural"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:zh": "String"
+      "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
+      natural: "String"
     renderer: "MapLibre"
 
   leisure_a:
-    order: 9
+    order: 10
     geometry: "polygon"
     osm_tags:
       - "leisure=*"
@@ -291,7 +319,7 @@ source_layers:
     renderer: "MapLibre"
 
   place_label:
-    order: 10
+    order: 11
     geometry: "point"
     osm_tags:
       - "place=*"
@@ -318,7 +346,7 @@ source_layers:
     renderer: "MapLibre symbol"
 
   poi_label:
-    order: 11
+    order: 12
     geometry: "point"
     osm_tags:
       - "amenity=*"
@@ -352,7 +380,7 @@ source_layers:
     renderer: "MapLibre symbol"
 
   transport_label:
-    order: 12
+    order: 13
     geometry: "point"
     osm_tags:
       - "public_transport=*"

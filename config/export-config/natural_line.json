@@ -1,0 +1,20 @@
+{
+  "attributes": {
+    "type": false,
+    "id": false,
+    "version": false,
+    "changeset": false,
+    "timestamp": false,
+    "uid": false,
+    "user": false
+  },
+  "include_tags": [
+    "name",
+    "name:zh-Hans",
+    "name:zh",
+    "name:en",
+    "name:ja",
+    "name:ko",
+    "natural"
+  ]
+}
