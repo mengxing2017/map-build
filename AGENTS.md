@@ -80,7 +80,7 @@ Defaults are defined in `Makefile` and `scripts/lib/common.sh`.
 - `REGION`: configured region id, default `china/guangxi`.
 - `YYYYMM`: build month in `YYYYMM` format, default current UTC month.
 - `SESSION`: `{region-slug}-{yyyymm}`, for example `china-guangxi-202607`.
-- `ROLE`: `base`, `building`, or `both`.
+- `ROLE`: `base`, `building`, `both`, `dem`, or `all`.
 - `FORMAT`: `tar`, `zip`, or `both` for packaging.
 - `INPUT`: PBF input path for `make build`; relative paths are resolved under
   `WORKDIR` when appropriate.
@@ -116,6 +116,14 @@ The `building` role is optional. It only builds when the region has
 `config/regions.yaml`. If `ROLE=both` and building is not enabled, the build skips
 building with a warning.
 
+The `dem` role is a separate offline DEM asset path. It must use authorized local
+or internal mirror inputs declared in `config/dem.yaml`; do not add default public
+DEM download URLs unless licensing, mapping compliance, offline redistribution,
+and export constraints are confirmed. DEM PMTiles metadata must include
+`dem-encoding` and `huavd:vertical-datum`. Packaging must put DEM into
+`install.json.offline_maps[]` as `asset-role=dem-raster` and link it through
+bundle assets, not through private top-level manifest fields.
+
 ## Repository Map
 
 - `README.md`: user-facing environment and install instructions.
@@ -138,11 +146,11 @@ building with a warning.
 - `scripts/verify.sh`: validates PMTiles headers, metadata, manifests, and hashes.
 - `scripts/pack.sh`: packages artifacts into tar/zip bundles.
 - `config/regions.yaml`: region catalog and HUAVD source metadata.
+- `config/dem.yaml`: authorized DEM source, encoding, license, and vertical datum metadata.
 - `config/layers.yaml`: source layer definitions, tag filters, and final fields.
 - `config/tippecanoe.yaml`: tippecanoe defaults, high-density overrides, and building role settings.
 - `config/export-config/*.json`: osmium export config per layer.
 - `config/regions/`: optional `.poly` files for derived regional extracts.
-- `report/`: analysis reports and design notes.
 
 ## Configuration Coupling
 
