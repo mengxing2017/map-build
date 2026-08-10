@@ -8,7 +8,7 @@ sprite: null
 
 locales:
   - tag: "zh-Hans"
-    name_fields: ["name:zh-Hans", "name:en", "name"]
+    name_fields: ["name:zh-Hans", "name:zh", "name", "name:en"]
   - tag: "en"
     name_fields: ["name:en", "name:zh-Hans", "name"]
   - tag: "ja"
