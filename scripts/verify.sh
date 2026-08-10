@@ -18,7 +18,7 @@ for arg in "$@"; do
   case "${arg}" in
     --strict) STRICT=1 ;;
     -h|--help)
-      printf 'usage: %s --region=<id> --role=<base|building|both> [--yyyymm=YYYYMM] [--session=<session>] [--strict]\n' "$0"
+      printf 'usage: %s --region=<id> --role=<base|building|both|dem|all> [--yyyymm=YYYYMM] [--session=<session>] [--strict]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -105,6 +105,33 @@ check_config_final_field_in_include_tags() {
   fi
 }
 
+check_config_final_field() {
+  local layer_id="$1"
+  local field="$2"
+  if jq -e --arg layer "${layer_id}" --arg field "${field}" '
+    .source_layers[$layer].final_fields[$field]
+  ' "$(layers_json)" >/dev/null; then
+    ok "config layer=${layer_id} final_fields has ${field}"
+  else
+    fail "config layer=${layer_id} final_fields missing ${field}"
+  fi
+}
+
+verify_name_locale_config_fields() {
+  local layer_id
+  if jq -e '
+    .global.name_coalesce_order == ["name:zh-Hans", "name:zh", "name", "name:en"]
+  ' "$(layers_json)" >/dev/null; then
+    ok "config global.name_coalesce_order zh before name before en"
+  else
+    fail "config global.name_coalesce_order must be name:zh-Hans, name:zh, name, name:en"
+  fi
+  for layer_id in road railway water waterway landuse building admin natural_a leisure_a place_label poi_label transport_label; do
+    check_config_final_field_in_include_tags "${layer_id}" "name:zh"
+    check_config_final_field "${layer_id}" "name:zh"
+  done
+}
+
 verify_label_config_fields() {
   check_config_final_field_in_include_tags "place_label" "place"
   check_config_final_field_in_include_tags "poi_label" "amenity"
@@ -127,6 +154,17 @@ verify_base_fill_metadata_fields() {
   check_metadata_layer_field "${metadata}" "leisure_a" "leisure"
   check_metadata_layer_field "${metadata}" "building" "building"
   check_metadata_layer_minzoom "${metadata}" "building" "12"
+}
+
+verify_railway_config_fields() {
+  check_config_final_field_in_include_tags "railway" "railway"
+}
+
+verify_railway_metadata_fields() {
+  local metadata="$1"
+  check_metadata_layer_field "${metadata}" "railway" "railway"
+  check_metadata_layer_field "${metadata}" "railway" "bridge"
+  check_metadata_layer_field "${metadata}" "railway" "tunnel"
 }
 
 verify_role() {
@@ -182,10 +220,13 @@ verify_role() {
         && ok "metadata huavd:style-locales" \
         || fail "metadata huavd:style-locales missing or empty"
       if [[ "${role}" == "base" ]]; then
+        verify_name_locale_config_fields
         verify_label_config_fields
         verify_label_metadata_fields "${metadata}"
         verify_base_fill_config_fields
         verify_base_fill_metadata_fields "${metadata}"
+        verify_railway_config_fields
+        verify_railway_metadata_fields "${metadata}"
       fi
     fi
     header_bounds="$(pmtiles_bounds "${pmtiles}")"
