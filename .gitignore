@@ -9,3 +9,4 @@ target/
 .codebuddy/
 cache
 config/derived/catalog.json
+report
