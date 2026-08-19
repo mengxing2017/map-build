@@ -20,7 +20,7 @@ for arg in "$@"; do
     --glyph=*) GLYPH="${arg#*=}" ;;
     --force) FORCE=1 ;;
     -h|--help)
-      printf 'usage: %s --input=<path-to.osm.pbf> --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base|building|both] [--workdir=<path>] [--glyph=0|1] [--force]\n' "$0"
+      printf 'usage: %s --input=<path-to.osm.pbf> --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base|building|both] [--workdir=<path>] [--glyph=0|1] [--force] [--force-building]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -78,13 +78,52 @@ role_artifacts_exist() {
     || -e "$(build_attribution_path "${role}")" ]]
 }
 
+write_building_skip_report() {
+  local report_file
+  report_file="$(report_dir)/${YYYYMMDD}-building-role-skip.md"
+  ensure_dir "$(report_dir)"
+  local actual_asset_role actual_source_type
+  actual_asset_role="$(region_asset_role "${REGION}" 2>/dev/null || printf '(unset)')"
+  actual_source_type="$(region_source_type "${REGION}" 2>/dev/null || printf '(unset)')"
+  cat > "${report_file}" <<EOF
+# Building Role Skip Report
+
+**Date**: $(date -u +%Y-%m-%d)
+**Region**: ${REGION}
+**Session**: ${SESSION}
+
+## Summary
+
+The building role was skipped because the region configuration does not meet the requirements.
+
+## Configuration
+
+| Field | Current Value | Required Value |
+|-------|--------------|----------------|
+| \`asset_role\` | \`${actual_asset_role}\` | \`building-vector\` |
+| \`source_type\` | \`${actual_source_type}\` | \`derived-building\` |
+
+## How to Enable
+
+Update \`config/regions.yaml\` for this region:
+
+\`\`\`yaml
+huavd:
+  asset_role: "building-vector"
+  source_type: "derived-building"
+\`\`\`
+EOF
+  log_info "building skip report written: ${report_file}"
+}
+
 roles_to_build=()
 while IFS= read -r role; do
-  if [[ "${role}" == "building" ]] && ! building_role_enabled "${REGION}"; then
+  if [[ "${role}" == "building" ]] && ! building_role_allowed "${REGION}"; then
     if [[ "${ROLE}" == "building" ]]; then
-      die "${HUAVD_EXIT_INPUT}" "building role is not enabled for region ${REGION} in regions.yaml"
+      die "${HUAVD_EXIT_INPUT}" "building role is not enabled for region ${REGION} in regions.yaml (pass --force-building to override)"
     fi
     log_warn "skip building role: regions.yaml does not mark ${REGION} as building-vector/derived-building"
+    write_building_skip_report
     continue
   fi
   output="$(build_pmtiles_path "${role}")"

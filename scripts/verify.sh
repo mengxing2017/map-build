@@ -506,6 +506,19 @@ if ((STRICT)); then
   verify_packaged_assets
 fi
 
+mapfile -t cross_regions < <(
+  find "${WORKDIR}/outputs" -maxdepth 1 -type f -name '*.base.pmtiles' 2>/dev/null \
+    | sed -E 's|.*/||; s|-[0-9]{8}\.base\.pmtiles$||' \
+    | sort -u
+)
+if (( ${#cross_regions[@]} >= 2 )); then
+  log_info "running cross-region linters across ${#cross_regions[@]} regions"
+  "${SCRIPT_DIR}/style-lint.sh" || ((FAILURES++))
+  "${SCRIPT_DIR}/viewport-lint.sh" || ((FAILURES++))
+else
+  log_info "skipping cross-region linters: only ${#cross_regions[@]} region present"
+fi
+
 if ((FAILURES == 0)); then
   printf 'verify: PASS\n'
 else

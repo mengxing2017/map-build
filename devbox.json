@@ -31,13 +31,16 @@
     "python3":             "latest",
     "yq":                  "latest",
     "libyaml":             "latest",
+    "gcc":                 "latest",
     "python3Packages.pip": ""
   },
   "shell": {
     "init_hook": [
       "export GOPATH=\"${GOPATH:-$HOME/go}\"",
       "export CARGO_HOME=\"${CARGO_HOME:-$HOME/.cargo}\"",
-      "export PATH=\"$HOME/.local/bin:$GOPATH/bin:$CARGO_HOME/bin:$PATH\""
+      "export PATH=\"$HOME/.local/bin:$GOPATH/bin:$CARGO_HOME/bin:$PATH\"",
+      ". $VENV_DIR/bin/activate",
+      "export LD_LIBRARY_PATH=$(dirname $(gcc -print-file-name=libstdc++.so.6)):$LD_LIBRARY_PATH"
     ],
     "scripts": {
       "setup":  "bash scripts/setup-tools.sh",

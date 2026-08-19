@@ -10,6 +10,10 @@ if [[ -z "${HUAVD_MAP_BUILD_CONFIG_LOADED:-}" ]]; then
   # shellcheck source=config.sh
   source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/config.sh"
 fi
+if [[ -z "${HUAVD_MAP_BUILD_VIEWPORT_LOADED:-}" ]]; then
+  # shellcheck source=viewport.sh
+  source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/viewport.sh"
+fi
 HUAVD_MAP_BUILD_INSTALL_JSON_LOADED=1
 
 install_skip_or_die() {
@@ -62,6 +66,30 @@ install_region_for_roles() {
     fi
   done
   printf '%s\n' "${REGION}"
+}
+
+viewport_for_offline_map() {
+  local role="$1"
+  local pmtiles="$2"
+
+  if [[ "${role}" == "building" ]]; then
+    pmtiles="$(build_pmtiles_path base)"
+  fi
+
+  if [[ ! -f "${pmtiles}" ]]; then
+    log_warn "no pmtiles for viewport: ${pmtiles}"
+    printf '%s' '{}'
+    return 0
+  fi
+
+  local center_lng center_lat _ default_zoom
+  read -r center_lng center_lat _ < <(viewport_extract_center "${pmtiles}")
+  default_zoom="$(viewport_calc_default_zoom "${pmtiles}")"
+
+  jq -n \
+    --argjson center "[${center_lng}, ${center_lat}]" \
+    --argjson default_zoom "${default_zoom}" \
+    '{center: $center, default_zoom: $default_zoom}'
 }
 
 install_role_record_json() {
@@ -133,6 +161,7 @@ install_role_record_json() {
     --arg role "${role}" \
     --arg sha512 "${file_sha}" \
     --arg file "${stem}.pmtiles" \
+    --argjson viewport "$(viewport_for_offline_map "${role}" "${pmtiles}")" \
     '
       def install_tile_range($range):
         if $range == null then
@@ -170,7 +199,8 @@ install_role_record_json() {
             value: $sha512
           },
           file: $file,
-          "released-at": (($h.released_at // $m.build_id // "") | if . == "" then $fallback_released_at else . end)
+          "released-at": (($h.released_at // $m.build_id // "") | if . == "" then $fallback_released_at else . end),
+          viewport: $viewport
         }
         + (if ($h.dem_encoding // "") == "" then {} else {"dem-encoding": $h.dem_encoding} end)
     ' | jq -e --arg role "${role}" '
@@ -267,11 +297,11 @@ install_ensure_declared_outputs() {
   local offline_maps_json="$1"
 
   if install_offline_maps_require_glyphs "${offline_maps_json}" && ! install_outputs_have_glyphs; then
-    log_warn "glyph output missing; generating glyphs before packaging"
+    log_info "glyph output missing; generating glyphs before packaging"
     "${SCRIPT_DIR}/glyph.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --workdir="${WORKDIR}" --force
   fi
   if install_offline_maps_require_styles "${offline_maps_json}" && ! install_outputs_have_style; then
-    log_warn "style output missing; generating style before packaging"
+    log_info "style output missing; generating style before packaging"
     "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --workdir="${WORKDIR}"
   fi
 }

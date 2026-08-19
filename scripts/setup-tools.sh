@@ -923,6 +923,35 @@ check_glyph_tooling() {
   return 0
 }
 
+check_mapbox_vector_tile() {
+  if "${VENV_PYTHON}" -c "import mapbox_vector_tile" 2>/dev/null; then
+    log_info "mapbox_vector_tile already installed"
+    return 0
+  fi
+
+  if in_nix_environment; then
+    log_warn "mapbox_vector_tile is not available in Nix environment"
+    log_warn "pip-installed binary packages (shapely) are incompatible with Nix Python"
+    log_warn "viewport center calculation will use fallback (bounds center)"
+    return 0
+  fi
+
+  log_warn "mapbox_vector_tile is not installed; attempting pip install"
+
+  if ! ensure_pip; then
+    log_error "cannot install mapbox_vector_tile because pip is not available"
+    return 1
+  fi
+
+  if ! run_pip install mapbox-vector-tile; then
+    log_error "failed to install mapbox_vector_tile via pip; install it manually with: python3 -m pip install --break-system-packages --user mapbox-vector-tile"
+    return 1
+  fi
+
+  log_info "mapbox_vector_tile installed via pip"
+  return 0
+}
+
 main() {
   mkdir -p "${BIN_DIR}" "${BUILD_ROOT}"
 
@@ -940,6 +969,9 @@ main() {
     failed=1
   fi
   if ! check_glyph_tooling; then
+    failed=1
+  fi
+  if ! check_mapbox_vector_tile; then
     failed=1
   fi
   if ! write_pip_wrapper "${VENV_PYTHON}"; then

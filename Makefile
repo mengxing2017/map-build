@@ -12,9 +12,10 @@ ROLE           ?= both
 FORMAT         ?= both
 IMPORT_FORMAT  ?= zip
 GLYPH          ?= 0
+FORCE_BUILDING ?= 0
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem glyph style verify verify-dem pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem glyph style verify verify-dem pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip lint diff-products
 
 init: init-workdir
 
@@ -61,7 +62,7 @@ build: init-workdir
 	  basename="$$(WORKDIR="$(WORKDIR)" REGION="$(REGION)" ./scripts/region-pbf-basename.sh "$(REGION)" 2>/dev/null || printf '%s-latest.osm.pbf\n' "$(REGION_BASENAME)")"; \
 	  input="mirror/$$basename"; \
 	fi; \
-	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ROLE)" --glyph="$(GLYPH)"
+	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" FORCE_BUILDING="$(FORCE_BUILDING)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ROLE)" --glyph="$(GLYPH)" $(if $(filter 1,$(FORCE_BUILDING)),--force-building,)
 
 build-dem: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/build-dem.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(DEM_SOURCE),--source="$(DEM_SOURCE)",) $(if $(DEM_INPUT),--input="$(DEM_INPUT)",) $(if $(DEM_ENCODING),--encoding="$(DEM_ENCODING)",)
@@ -94,6 +95,16 @@ prepare-import:
 
 prepare-import-all:
 	WORKDIR="$(WORKDIR)" ./scripts/prepare-import.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role=both --format="$(IMPORT_FORMAT)"
+
+lint:
+	WORKDIR="$${WORKDIR:-/tmp/huavd-map-build}" ./scripts/style-lint.sh
+	WORKDIR="$${WORKDIR:-/tmp/huavd-map-build}" ./scripts/viewport-lint.sh
+
+diff-products:
+	@if [[ -z "$(REGION_A)" || -z "$(REGION_B)" ]]; then \
+		echo "usage: make diff-products REGION_A=china/guangxi REGION_B=china/guangdong"; exit 1; \
+	fi
+	WORKDIR="$${WORKDIR:-/tmp/huavd-map-build}" ./scripts/diff-region-products.sh "$(REGION_A)" "$(REGION_B)" "$(YYYYMMDD)"
 
 clean:
 	rm -rf "$(WORKDIR)/staging/$(SESSION)" \

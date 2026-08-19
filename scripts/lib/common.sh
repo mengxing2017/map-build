@@ -21,6 +21,7 @@ REGION="${REGION:-china/guangxi}"
 YYYYMMDD="${YYYYMMDD:-$(date -u +%Y%m%d)}"
 ROLE="${ROLE:-}"
 SESSION="${SESSION:-}"
+FORCE_BUILDING="${FORCE_BUILDING:-0}"
 
 if [[ -z "${NO_COLOR:-}" && -t 2 ]]; then
   HUAVD_COLOR_INFO=$'\033[32m'
@@ -156,6 +157,10 @@ normalize_session_vars() {
 
 outputs_dir() {
   printf '%s/outputs\n' "${WORKDIR}"
+}
+
+report_dir() {
+  printf '%s/report\n' "${REPO_ROOT}"
 }
 
 mirror_dir() {
@@ -312,6 +317,7 @@ parse_common_arg() {
     --yyyymmdd=*) YYYYMMDD="${arg#*=}"; SESSION=""; return 0 ;;
     --session=*) SESSION="${arg#*=}"; return 0 ;;
     --role=*) ROLE="${arg#*=}"; return 0 ;;
+    --force-building) FORCE_BUILDING=1; return 0 ;;
     *) return 1 ;;
   esac
 }

@@ -358,6 +358,11 @@ building_role_enabled() {
   [[ "$(region_asset_role "${region}")" == "building-vector" && "$(region_source_type "${region}")" == "derived-building" ]]
 }
 
+building_role_allowed() {
+  local region="$1"
+  [[ "${FORCE_BUILDING}" == "1" ]] || building_role_enabled "${region}"
+}
+
 region_basename() {
   local region="$1"
   printf '%s\n' "${region##*/}"
@@ -511,17 +516,22 @@ tippecanoe_resolve() {
   local role="${2:-base}"
   local tip_json
   tip_json="$(tippecanoe_json)"
-  local resolved
+  local resolved baseline
   resolved="$(jq -c '.defaults' "${tip_json}")"
 
+  if baseline="$(jq -c '.defaults.high_density_baseline // empty' "${tip_json}")" \
+     && [[ -n "${baseline}" && "${baseline}" != "null" ]]; then
+    resolved="$(jq -c -s '.[0] + .[1]' <(printf '%s\n' "${resolved}") <(printf '%s\n' "${baseline}"))"
+  fi
+
   if [[ "${role}" == "building" ]]; then
-    resolved="$(jq -c '. as $root | $root.defaults + {
-      min_zoom: $root.building_vector.min_zoom,
-      max_zoom: $root.building_vector.max_zoom,
-      maximum_tile_bytes: $root.building_vector.maximum_tile_bytes,
-      output_role: $root.building_vector.output_role,
-      source_layers: $root.building_vector.source_layers
-    }' "${tip_json}")"
+    resolved="$(jq -c -s '.[0] + {
+      min_zoom: .[1].building_vector.min_zoom,
+      max_zoom: .[1].building_vector.max_zoom,
+      maximum_tile_bytes: .[1].building_vector.maximum_tile_bytes,
+      output_role: .[1].building_vector.output_role,
+      source_layers: .[1].building_vector.source_layers
+    }' <(printf '%s\n' "${resolved}") "${tip_json}")"
   fi
 
   while IFS= read -r override; do

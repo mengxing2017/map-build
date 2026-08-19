@@ -29,6 +29,12 @@ defaults:
     - "place_label"
     - "poi_label"
     - "transport_label"
+  high_density_baseline:
+    max_zoom: 14
+    maximum_tile_bytes: 2097152
+    drop_densest_as_needed: true
+    coalesce_densest_as_needed: true
+    building_height_derivation: "levels * 3 + 1 meters when height is absent"
 
 metadata:
   data_license: "ODbL-1.0"
@@ -37,9 +43,9 @@ metadata:
   vector_layer_count: 13
 
 high_density:
-  - region_match: "japan/tokyo"
-    max_zoom: 14
-    maximum_tile_bytes: 2097152
+  - region_match: "japan/tokyo-tokyo"
+    max_zoom: 15
+    maximum_tile_bytes: 3145728
     drop_densest_as_needed: true
     coalesce_densest_as_needed: true
     building_height_derivation: "levels * 3 + 1 meters when height is absent"
@@ -56,8 +62,8 @@ high_density:
     coalesce_densest_as_needed: true
     building_height_derivation: "levels * 3 + 1 meters when height is absent"
   - region_match: "china/hong-kong"
-    max_zoom: 14
-    maximum_tile_bytes: 2097152
+    max_zoom: 15
+    maximum_tile_bytes: 3145728
     drop_densest_as_needed: true
     coalesce_densest_as_needed: true
     building_height_derivation: "levels * 3 + 1 meters when height is absent"

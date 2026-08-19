@@ -158,8 +158,7 @@ def required(value, field, id)
   value
 end
 
-depths = {}
-catalog_regions = regions.map do |region|
+def build_catalog_entry(region, index, config, depths, asset_role_override = nil)
   id = region.fetch("id")
   huavd = region.fetch("huavd", {})
   parent_id = region.dig("geofabrik", "parent_region")
@@ -167,13 +166,13 @@ catalog_regions = regions.map do |region|
   display_name = required(region["display_name"], "display_name", id)
   display_name_zh = region["display_name_zh"] || ZH_BY_ID[id] || ZH_BY_NAME[display_name] || display_name
 
-  {
+  entry = {
     "id" => id,
     "slug" => required(region["slug"], "slug", id),
     "region_id" => required(huavd["region_id"], "huavd.region_id", id),
     "depth" => depth_for(index, id, depths, []),
     "parent_region" => parent_region_id,
-    "asset_role" => inherited(index, id, "huavd", "asset_role") || "base-vector",
+    "asset_role" => asset_role_override || inherited(index, id, "huavd", "asset_role") || "base-vector",
     "source_id" => source_id_for(index, id, config),
     "source_type" => inherited(index, id, "huavd", "source_type") || "osm-pbf",
     "style_id" => inherited(index, id, "huavd", "style_id") || "osm-dev",
@@ -183,17 +182,39 @@ catalog_regions = regions.map do |region|
     "replacement_region_id" => huavd["replacement_region_id"],
     "display_name" => display_name,
     "display_name_zh" => display_name_zh
-  }.tap do |entry|
-    entry.delete("parent_region") if entry["parent_region"].nil?
-    entry.delete("asset_role") if entry["asset_role"] == "base-vector"
-    entry.delete("source_id") if entry["source_id"].nil?
-    entry.delete("source_type") if entry["source_type"] == "osm-pbf"
-    entry.delete("style_id") if entry["style_id"] == "osm-dev"
-    entry.delete("mapping_status") if entry["mapping_status"] == "pending-source-id"
-    entry.delete("priority") if entry["priority"] == "global-skeleton"
-    entry.delete("deprecated") unless entry["deprecated"]
-    entry.delete("replacement_region_id") if entry["replacement_region_id"].nil?
-    entry.delete("display_name_zh") if entry["display_name_zh"] == entry["display_name"]
+  }
+
+  # Clean up default/nil values
+  entry.delete("parent_region") if entry["parent_region"].nil?
+  entry.delete("asset_role") if entry["asset_role"] == "base-vector"
+  entry.delete("source_id") if entry["source_id"].nil?
+  entry.delete("source_type") if entry["source_type"] == "osm-pbf"
+  entry.delete("style_id") if entry["style_id"] == "osm-dev"
+  entry.delete("mapping_status") if entry["mapping_status"] == "pending-source-id"
+  entry.delete("priority") if entry["priority"] == "global-skeleton"
+  entry.delete("deprecated") unless entry["deprecated"]
+  entry.delete("replacement_region_id") if entry["replacement_region_id"].nil?
+  entry.delete("display_name_zh") if entry["display_name_zh"] == entry["display_name"]
+
+  entry
+end
+
+depths = {}
+catalog_regions = []
+
+regions.each do |region|
+  huavd = region.fetch("huavd", {})
+  
+  # Support multiple asset_roles per region
+  asset_roles = huavd["asset_roles"]
+  if asset_roles.is_a?(Array) && !asset_roles.empty?
+    # Generate one entry per asset_role
+    asset_roles.each do |asset_role|
+      catalog_regions << build_catalog_entry(region, index, config, depths, asset_role)
+    end
+  else
+    # Single asset_role (backward compatible)
+    catalog_regions << build_catalog_entry(region, index, config, depths)
   end
 end
 

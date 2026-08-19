@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=lib/config.sh
 source "${SCRIPT_DIR}/lib/config.sh"
+# shellcheck source=lib/viewport.sh
+source "${SCRIPT_DIR}/lib/viewport.sh"
 
 STYLE_LOCALE="${STYLE_LOCALE:-}"
 PMTILES_URL="${PMTILES_URL:-}"
@@ -42,6 +44,21 @@ glyphs_url="${glyphs_template//\{locale\}/${STYLE_LOCALE}}"
 style_path="$(build_style_path)"
 ensure_dir "$(dirname -- "${style_path}")"
 
+base_pmtiles="$(build_pmtiles_path base)"
+viewport_json="{}"
+if [[ -f "${base_pmtiles}" ]]; then
+  read -r center_lng center_lat weight < <(viewport_extract_center "${base_pmtiles}")
+  default_zoom="$(viewport_calc_default_zoom "${base_pmtiles}")"
+  viewport_json="$(jq -n \
+    --argjson center "[${center_lng}, ${center_lat}]" \
+    --argjson default_zoom "${default_zoom}" \
+    --argjson min_zoom 0 \
+    --argjson max_zoom 18 \
+    '{center: $center, default_zoom: $default_zoom, min_zoom: $min_zoom, max_zoom: $max_zoom}')"
+else
+  log_warn "base.pmtiles not found, viewport metadata will be empty"
+fi
+
 jq -n \
   --slurpfile config "${styles_config}" \
   --arg name "HUAVD offline vector style" \
@@ -50,6 +67,7 @@ jq -n \
   --arg source_url "${source_url}" \
   --arg glyphs_url "${glyphs_url}" \
   --arg locale "${STYLE_LOCALE}" \
+  --argjson viewport "${viewport_json}" \
   '
     ($config[0]) as $c
     | ($c.locales[] | select(.tag == $locale)) as $locale_config
@@ -84,11 +102,13 @@ jq -n \
             "text-field": text_field($name_fields),
             "text-font": (.font_stack_by_locale[$locale] // $locale_font_stack // .font_stack // ["NotoSans-Regular"]),
             "text-size": (.text_size // 12),
-            "text-anchor": "center"
+            "text-anchor": "center",
+            "text-allow-overlap": (.text_allow_overlap // false),
+            "text-ignore-placement": (.text_ignore_placement // false),
+            "text-optional": (.text_optional // false)
           }
-          + (if .placement then {"symbol-placement": .placement} else {} end)
-          + (if .symbol_spacing then {"symbol-spacing": .symbol_spacing} else {} end)
-          + (if .text_optional == true then {"text-optional": true} else {} end)),
+          + (if .placement then {"symbol-placement": .placement} else {"symbol-placement": "point"} end)
+          + (if .symbol_spacing then {"symbol-spacing": .symbol_spacing} else {} end)),
           paint: {
             "text-color": "#1f2933",
             "text-halo-color": "#ffffff",
@@ -97,7 +117,8 @@ jq -n \
         }))
       ),
       metadata: {
-        "huavd:style-locale": $locale
+        "huavd:style-locale": $locale,
+        "huavd:viewport": $viewport
       }
     }
   ' > "${style_path}"
