@@ -148,26 +148,56 @@ huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf
 
 ```bash
 export REGION=china/guangxi
-export YYYYMM=202607
+export YYYYMMDD=20260818
 make build
 
-make build REGION=china/guangxi YYYYMM=202607 ROLE=base
+make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 ```
 
 | 变量 | 默认值 | 说明 |
 | :--- | :--- | :--- |
 | `WORKDIR` | `/tmp/huavd-map-build` | 构建工作目录，包含 `mirror/`、`staging/`、`cache/`、`outputs/` |
 | `REGION` | `china/guangxi` | region id，必须存在于 `config/regions.yaml` |
-| `YYYYMM` | 当前 UTC 月 | 输出版本月份，格式为 6 位数字，例如 `202607` |
-| `SESSION` | `{region-slug}-{YYYYMM}` | 构建会话名，例如 `china-guangxi-202607`；通常不需要手动设置 |
+| `YYYYMMDD` | 当前 UTC 日 | 输出版本日，格式为 8 位数字，例如 `20260818` |
+| `SESSION` | `{region-slug}-{YYYYMMDD}` | 构建会话名，例如 `china-guangxi-20260818`；通常不需要手动设置 |
 | `INPUT` | 空 | `make build` 的输入 PBF；为空时自动使用 `mirror/{geofabrik.basename}` |
 | `ROLE` | `both` | 构建或处理的资产角色：`base`、`building`、`both` |
 | `FORMAT` | `both` | `make pack` 的包格式：`tar`、`zip`、`both` |
 | `IMPORT_FORMAT` | `zip` | `make prepare-import` 的导入包格式：`zip` 或 `tar` |
 | `GLYPH` | `0` | `make build` 是否同时生成 glyph 和 style：`0` 或 `1` |
 | `HUAVD_MAP_BUILD_MACHINE_HOME` | `/opt/huavd-map-build` | 构建机初始化目标目录，用于 `init-build-machine-workdir` |
+| `HUAVD_MAP_PACKAGE_VERSION` | 来自 `regions.yaml` 模板 | 全局覆盖 manifest / install.json 的 `package-version`；命中后跳过 region 模板（详见 `package-version 解析规则`） |
+| `HUAVD_MAP_PACKAGE_VERSION_BASE` | 同上 | 仅覆盖 base role |
+| `HUAVD_MAP_PACKAGE_VERSION_BUILDING` | 同上 | 仅覆盖 building role |
+| `HUAVD_MAP_PACKAGE_VERSION_DEM` | 同上 | 仅覆盖 dem role |
 
-`SESSION` 与 `YYYYMM` 同时设置时，以显式 `SESSION` 为准；脚本会从 `SESSION` 末尾反推 `YYYYMM`。`ROLE=both` 会处理 base 和 building，其中 building 只有在 region 配置为 `huavd.asset_role: building-vector` 且 `huavd.source_type: derived-building` 时才可用。
+`SESSION` 与 `YYYYMMDD` 同时设置时，以显式 `SESSION` 为准；脚本会从 `SESSION` 末尾反推 `YYYYMMDD`。`ROLE=both` 会处理 base 和 building，其中 building 只有在 region 配置为 `huavd.asset_role: building-vector` 且 `huavd.source_type: derived-building` 时才可用。
+
+### package-version 解析规则
+
+`manifest.huavd_record.package_version`、`install.json` 的 `offline_maps[].package-version` 与 `bundles[].bundle-version` 都从同一个值派生。`scripts/lib/config.sh:region_package_version()` 按以下优先级解析：
+
+1. **per-role env**：`HUAVD_MAP_PACKAGE_VERSION_BASE` / `_BUILDING` / `_DEM`（按 role 大写）。
+2. **全局 env**：`HUAVD_MAP_PACKAGE_VERSION`。
+3. **region 模板**：沿 `geofabrik.parent_region` 上溯读取 `huavd.package_version_template`。
+4. **per-role 默认**：`huavd.package_version_template_per_role[<role>]`（`{yyyymmdd}.{role}` 之外常用 `-building` / `-dem` 模式）。
+5. **全局默认**：`huavd.default_package_version_template`，缺省回落 `{yyyymmdd}.{role}`。
+
+命中规则 1–2 后跳过模板渲染，并 `INFO package_version source=env (...=...)` 日志记录来源，便于排查 CI 中漏 `unset` 的覆盖。env 值必须匹配 `^[A-Za-z0-9._+-]+$`，包含空格或其它字符会 `die` 退出。
+
+模板支持两个占位符：
+
+- `{yyyymmdd}` → 当前 `YYYYMMDD`（如 `20260818`）。
+- `{role}` → 当前 role（`base` / `building` / `dem`）。
+
+**历史契约**：当 region 自带模板（不在 `huavd.default_package_version_template` 之下）且 role 是 `building` 或 `dem` 时，第一个 `.{yyyymmdd}` 会被替换为 `-<role>.{yyyymmdd}`。仓库当前没有 region 使用这种模板，仅作记录：
+
+| region 模板 | base | building | dem |
+| :--- | :--- | :--- | :--- |
+| `v1.0.{yyyymmdd}.cn` | `v1.0.20260818.cn` | `v1.0-building.20260818.cn` | `v1.0-dem.20260818.cn` |
+| `1.0.{yyyymmdd}.base` | `1.0.20260818.base` | `1.0-building.20260818.base` | `1.0-dem.20260818.base` |
+
+注：纯 `{yyyymmdd}.{role}`（无前缀）和不含 `.{yyyymmdd}` 的模板不会触发替换；`per-role env` / `全局 env` 也不经过这一步。
 
 ### Makefile 入口
 
@@ -176,26 +206,29 @@ make build REGION=china/guangxi YYYYMM=202607 ROLE=base
 | `make setup` | 安装或检查 `osmium`、`tippecanoe`、`pmtiles` 等工具 | `make setup` |
 | `make doctor` | 检查外部命令、YAML/JSON 解析和关键配置 | `make doctor` |
 | `make init` | `make init-workdir` 的别名 | `make init` |
-| `make init-workdir` | 初始化当前 `WORKDIR` 目录结构 | `make init-workdir SESSION=china-guangxi-202607` |
+| `make init-workdir` | 初始化当前 `WORKDIR` 目录结构 | `make init-workdir SESSION=china-guangxi-20260818` |
 | `make install-config` | 初始化 `WORKDIR` 并复制当前 `config/` | `make install-config WORKDIR=/data/huavd-map-build` |
-| `make init-build-machine-workdir` | 初始化构建机固定目录 | `make init-build-machine-workdir SESSION=china-guangxi-202607` |
+| `make init-build-machine-workdir` | 初始化构建机固定目录 | `make init-build-machine-workdir SESSION=china-guangxi-20260818` |
 | `make install-build-machine-config` | 初始化构建机固定目录并复制配置 | `make install-build-machine-config` |
 | `make catalog` | 从 `config/regions.yaml` 生成 region catalog 快照 | `make catalog` |
 | `make fetch` | 下载 region 配置中的 Geofabrik PBF 和 `.md5`，并执行 MD5 校验 | `make fetch REGION=china/guangxi` |
-| `make build` | 从 PBF 构建 PMTiles、metadata、manifest、attribution 和 sha512 | `make build REGION=china/guangxi YYYYMM=202607 ROLE=base` |
-| `make glyph` | 生成当前 session 的 glyphs 目录 | `make glyph REGION=china/guangxi YYYYMM=202607` |
-| `make style` | 生成当前 session 的 MapLibre style JSON | `make style REGION=china/guangxi YYYYMM=202607` |
-| `make verify` | 验证 PMTiles header、metadata、manifest 和 SHA-512 | `make verify REGION=china/guangxi YYYYMM=202607 ROLE=both` |
-| `make pack` | 生成 tar/zip 分发包 | `make pack SESSION=china-guangxi-202607 ROLE=both FORMAT=both` |
-| `make pack-tar` | 只生成 `.bundle.tar.gz` | `make pack-tar SESSION=china-guangxi-202607 ROLE=base` |
-| `make pack-zip` | 只生成 `.bundle.zip` | `make pack-zip SESSION=china-guangxi-202607 ROLE=base` |
+| `make fetch-dem` | 拉取或拷贝 `config/dem.yaml` 中授权的 DEM 源到 `WORKDIR/mirror/dem/` | `make fetch-dem REGION=china/guangxi DEM_SOURCE=srtm DEM_INPUT=/data/srtm.tif` |
+| `make build` | 从 PBF 构建 PMTiles、metadata、manifest、attribution 和 sha512 | `make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base` |
+| `make build-dem` | 从授权 DEM 源生成 DEM PMTiles、manifest、attribution 和 sha512 | `make build-dem REGION=china/guangxi YYYYMMDD=20260818 DEM_SOURCE=srtm` |
+| `make glyph` | 生成当前 session 的 glyphs 目录 | `make glyph REGION=china/guangxi YYYYMMDD=20260818` |
+| `make style` | 生成当前 session 的 MapLibre style JSON | `make style REGION=china/guangxi YYYYMMDD=20260818` |
+| `make verify` | 验证 PMTiles header、metadata、manifest、SHA-512；`--strict` 还会校验 `package_version` 与 install.json `package-version` / `bundle-version` | `make verify REGION=china/guangxi YYYYMMDD=20260818 ROLE=both` |
+| `make verify-dem` | 严格模式验证 DEM PMTiles、metadata、manifest 与 SHA-512 | `make verify-dem REGION=china/guangxi YYYYMMDD=20260818` |
+| `make pack` | 生成 tar/zip 分发包 | `make pack SESSION=china-guangxi-20260818 ROLE=both FORMAT=both` |
+| `make pack-tar` | 只生成 `.bundle.tar.gz` | `make pack-tar SESSION=china-guangxi-20260818 ROLE=base` |
+| `make pack-zip` | 只生成 `.bundle.zip` | `make pack-zip SESSION=china-guangxi-20260818 ROLE=base` |
 | `make prepare-import` | 为单个 role 生成 `huavd-map` 导入包；`ROLE=both` 时会转为 `base` | `make prepare-import ROLE=base IMPORT_FORMAT=zip` |
 | `make prepare-import-all` | 将当前 session 中可用的 base/building 聚合为一个导入包 | `make prepare-import-all IMPORT_FORMAT=tar` |
-| `make clean` | 删除当前 session 的 staging、pack/import cache 和 outputs | `make clean SESSION=china-guangxi-202607 ROLE=both` |
-| `make all` | 执行 `build` 和 `pack` | `make all REGION=china/guangxi YYYYMM=202607` |
-| `make release` | 执行 `build`、`pack`、`verify` | `make release REGION=china/guangxi YYYYMM=202607` |
-| `make release-tar` | 执行 `build`、`pack-tar`、`verify` | `make release-tar REGION=china/guangxi YYYYMM=202607` |
-| `make release-zip` | 执行 `build`、`pack-zip`、`verify` | `make release-zip REGION=china/guangxi YYYYMM=202607` |
+| `make clean` | 删除当前 session 的 staging、pack/import cache 和 outputs | `make clean SESSION=china-guangxi-20260818 ROLE=both` |
+| `make all` | 执行 `build` 和 `pack` | `make all REGION=china/guangxi YYYYMMDD=20260818` |
+| `make release` | 执行 `build`、`pack`、`verify` | `make release REGION=china/guangxi YYYYMMDD=20260818` |
+| `make release-tar` | 执行 `build`、`pack-tar`、`verify` | `make release-tar REGION=china/guangxi YYYYMMDD=20260818` |
+| `make release-zip` | 执行 `build`、`pack-zip`、`verify` | `make release-zip REGION=china/guangxi YYYYMMDD=20260818` |
 
 `make release`、`make release-tar`、`make release-zip` 不会自动下载 PBF。首次构建通常先执行 `make fetch`，或通过 `INPUT=/path/to/file.osm.pbf` 指向已有文件。
 
@@ -208,7 +241,7 @@ make build REGION=china/guangxi YYYYMM=202607 ROLE=base
 ```text
 --workdir=<path>
 --region=<id>
---yyyymm=YYYYMM
+--yyyymmdd=YYYYMMDD
 --session=<session>
 --role=base|building|both
 ```
@@ -220,12 +253,12 @@ make build REGION=china/guangxi YYYYMM=202607 ROLE=base
 | `./scripts/setup-tools.sh` | 安装工具链；通过 `TIPPECANOE_VERSION`、`TIPPECANOE_SOURCE_TARBALL`、`TIPPECANOE_BINARY_URL`、`PMTILES_VERSION`、`INSTALL_PREFIX` 等环境变量控制 |
 | `./scripts/doctor.sh` | 检查命令和配置是否可用 |
 | `./scripts/fetch.sh` | `--region=<id> [--workdir=<path>] [--limit-rate=10m]` |
-| `./scripts/build.sh` | `--input=<path-to.osm.pbf> --region=<id> [--yyyymm=YYYYMM] [--role=base\|building\|both] [--workdir=<path>] [--glyph=0\|1] [--force]` |
-| `./scripts/glyph.sh` | `--region=<id> [--yyyymm=YYYYMM] [--workdir=<path>] [--locales=all\|tag[,tag...]] [--force]` |
-| `./scripts/style.sh` | `--region=<id> [--yyyymm=YYYYMM] [--workdir=<path>] [--locale=<tag>] [--pmtiles-url=<url>]` |
-| `./scripts/verify.sh` | `--region=<id> --role=<base\|building\|both> [--yyyymm=YYYYMM] [--session=<session>] [--strict]` |
+| `./scripts/build.sh` | `--input=<path-to.osm.pbf> --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base\|building\|both] [--workdir=<path>] [--glyph=0\|1] [--force]` |
+| `./scripts/glyph.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--locales=all\|tag[,tag...]] [--force]` |
+| `./scripts/style.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--locale=<tag>] [--pmtiles-url=<url>]` |
+| `./scripts/verify.sh` | `--region=<id> --role=<base\|building\|both> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--strict]` |
 | `./scripts/pack.sh` | `--session=<session> [--role=base\|building\|both] [--format=tar\|zip\|both] [--workdir=<path>]` |
-| `./scripts/prepare-import.sh` | `--session=<session> [--role=base\|building\|both] [--format=tar\|zip] [--output=<archive-path>] [--transfer-id=<id>] [--workdir=<path>] [--region=<id>] [--yyyymm=YYYYMM]` |
+| `./scripts/prepare-import.sh` | `--session=<session> [--role=base\|building\|both] [--format=tar\|zip] [--output=<archive-path>] [--transfer-id=<id>] [--workdir=<path>] [--region=<id>] [--yyyymmdd=YYYYMMDD]` |
 | `./scripts/region-pbf-basename.sh` | `[region]`，输出 region 配置中的 `geofabrik.basename` |
 | `./scripts/manifest-catalog.sh` | 生成 region catalog；默认读取 `config/regions.yaml`，写入 `config/derived/catalog.json`；可用 `CONFIG_PATH` 和 `OUTPUT` 覆盖 |
 | `./scripts/init-workdir.sh` | 初始化目录；通过 `HUAVD_MAP_BUILD_HOME`、`HUAVD_MAP_BUILD_SESSION`、`HUAVD_MAP_BUILD_COPY_CONFIG=1` 等环境变量控制 |
@@ -235,15 +268,41 @@ make build REGION=china/guangxi YYYYMM=202607 ROLE=base
 
 | 阶段脚本 | 用法 |
 | :--- | :--- |
-| `./scripts/tags-filter.sh` | `--input=<pbf> --region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymm=YYYYMM]` |
-| `./scripts/export.sh` | `--region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymm=YYYYMM]` |
-| `./scripts/normalize.sh` | `--region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymm=YYYYMM]` |
-| `./scripts/tippecanoe.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymm=YYYYMM]` |
-| `./scripts/metadata.sh` | `--pmtiles=<path> --region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymm=YYYYMM]` |
-| `./scripts/manifest.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymm=YYYYMM]` |
-| `./scripts/attribution.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymm=YYYYMM]` |
+| `./scripts/tags-filter.sh` | `--input=<pbf> --region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/export.sh` | `--region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/normalize.sh` | `--region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/tippecanoe.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/metadata.sh` | `--pmtiles=<path> --region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/manifest.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/attribution.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
 
 ### 常用命令组合
+
+端到端一次构建（日常 region 模板，monthly 路线）：
+
+```bash
+unset HUAVD_MAP_PACKAGE_VERSION \
+      HUAVD_MAP_PACKAGE_VERSION_BASE \
+      HUAVD_MAP_PACKAGE_VERSION_BUILDING \
+      HUAVD_MAP_PACKAGE_VERSION_DEM
+
+export REGION=china/guangxi
+export YYYYMMDD=20260818
+# WORKDIR 默认 /tmp/huavd-map-build，需要显式换盘时再 export WORKDIR
+
+make fetch                      # 下载 Geofabrik PBF + MD5
+make release ROLE=both          # build + pack + verify（含 --strict 校验 package_version）
+make prepare-import-all         # 聚合 base/building 的 .import.zip
+
+# ${WORKDIR}/outputs/ 产物：
+#   china-guangxi-20260818.base.pmtiles          ← vector tiles
+#   china-guangxi-20260818.base.manifest.json    ← .huavd_record.package_version = "20260818.base"
+#   china-guangxi-20260818.building.pmtiles      ← building role (region 启用时)
+#   china-guangxi-20260818.building.manifest.json
+#                                              .huavd_record.package_version = "20260818-building"
+#   china-guangxi-20260818.bundle.zip            ← 含 install.json
+#   china-guangxi-20260818.import.zip            ← huavd-map 导入包
+```
 
 默认 region 快速构建：
 
@@ -255,34 +314,34 @@ make release
 使用已有 PBF，不走网络下载：
 
 ```bash
-make release REGION=china/guangxi YYYYMM=202607 INPUT=/data/osm/guangxi-260726.osm.pbf ROLE=base
+make release REGION=china/guangxi YYYYMMDD=20260818 INPUT=/data/osm/guangxi-260726.osm.pbf ROLE=base
 ```
 
 生成 PMTiles 后再补 glyph 和 style：
 
 ```bash
-make glyph REGION=china/guangxi YYYYMM=202607
-make style REGION=china/guangxi YYYYMM=202607
-make pack REGION=china/guangxi YYYYMM=202607 ROLE=base FORMAT=zip
+make glyph REGION=china/guangxi YYYYMMDD=20260818
+make style REGION=china/guangxi YYYYMMDD=20260818
+make pack REGION=china/guangxi YYYYMMDD=20260818 ROLE=base FORMAT=zip
 ```
 
 构建时同时生成 glyph 和 style：
 
 ```bash
-make build REGION=china/guangxi YYYYMM=202607 GLYPH=1
-make pack REGION=china/guangxi YYYYMM=202607 ROLE=base FORMAT=zip
+make build REGION=china/guangxi YYYYMMDD=20260818 GLYPH=1
+make pack REGION=china/guangxi YYYYMMDD=20260818 ROLE=base FORMAT=zip
 ```
 
 准备 `huavd-map` 导入包：
 
 ```bash
-make prepare-import REGION=china/guangxi YYYYMM=202607 ROLE=base IMPORT_FORMAT=zip
+make prepare-import REGION=china/guangxi YYYYMMDD=20260818 ROLE=base IMPORT_FORMAT=zip
 ```
 
 只重跑基础 PMTiles 验证：
 
 ```bash
-./scripts/verify.sh --region=china/guangxi --yyyymm=202607 --role=base --strict
+./scripts/verify.sh --region=china/guangxi --yyyymmdd=20260818 --role=base --strict
 ```
 
 ## 构建一次地图数据
@@ -295,12 +354,12 @@ make prepare-import REGION=china/guangxi YYYYMM=202607 ROLE=base IMPORT_FORMAT=z
 export REPO_ROOT=/path/to/huavd-map-build
 cd "${REPO_ROOT}"
 export REGION=china/guangxi
-export YYYYMM=202607
+export YYYYMMDD=20260818
 # export WORKDIR=/tmp/huavd-map-build
 # export ROLE=both
 ```
 
-`WORKDIR` 默认是 `/tmp/huavd-map-build`，可以省略。`ROLE` 默认是 `both`，会构建 base，并在 region 启用 building metadata 时同时构建 building；如果只需要基础图层，可设置 `export ROLE=base`。`SESSION` 会由 `REGION` 和 `YYYYMM` 自动推导，例如 `china/guangxi` 与 `202607` 会得到 `china-guangxi-202607`，日常操作不需要手动指定。
+`WORKDIR` 默认是 `/tmp/huavd-map-build`，可以省略。`ROLE` 默认是 `both`，会构建 base，并在 region 启用 building metadata 时同时构建 building；如果只需要基础图层，可设置 `export ROLE=base`。`SESSION` 会由 `REGION` 和 `YYYYMMDD` 自动推导，例如 `china/guangxi` 与 `20260818` 会得到 `china-guangxi-20260818`，日常操作不需要手动指定。
 
 下载 Geofabrik PBF 和 MD5：
 
@@ -346,11 +405,59 @@ make pack
 mirror/{geofabrik.basename}
 ```
 
-其中 `geofabrik.basename` 来自 `config/regions.yaml`，与 `make fetch` 下载和校验的文件名保持一致。`YYYYMM` 只用于输出 session 和产物版本，不参与输入 PBF 文件名推导。对于 `china/guangxi`，当前配置的默认输入会解析为：
+其中 `geofabrik.basename` 来自 `config/regions.yaml`，与 `make fetch` 下载和校验的文件名保持一致。`YYYYMMDD` 只用于输出 session 和产物版本，不参与输入 PBF 文件名推导。对于 `china/guangxi`，当前配置的默认输入会解析为：
 
 ```text
 /tmp/huavd-map-build/mirror/guangxi-latest.osm.pbf
 ```
+
+### 人工定版
+
+默认情况下 `manifest.huavd_record.package_version` 和 `install.json` 的
+`offline_maps[].package-version`、`bundles[].bundle-version` 都由
+`config/regions.yaml` 的 `huavd.package_version_template`（含父子继承）渲染，
+具体规则见上文 `package-version 解析规则` 小节。
+
+如果要锁住与月份无关的 RC 版本号，设 `HUAVD_MAP_PACKAGE_VERSION` 即可跳过模板：
+
+```bash
+export HUAVD_MAP_PACKAGE_VERSION="1.4.0-rc2"
+make fetch REGION=china/guangxi YYYYMMDD=20260818
+make release REGION=china/guangxi YYYYMMDD=20260818
+# ${WORKDIR}/outputs/china-guangxi-20260818.base.pmtiles  ✓
+# ${WORKDIR}/outputs/china-guangxi-20260818.base.manifest.json
+#   .huavd_record.package_version = "1.4.0-rc2"
+# ${WORKDIR}/outputs/china-guangxi-20260818.bundle.zip  (含 install.json)
+#   .offline_maps[0]."package-version" = "1.4.0-rc2"
+#   .bundles[0]."bundle-version"     = "1.4.0-rc2"
+```
+
+per-role 不一致时分别覆盖（`per-role env` 永远优先于 `全局 env`）：
+
+```bash
+export HUAVD_MAP_PACKAGE_VERSION_BASE="1.4.0-base"
+export HUAVD_MAP_PACKAGE_VERSION_BUILDING="1.4.0-bld"
+# HUAVD_MAP_PACKAGE_VERSION_DEM 不设 -> dem 仍走 region 模板
+make release REGION=china/guangxi YYYYMMDD=20260818 ROLE=both
+# base      package-version = "1.4.0-base"
+# building  package-version = "1.4.0-bld"
+# dem       package-version = 走全局默认 ("20260818-dem")
+```
+
+发布构建后用 `verify --strict` 一次性确认所有产物落盘正确：
+
+```bash
+make verify REGION=china/guangxi YYYYMMDD=20260818 ROLE=all --strict
+# OK   manifest package_version (role=base)
+# OK   manifest package_version (role=building)
+# OK   manifest package_version (role=dem)
+# OK   install.json offline_maps package-version
+# OK   install.json bundles bundle-version
+```
+
+构建机或 CI runner 残留的 `HUAVD_MAP_PACKAGE_VERSION*` 会静默吃掉 region 模板
+改动，发布 job 的第一步应显式 `unset`。env 包含空格或其它非法字符（不在
+`[A-Za-z0-9._+-]+`）会 `die` 退出，不会写出一份半成品 manifest。
 
 ## 多级操作场景
 
@@ -369,7 +476,7 @@ make release
 
 ```bash
 export REGION=china/sichuan
-export YYYYMM=202607
+export YYYYMMDD=20260818
 
 make fetch
 make build
@@ -384,7 +491,7 @@ make pack
 ```bash
 for region in china/guangxi china/sichuan china/yunnan; do
   export REGION="${region}"
-  export YYYYMM=202607
+  export YYYYMMDD=20260818
   make fetch
   make release
 done
@@ -396,7 +503,7 @@ CI 可以在 job 环境中声明变量，然后使用相同的短命令：
 
 ```bash
 export REGION=china/guangxi
-export YYYYMM=202607
+export YYYYMMDD=20260818
 export WORKDIR=/tmp/huavd-map-build-ci
 export ROLE=base
 
@@ -409,7 +516,7 @@ make release
 
 ```bash
 export REGION=china/guangxi
-export YYYYMM=202607
+export YYYYMMDD=20260818
 export WORKDIR=/tmp/huavd-map-build-ci
 export ROLE=base
 export INPUT=/cache/maps/guangxi-latest.osm.pbf
@@ -419,6 +526,75 @@ make release
 ```
 
 现有的命令行变量覆盖方式仍然兼容，适合临时切换参数；推荐文档中的主流程使用环境变量继承模式。
+
+### Release pipeline: 锁版本号
+
+CI 同一个 region 既有日常构建（每月走 `regions.yaml` 模板），又有发布构建（需要锁定 `1.4.0-rc2` 这类与月份无关的版本）。`huavd-map-build` 的 manifest、install.json、bundle 都通过同一套 `region_package_version()` 解析器，详见上文 `package-version 解析规则` 小节。
+
+#### 日常构建 job
+
+显式 `unset` 是为了避免上游 job 残留 `HUAVD_MAP_PACKAGE_VERSION*` 影响本次构建：
+
+```bash
+# 入口：显式清空覆盖
+unset HUAVD_MAP_PACKAGE_VERSION \
+      HUAVD_MAP_PACKAGE_VERSION_BASE \
+      HUAVD_MAP_PACKAGE_VERSION_BUILDING \
+      HUAVD_MAP_PACKAGE_VERSION_DEM
+
+export REGION=china/guangxi
+export YYYYMMDD=20260818
+
+make fetch
+make release ROLE=both
+make verify ROLE=all --strict
+
+# 产物在 ${WORKDIR}/outputs/ 下：
+#   china-guangxi-20260818.base.pmtiles
+#   china-guangxi-20260818.base.manifest.json  .huavd_record.package_version = "20260818.base"
+#   china-guangxi-20260818.building.pmtiles
+#   china-guangxi-20260818.building.manifest.json  .huavd_record.package_version = "20260818-building"
+#   china-guangxi-20260818.bundle.zip  install.json .offline_maps[0]."package-version" = "20260818.base"
+```
+
+#### 发布构建 job
+
+```bash
+unset HUAVD_MAP_PACKAGE_VERSION \
+      HUAVD_MAP_PACKAGE_VERSION_BASE \
+      HUAVD_MAP_PACKAGE_VERSION_BUILDING \
+      HUAVD_MAP_PACKAGE_VERSION_DEM
+
+export REGION=china/guangxi
+export YYYYMMDD=20260818
+# 发布锁版本，覆盖 base / building，dem 不动
+export HUAVD_MAP_PACKAGE_VERSION_BASE="1.4.0-base"
+export HUAVD_MAP_PACKAGE_VERSION_BUILDING="1.4.0-bld"
+
+make fetch
+make release ROLE=both
+make verify ROLE=all --strict
+# OK   manifest package_version (role=base)         => "1.4.0-base"
+# OK   manifest package_version (role=building)     => "1.4.0-bld"
+# OK   manifest package_version (role=dem)          => 走全局默认 ("20260818-dem")
+# OK   install.json offline_maps package-version
+# OK   install.json bundles bundle-version
+```
+
+如果不区分 role，所有产物都用同一个版本号：
+
+```bash
+unset HUAVD_MAP_PACKAGE_VERSION_BASE \
+      HUAVD_MAP_PACKAGE_VERSION_BUILDING \
+      HUAVD_MAP_PACKAGE_VERSION_DEM
+export HUAVD_MAP_PACKAGE_VERSION="1.4.0-rc2"
+make release REGION=china/guangxi YYYYMMDD=20260818 ROLE=both
+# 所有 manifest/install.json 的 package-version 都是 "1.4.0-rc2"
+```
+
+> 构建机或 runner 上一次构建残留的 `HUAVD_MAP_PACKAGE_VERSION*` 会静默吃掉
+> region 模板修改，所以每个 job 入口都先 `unset`，避免排查“明明改了 regions.yaml
+> 怎么产物没变”的怪问题。
 
 ### 手动下载地图数据
 
@@ -438,7 +614,7 @@ guangxi-latest.osm.pbf
 guangxi-latest.osm.pbf.md5
 ```
 
-浏览器或内部镜像下载出的文件名可能是带日期的快照名，例如 `guangxi-260726.osm.pbf`。这种文件名不会由 `REGION` 和 `YYYYMM` 自动推导，推荐直接用 `INPUT` 指定。
+浏览器或内部镜像下载出的文件名可能是带日期的快照名，例如 `guangxi-260726.osm.pbf`。这种文件名不会由 `REGION` 和 `YYYYMMDD` 自动推导，推荐直接用 `INPUT` 指定。
 
 方案 A：保留实际下载文件名，通过 `INPUT` 指定：
 
@@ -446,9 +622,10 @@ guangxi-latest.osm.pbf.md5
 export REPO_ROOT=/path/to/huavd-map-build
 cd "${REPO_ROOT}"
 export REGION=china/guangxi
-export YYYYMM=202607
+export YYYYMMDD=20260818
 export WORKDIR=/tmp/huavd-map-build
 export INPUT=/path/to/guangxi-260726.osm.pbf
+export HUAVD_MAP_PACKAGE_VERSION="1.4.0-rc2"  # 锁 RC 版本，跳过 region 模板
 
 make release
 ```
@@ -466,8 +643,9 @@ make -C "${REPO_ROOT}" release
 export REPO_ROOT=/path/to/huavd-map-build
 cd "${REPO_ROOT}"
 export REGION=china/guangxi
-export YYYYMM=202607
+export YYYYMMDD=20260818
 export WORKDIR=/tmp/huavd-map-build
+export HUAVD_MAP_PACKAGE_VERSION="1.4.0-rc2"  # 锁 RC 版本，跳过 region 模板
 
 mkdir -p "${WORKDIR}/mirror"
 # 将实际下载的 PBF 和 MD5 放入 mirror 后，链接为配置中的默认输入名
@@ -496,18 +674,18 @@ ${WORKDIR}/outputs/
 常见文件名：
 
 ```text
-china-guangxi-202607.base.pmtiles
-china-guangxi-202607.base.pmtiles.sha512
-china-guangxi-202607.base.manifest.json
-china-guangxi-202607.base.attribution.json
-china-guangxi-202607.building.pmtiles
-china-guangxi-202607.building.pmtiles.sha512
-china-guangxi-202607.building.manifest.json
-china-guangxi-202607.building.attribution.json
-china-guangxi-202607.import.zip
-china-guangxi-202607.import.zip.sha512
-china-guangxi-202607.bundle.tar.gz
-china-guangxi-202607.bundle.zip
+china-guangxi-20260818.base.pmtiles
+china-guangxi-20260818.base.pmtiles.sha512
+china-guangxi-20260818.base.manifest.json
+china-guangxi-20260818.base.attribution.json
+china-guangxi-20260818.building.pmtiles
+china-guangxi-20260818.building.pmtiles.sha512
+china-guangxi-20260818.building.manifest.json
+china-guangxi-20260818.building.attribution.json
+china-guangxi-20260818.import.zip
+china-guangxi-20260818.import.zip.sha512
+china-guangxi-20260818.bundle.tar.gz
+china-guangxi-20260818.bundle.zip
 ```
 
 `ROLE=building` 只有在 `config/regions.yaml` 中对应 region 启用 building metadata 时才会构建。否则使用 `ROLE=both` 会跳过 building 并给出 warning。
@@ -521,10 +699,10 @@ china-guangxi-202607.bundle.zip
 导入元数据中的 `name` 必须是不带 `.pmtiles` 扩展名的 stem，例如：
 
 ```text
-china-guangxi-202607.base
+china-guangxi-20260818.base
 ```
 
-`huavd-map` 会根据 `name` 自动追加 `.pmtiles`。如果把 `name` 写成 `china-guangxi-202607.base.pmtiles`，运行时文件名会变成 `china-guangxi-202607.base.pmtiles.pmtiles`。
+`huavd-map` 会根据 `name` 自动追加 `.pmtiles`。如果把 `name` 写成 `china-guangxi-20260818.base.pmtiles`，运行时文件名会变成 `china-guangxi-20260818.base.pmtiles.pmtiles`。
 
 ## 准备导入包
 
@@ -532,7 +710,7 @@ china-guangxi-202607.base
 
 ```bash
 export REGION=china/guangxi
-export YYYYMM=202607
+export YYYYMMDD=20260818
 export ROLE=base
 
 make prepare-import
@@ -547,8 +725,8 @@ make prepare-import IMPORT_FORMAT=tar
 默认输出文件：
 
 ```text
-${WORKDIR}/outputs/china-guangxi-202607.import.zip
-${WORKDIR}/outputs/china-guangxi-202607.import.zip.sha512
+${WORKDIR}/outputs/china-guangxi-20260818.import.zip
+${WORKDIR}/outputs/china-guangxi-20260818.import.zip.sha512
 ```
 
 压缩包内容：
@@ -558,7 +736,7 @@ import-package/
   install.json
   .staging/
     {transfer_id}/
-      china-guangxi-202607.base.pmtiles
+      china-guangxi-20260818.base.pmtiles
 ```
 
 实际 archive 顶层就是 `install.json` 和 `.staging/`；上面的 `import-package/` 只是建议解压目录名。`prepare-import` 会读取 `${WORKDIR}/outputs/${SESSION}.${ROLE}.manifest.json` 和 `${WORKDIR}/outputs/${SESSION}.${ROLE}.pmtiles.sha512`，复制 PMTiles 到导入包 staging 缓存，并校验复制后的 SHA-512。脚本不会发送 HTTP 请求，也不要求 `huavd-map` 服务正在运行。
@@ -591,6 +769,44 @@ install.json
 ```
 
 `install.json` 描述如何把包内 PMTiles 作为 `offline-maps` 单资产导入到 `huavd-map`，包括稳定的 `id`、不带扩展名的 `name`、`source-id`、`asset-role`、`source-type`、`coord-system`、`checksum` 和 staging 文件名。bundle 只表达多个 offline-map 的数据库关联关系，不复制 PMTiles 字节，也不替代 `huavd-map` 的导入状态机。
+
+## DEM 角色
+
+DEM（数字高程）是独立于 OSM PBF 的离线栅格资产，使用 `config/dem.yaml` 中已声明的授权源（不要在脚本里硬编码公共下载 URL）。`make build`/`make release` 默认不跑 DEM，需要按下面的端到端流程单独走：
+
+```bash
+unset HUAVD_MAP_PACKAGE_VERSION \
+      HUAVD_MAP_PACKAGE_VERSION_DEM
+
+export REGION=china/guangxi
+export YYYYMMDD=20260818
+export DEM_SOURCE=srtm                # config/dem.yaml 中声明的源 id
+export DEM_ENCODING=terrarium         # mapbox-terrain-rgb | terrarium | heightmap-u16
+export DEM_INPUT=/data/srtm/guangxi.tif  # 已有授权 TIFF；或配合 make fetch-dem 拉取
+
+make fetch-dem
+make build-dem
+make verify-dem
+make pack   ROLE=all FORMAT=zip      # 一次性把 base/building/dem 打入 bundle
+make prepare-import-all
+```
+
+`make fetch-dem` 把授权 DEM 拷贝到 `${WORKDIR}/mirror/dem/`，并写入可被
+`build-dem.sh` 识别的 metadata；`make build-dem` 依赖 `pmtiles` CLI 把 TIFF 栅格
+生成 DEM PMTiles。`build-dem.sh:99` 会调用 `region_package_version "${REGION}" dem`，
+**DEM 现在强依赖 `package_version` 字段**：未设置 `huavd.default_package_version_template`
+或对应 region 模板时（例如自定义 region 还没填 `package_version_template`），
+脚本会 `die` 退出，避免写出没有版本号的 DEM manifest。
+
+`make verify-dem` 总是 `--strict` 模式，会校验：
+
+- `manifest.huavd_record.package_version` 非空且匹配 `^[A-Za-z0-9._+-]+$`。
+- PMTiles magic / spec_version / raster tile_type。
+- metadata 包含 `dem-encoding`（`mapbox-terrain-rgb` / `terrarium` / `heightmap-u16`）和 `huavd:vertical-datum`。
+- PMTiles / manifest / sha512 sidecar 三者一致。
+
+DEM 在 `install.json` 中作为 `offline_maps[]` 的 `asset-role=dem-raster` 条目出现，
+`bundles[].bundle-version` 取 base role 的 `package-version`（不是 dem 自己的）。
 
 ## 清理当前 session
 
