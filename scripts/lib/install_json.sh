@@ -79,6 +79,9 @@ install_role_record_json() {
   pmtiles="$(build_pmtiles_path "${role}")"
   stem="${SESSION}.${role}"
   fallback_id="${SESSION}-${role}"
+  local fallback_package_version
+  fallback_package_version="$(region_package_version "${REGION}" "${role}")"
+  fallback_package_version="${fallback_package_version:-${YYYYMMDD}.${role}}"
 
   [[ -f "${pmtiles}" ]] || {
     install_skip_or_die "${strict}" "PMTiles missing for install.json role=${role}: ${pmtiles}"
@@ -126,6 +129,7 @@ install_role_record_json() {
     --arg fallback_released_at "$(timestamp_utc)" \
     --arg fallback_glyphs_url "$(glyphs_url_template)" \
     --arg fallback_styles_url "$(styles_url)" \
+    --arg fallback_package_version "${fallback_package_version}" \
     --arg role "${role}" \
     --arg sha512 "${file_sha}" \
     --arg file "${stem}.pmtiles" \
@@ -147,7 +151,7 @@ install_role_record_json() {
           id: (($h.id // "") | if . == "" then $fallback_id else . end),
           name: (($h.name // "") | if . == "" then $fallback_name else . end),
           "source-id": (($h.source_id // "") | if . == "" then $fallback_source_id else . end),
-          "package-version": (($h.package_version // "") | if . == "" then "" else . end),
+          "package-version": (($h.package_version // "") | if . == "" then $fallback_package_version else . end),
           "source-revision": ($h.source_revision // null),
           "asset-role": (($h.asset_role // "") | if . == "" then $fallback_asset_role else . end),
           "source-type": (($h.source_type // "") | if . == "" then $fallback_source_type else . end),
@@ -264,11 +268,11 @@ install_ensure_declared_outputs() {
 
   if install_offline_maps_require_glyphs "${offline_maps_json}" && ! install_outputs_have_glyphs; then
     log_warn "glyph output missing; generating glyphs before packaging"
-    "${SCRIPT_DIR}/glyph.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --session="${SESSION}" --workdir="${WORKDIR}" --force
+    "${SCRIPT_DIR}/glyph.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --workdir="${WORKDIR}" --force
   fi
   if install_offline_maps_require_styles "${offline_maps_json}" && ! install_outputs_have_style; then
     log_warn "style output missing; generating style before packaging"
-    "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --session="${SESSION}" --workdir="${WORKDIR}"
+    "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --workdir="${WORKDIR}"
   fi
 }
 
@@ -329,6 +333,16 @@ install_manifest_record_json() {
     return 1
   fi
 
+  local manifest_role
+  manifest_role="$(jq -r '.huavd_record.asset_role // empty' "${manifest}")"
+  local fallback_package_version
+  case "${manifest_role}" in
+    building-vector) fallback_package_version="$(region_package_version "${region}" building)" ;;
+    dem-raster) fallback_package_version="$(region_package_version "${region}" dem)" ;;
+    *) fallback_package_version="$(region_package_version "${region}" base)" ;;
+  esac
+  fallback_package_version="${fallback_package_version:-${YYYYMMDD}.${role:-base}}"
+
   jq -n \
     --slurpfile manifest "${manifest}" \
     --arg fallback_released_at "$(timestamp_utc)" \
@@ -336,6 +350,7 @@ install_manifest_record_json() {
     --arg sha512 "${file_sha}" \
     --arg file "$(basename -- "${pmtiles}")" \
     --arg fallback_name "${stem}" \
+    --arg fallback_package_version "${fallback_package_version}" \
     '
       def install_tile_range($range):
         if $range == null then
@@ -354,7 +369,7 @@ install_manifest_record_json() {
           id: (($h.id // "") | if . == "" then ($file | sub("\\.pmtiles$"; "")) else . end),
           name: (($h.name // "") | if . == "" then $fallback_name else . end),
           "source-id": ($h.source_id // ""),
-          "package-version": ($h.package_version // ""),
+          "package-version": (($h.package_version // "") | if . == "" then $fallback_package_version else . end),
           "source-revision": ($h.source_revision // null),
           "asset-role": ($h.asset_role // ""),
           "source-type": ($h.source_type // ""),

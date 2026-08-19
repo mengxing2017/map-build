@@ -46,6 +46,8 @@ CONTINENTS = {
   }
 }.freeze
 
+DEFAULT_PACKAGE_VERSION_TEMPLATE = "{yyyymmdd}.{role}".freeze
+
 COUNTRY_ID_OVERRIDES = {
   "AQ" => "antarctica",
   "CN" => "china",
@@ -214,7 +216,9 @@ def continent_entry(id, existing = nil)
   merged["huavd"]["asset_role"] ||= "base-vector"
   merged["huavd"]["source_type"] ||= "osm-pbf"
   merged["huavd"]["style_id"] ||= "osm-dev"
-  merged["huavd"]["package_version_template"] = nil unless merged["huavd"].key?("package_version_template")
+  unless merged["huavd"].key?("package_version_template")
+    merged["huavd"]["package_version_template"] = DEFAULT_PACKAGE_VERSION_TEMPLATE
+  end
   merged
 end
 
@@ -237,7 +241,7 @@ def skeleton_entry(id:, display_name:, parent_region:, region_id:)
       "region_id" => region_id,
       "source_id" => nil,
       "mapping_status" => "pending-source-id",
-      "package_version_template" => nil
+      "package_version_template" => DEFAULT_PACKAGE_VERSION_TEMPLATE
     }
   }
 end
@@ -261,7 +265,9 @@ def merge_generated(existing, generated)
   end
   merged["huavd"]["source_id"] = nil unless merged["huavd"].key?("source_id")
   merged["huavd"]["mapping_status"] ||= generated.fetch("huavd").fetch("mapping_status")
-  merged["huavd"]["package_version_template"] = nil unless merged["huavd"].key?("package_version_template")
+  unless merged["huavd"].key?("package_version_template")
+    merged["huavd"]["package_version_template"] = DEFAULT_PACKAGE_VERSION_TEMPLATE
+  end
   merged
 end
 

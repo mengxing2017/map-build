@@ -212,18 +212,58 @@ region_source_type() {
 region_package_version() {
   local region="$1"
   local role="${2:-base}"
-  local template
-  template="$(region_get huavd.package_version_template "${region}")"
-  if [[ -z "${template}" || "${template}" == "null" ]]; then
-    printf '\n'
-    return
+  validate_yyyymmdd "${YYYYMMDD}"
+
+  # 运行期环境变量覆盖（per-role > 全局）。命中后跳过模板渲染并 log 来源。
+  local env_role="${role^^}"
+  local env_var_name="HUAVD_MAP_PACKAGE_VERSION_${env_role}"
+  local env_value="${!env_var_name-${HUAVD_MAP_PACKAGE_VERSION:-}}"
+  local env_source=""
+  if [[ -n "${env_value}" ]]; then
+    env_source="${env_var_name}"
+  elif [[ -n "${HUAVD_MAP_PACKAGE_VERSION:-}" ]]; then
+    env_value="${HUAVD_MAP_PACKAGE_VERSION}"
+    env_source="HUAVD_MAP_PACKAGE_VERSION"
   fi
+
+  local template=""
+  if [[ -z "${env_value}" ]]; then
+    # 父子继承模板，沿 geofabrik.parent_region 上溯
+    template="$(region_get_inherited huavd.package_version_template "${region}" || true)"
+    if [[ -z "${template}" || "${template}" == "null" ]]; then
+      # per-role 默认模板优先，否则使用全局默认
+      local role_template
+      role_template="$(jq -r --arg r "${role}" '.huavd.package_version_template_per_role[$r] // empty' "$(regions_json)")"
+      if [[ -n "${role_template}" && "${role_template}" != "null" ]]; then
+        template="${role_template}"
+      else
+        template="$(jq -r '.huavd.default_package_version_template // "{yyyymmdd}.{role}"' "$(regions_json)")"
+      fi
+    fi
+  else
+    if [[ ! "${env_value}" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+      die "${HUAVD_EXIT_INPUT}" "${env_source} contains invalid chars: ${env_value}"
+    fi
+    log_info "package_version source=env (${env_source}=${env_value})"
+    template="${env_value}"
+  fi
+
+  # 历史契约：building/dem 时把模板中第一个 .{yyyymmdd} 替换为 -<role>.{yyyymmdd}，
+  # 兼容 region 自带模板（如 v1.0.{yyyymmdd}.base 在 building 下变 v1.0-building.20260818.base）。
+  # 占位符提取到变量是为了避免 bash 大括号匹配把 .{yyyymmdd} 的 } 当作 ${...} 闭合符。
+  local yyyymmdd_placeholder="{yyyymmdd}"
+  local role_placeholder="{role}"
+  local yyyymmdd_with_dot=".${yyyymmdd_placeholder}"
   if [[ "${role}" == "building" ]]; then
-    template="${template/.{yyyymm}/-building.{yyyymm}}"
+    template="${template/${yyyymmdd_with_dot}/-building.${yyyymmdd_placeholder}}"
   elif [[ "${role}" == "dem" ]]; then
-    template="${template/.{yyyymm}/-dem.{yyyymm}}"
+    template="${template/${yyyymmdd_with_dot}/-dem.${yyyymmdd_placeholder}}"
   fi
-  printf '%s\n' "${template//\{yyyymm\}/${YYYYMM}}"
+
+  template="${template//${yyyymmdd_placeholder}/${YYYYMMDD}}"
+  template="${template//${role_placeholder}/${role}}"
+
+  printf '%s\n' "${template}"
 }
 
 role_source_id() {

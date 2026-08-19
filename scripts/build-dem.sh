@@ -97,7 +97,7 @@ source_id="$(role_source_id "${REGION}" dem)"
 [[ -n "${source_id}" ]] \
   || die "${HUAVD_EXIT_INPUT}" "region has no source_id for DEM metadata: ${REGION}"
 package_version="$(region_package_version "${REGION}" dem)"
-package_version="${package_version:-${YYYYMM}.dem}"
+[[ -n "${package_version}" ]] || die "${HUAVD_EXIT_INPUT}" "region has no package_version for DEM metadata: ${REGION}"
 attribution="$(dem_source_value "${SOURCE_ID}" attribution)"
 data_license="$(dem_source_value "${SOURCE_ID}" data_license)"
 attribution="${attribution:-TBD by licensed DEM provider}"

@@ -2,7 +2,7 @@ schema_version: 1
 description: "huavd-map-build Geofabrik region catalog and HUAVD source-id mapping."
 naming:
   region_id_case: "lowercase"
-  yyyymm_regex: "^[0-9]{6}$"
+  yyyymm_regex: "^[0-9]{8}$"
   region_slug_separator: "-"
   region_slug_examples:
     china/guangxi: "china-guangxi"
@@ -13,8 +13,8 @@ naming:
 workdir:
   default_home: "/opt/huavd-map-build"
   mirror_retention_days: 14
-  session_template: "staging/{region-slug}-{yyyymm}"
-  layer_output_template: "staging/{region-slug}-{yyyymm}/layers/{layer}.geojsonseq"
+  session_template: "staging/{region-slug}-{yyyymmdd}"
+  layer_output_template: "staging/{region-slug}-{yyyymmdd}/layers/{layer}.geojsonseq"
 geofabrik:
   base_url: "https://download.geofabrik.de"
   mirror_dir: "mirror"
@@ -23,6 +23,11 @@ geofabrik:
 source_id_mappings:
   china: "osm-dev-cn"
   japan: "osm-dev-jp"
+huavd:
+  default_package_version_template: "{yyyymmdd}.{role}"
+  package_version_template_per_role:
+    building: "{yyyymmdd}-building"
+    dem: "{yyyymmdd}-dem"
 regions:
   - id: "africa"
     slug: "africa"
@@ -11215,7 +11220,7 @@ regions:
       asset_role: "base-vector"
       source_type: "osm-pbf"
       style_id: "osm-dev"
-      package_version_template: "0.3.0-cn.{yyyymm}"
+      package_version_template: null
       region_id: "cn-base"
   - id: "china/beijing"
     slug: "china-beijing"
@@ -12001,7 +12006,7 @@ regions:
       asset_role: "base-vector"
       source_type: "osm-pbf"
       style_id: "osm-dev"
-      package_version_template: "0.3.0-guangxi.{yyyymm}"
+      package_version_template: null
       region_id: "cn-45-base"
   - id: "china/nei-monggol"
     slug: "china-nei-monggol"
@@ -35266,7 +35271,7 @@ regions:
       asset_role: "base-vector"
       source_type: "osm-pbf"
       style_id: "osm-dev"
-      package_version_template: "0.3.0-jp.{yyyymm}"
+      package_version_template: null
       region_id: "jp-base"
   - id: "japan/aiti-aichi"
     slug: "japan-aiti-aichi"
