@@ -4,7 +4,7 @@
 
 `scripts/build.sh` 是主编排入口。一次标准 build 的阶段如下：
 
-1. 校验 region、role、YYYYMM 和输入 PBF。
+1. 校验 region、role、YYYYMMDD 和输入 PBF。
 2. 将输入 PBF 链接到 `${WORKDIR}/staging/${SESSION}/source.osm.pbf`。
 3. `scripts/tags-filter.sh` 按 layer 运行 `osmium tags-filter`。
 4. `scripts/export.sh` 按 layer 运行 `osmium export`，输出 GeoJSONSeq。
@@ -26,7 +26,7 @@
 DEM 资产使用独立入口，不参与 OSM PBF 矢量构建：
 
 1. `scripts/fetch-dem.sh` 从已授权的本地或内网 mirror 准备 DEM 输入，不默认访问未确认公网 URL。
-2. `scripts/build-dem.sh` 接受已授权 DEM PMTiles、MBTiles 或瓦片目录，标准化输出 `${WORKDIR}/outputs/{region-slug}-{yyyymm}.dem.pmtiles`。
+2. `scripts/build-dem.sh` 接受已授权 DEM PMTiles、MBTiles 或瓦片目录，标准化输出 `${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.dem.pmtiles`。
 3. DEM metadata 必须包含 `dem-encoding`、`huavd:vertical-datum`、`bounds` 和 `attribution`。
 4. `scripts/verify.sh --role=dem --strict` 校验 raster tile type、metadata、bounds、manifest 和 SHA512。
 5. `scripts/pack.sh --role=all` 会把 DEM 作为 `install.json.offline_maps[]` 中的 `dem-raster` 单资产，并在 bundle assets 中关联；不得新增私有顶层 size 字段。
@@ -52,17 +52,17 @@ DEM 资产使用独立入口，不参与 OSM PBF 矢量构建：
 产物命名：
 
 ```text
-{region-slug}-{yyyymm}.{role}.pmtiles
-{region-slug}-{yyyymm}.{role}.pmtiles.sha512
-{region-slug}-{yyyymm}.{role}.manifest.json
-{region-slug}-{yyyymm}.{role}.attribution.json
-{region-slug}-{yyyymm}.glyphs/
-{region-slug}-{yyyymm}.style.json
-{region-slug}-{yyyymm}.style.json.sha512
-{region-slug}-{yyyymm}.import.zip
-{region-slug}-{yyyymm}.import.tar.gz
-{region-slug}-{yyyymm}.bundle.tar.gz
-{region-slug}-{yyyymm}.bundle.zip
+{region-slug}-{yyyymmdd}.{role}.pmtiles
+{region-slug}-{yyyymmdd}.{role}.pmtiles.sha512
+{region-slug}-{yyyymmdd}.{role}.manifest.json
+{region-slug}-{yyyymmdd}.{role}.attribution.json
+{region-slug}-{yyyymmdd}.glyphs/
+{region-slug}-{yyyymmdd}.style.json
+{region-slug}-{yyyymmdd}.style.json.sha512
+{region-slug}-{yyyymmdd}.import.zip
+{region-slug}-{yyyymmdd}.import.tar.gz
+{region-slug}-{yyyymmdd}.bundle.tar.gz
+{region-slug}-{yyyymmdd}.bundle.zip
 ```
 
 ## Role

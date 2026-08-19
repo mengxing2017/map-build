@@ -27,14 +27,14 @@ make fetch REGION=china/guangxi
 构建 PMTiles：
 
 ```bash
-make build REGION=china/guangxi YYYYMM=202607 ROLE=both INPUT=mirror/guangxi-latest.osm.pbf
+make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=both INPUT=mirror/guangxi-latest.osm.pbf
 ```
 
 验证并打包：
 
 ```bash
-make verify REGION=china/guangxi YYYYMM=202607 ROLE=both
-make pack SESSION=china-guangxi-202607 ROLE=both FORMAT=both
+make verify REGION=china/guangxi YYYYMMDD=20260818 ROLE=both
+make pack SESSION=china-guangxi-20260818 ROLE=both FORMAT=both
 ```
 
 ## 常见问题
@@ -66,8 +66,8 @@ build-glyphs is not installed; glyph.sh requires a local MapLibre glyph generato
 这是 glyph/style 生成前置条件缺失。`devbox run setup` 会通过 cargo 安装 `versatiles_glyphs`，再写入兼容的 `build-glyphs` wrapper；devbox 环境由 `rustup` 提供 cargo。默认 `make build` 使用 `GLYPH=0`，只构建 PMTiles 时可以暂时忽略；以下命令会失败，必须先修复 setup 安装问题：
 
 ```bash
-make glyph REGION=china/guangxi YYYYMM=202607
-make build REGION=china/guangxi YYYYMM=202607 GLYPH=1
+make glyph REGION=china/guangxi YYYYMMDD=20260818
+make build REGION=china/guangxi YYYYMMDD=20260818 GLYPH=1
 ```
 
 先确认 cargo 安装产物在 devbox shell 的 `PATH` 中可见：
@@ -105,7 +105,7 @@ ls -lh /tmp/huavd-map-build/outputs
 再单独运行：
 
 ```bash
-WORKDIR=/tmp/huavd-map-build ./scripts/verify.sh --region=china/guangxi --yyyymm=202607 --role=base
+WORKDIR=/tmp/huavd-map-build ./scripts/verify.sh --region=china/guangxi --yyyymmdd=20260818 --role=base
 ```
 
 `root directory within 16 KiB range` 是 PMTiles v3 约束，不应简单删除。
@@ -115,7 +115,7 @@ WORKDIR=/tmp/huavd-map-build ./scripts/verify.sh --region=china/guangxi --yyyymm
 当前 session 清理：
 
 ```bash
-make clean SESSION=china-guangxi-202607
+make clean SESSION=china-guangxi-20260818
 ```
 
 该目标会删除当前 session 的 staging、pack cache 和 outputs 文件。它不会清理 mirror、tags-filter/config cache 或 setup 编译缓存。

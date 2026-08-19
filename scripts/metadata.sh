@@ -18,7 +18,7 @@ for arg in "$@"; do
   case "${arg}" in
     --pmtiles=*) PMTILES="${arg#*=}" ;;
     -h|--help)
-      printf 'usage: %s --pmtiles=<path> --region=<id> --role=<base|building> [--workdir=<path>] [--yyyymm=YYYYMM]\n' "$0"
+      printf 'usage: %s --pmtiles=<path> --region=<id> --role=<base|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;

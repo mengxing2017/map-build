@@ -54,19 +54,19 @@ the setup script can pass consistent include, lib, and rpath flags.
 make setup
 make doctor
 make fetch REGION=china/guangxi
-make build REGION=china/guangxi YYYYMM=202607 ROLE=both
-make verify REGION=china/guangxi YYYYMM=202607 ROLE=both
-make pack SESSION=china-guangxi-202607 ROLE=both FORMAT=both
-make clean SESSION=china-guangxi-202607 ROLE=both
+make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=both
+make verify REGION=china/guangxi YYYYMMDD=20260818 ROLE=both
+make pack SESSION=china-guangxi-20260818 ROLE=both FORMAT=both
+make clean SESSION=china-guangxi-20260818 ROLE=both
 ```
 
 Direct script entry points are also supported:
 
 ```bash
 ./scripts/fetch.sh --region=china/guangxi
-./scripts/build.sh --input=mirror/guangxi-latest.osm.pbf --region=china/guangxi --yyyymm=202607 --role=both
-./scripts/verify.sh --region=china/guangxi --yyyymm=202607 --role=both
-./scripts/pack.sh --session=china-guangxi-202607 --role=both --format=both
+./scripts/build.sh --input=mirror/guangxi-latest.osm.pbf --region=china/guangxi --yyyymmdd=20260818 --role=both
+./scripts/verify.sh --region=china/guangxi --yyyymmdd=20260818 --role=both
+./scripts/pack.sh --session=china-guangxi-20260818 --role=both --format=both
 ```
 
 Avoid running `make fetch` or a full `make build` unless the task requires it.
@@ -78,8 +78,8 @@ Defaults are defined in `Makefile` and `scripts/lib/common.sh`.
 
 - `WORKDIR`: workspace for generated data, default `/tmp/huavd-map-build`.
 - `REGION`: configured region id, default `china/guangxi`.
-- `YYYYMM`: build month in `YYYYMM` format, default current UTC month.
-- `SESSION`: `{region-slug}-{yyyymm}`, for example `china-guangxi-202607`.
+- `YYYYMMDD`: build day in `YYYYMMDD` format, default current UTC day. 地图日更，所以用 8 位日期而不是月份。
+- `SESSION`: `{region-slug}-{yyyymmdd}`, for example `china-guangxi-20260818`.
 - `ROLE`: `base`, `building`, `both`, `dem`, or `all`.
 - `FORMAT`: `tar`, `zip`, or `both` for packaging.
 - `INPUT`: PBF input path for `make build`; relative paths are resolved under
@@ -88,12 +88,12 @@ Defaults are defined in `Makefile` and `scripts/lib/common.sh`.
 Output naming uses:
 
 ```text
-${WORKDIR}/outputs/{region-slug}-{yyyymm}.{role}.pmtiles
-${WORKDIR}/outputs/{region-slug}-{yyyymm}.{role}.pmtiles.sha512
-${WORKDIR}/outputs/{region-slug}-{yyyymm}.{role}.manifest.json
-${WORKDIR}/outputs/{region-slug}-{yyyymm}.{role}.attribution.json
-${WORKDIR}/outputs/{region-slug}-{yyyymm}.bundle.tar.gz
-${WORKDIR}/outputs/{region-slug}-{yyyymm}.bundle.zip
+${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.pmtiles
+${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.pmtiles.sha512
+${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.manifest.json
+${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.attribution.json
+${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.bundle.tar.gz
+${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.bundle.zip
 ```
 
 ## Pipeline

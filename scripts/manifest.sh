@@ -15,7 +15,7 @@ for arg in "$@"; do
   fi
   case "${arg}" in
     -h|--help)
-      printf 'usage: %s --region=<id> --role=<base|building> [--workdir=<path>] [--yyyymm=YYYYMM]\n' "$0"
+      printf 'usage: %s --region=<id> --role=<base|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -66,13 +66,13 @@ package_version="$(region_package_version "${REGION}" "${ROLE}")"
 source_id="$(role_source_id "${REGION}" "${ROLE}")"
 asset_role="$(role_asset_role "${ROLE}")"
 source_type="$(role_source_type "${ROLE}")"
-source_revision="geofabrik-$(region_basename "${REGION}")-$(yyyymm_dash "${YYYYMM}")"
+source_revision="geofabrik-$(region_basename "${REGION}")-$(yyyymmdd_dash "${YYYYMMDD}")"
 style_id="$(region_style_id "${REGION}")"
 artifact_name="${SESSION}.${ROLE}"
 offline_map_id="$(region_stable_id "${REGION}")"
 [[ -n "${offline_map_id}" && "${offline_map_id}" != "null" ]] \
   || die "${HUAVD_EXIT_INPUT}" "region has no huavd.region_id for manifest id: ${REGION}"
-bundle_id="${HUAVD_MAP_BUNDLE_ID:-$(region_slug)-${YYYYMM}-standard}"
+bundle_id="${HUAVD_MAP_BUNDLE_ID:-$(region_slug)-${YYYYMMDD}-standard}"
 activation="${HUAVD_MAP_ACTIVATION:-manual}"
 build_id="$(timestamp_utc)"
 available_locales="$(available_locales_json)"
@@ -81,7 +81,7 @@ style_locales="$(style_locales_json)"
 jq -n \
   --arg schema "huavd-map-build/v1" \
   --arg region "${REGION}" \
-  --arg yyyymm "${YYYYMM}" \
+  --arg yyyymmdd "${YYYYMMDD}" \
   --arg build_id "${build_id}" \
   --arg source_url "${pbf_url}" \
   --argjson source_size "${source_size}" \
@@ -114,7 +114,7 @@ jq -n \
   '{
     schema: $schema,
     region: $region,
-    yyyymm: $yyyymm,
+    yyyymmdd: $yyyymmdd,
     build_id: $build_id,
     source: {
       vendor: "geofabrik",

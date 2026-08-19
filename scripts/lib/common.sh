@@ -18,7 +18,7 @@ REPO_ROOT="${REPO_ROOT:-$(cd -- "${HUAVD_MAP_BUILD_LIB_DIR}/../.." && pwd)}"
 CONFIG_DIR="${CONFIG_DIR:-${REPO_ROOT}/config}"
 WORKDIR="${WORKDIR:-${HUAVD_MAP_BUILD_HOME:-/tmp/huavd-map-build}}"
 REGION="${REGION:-china/guangxi}"
-YYYYMM="${YYYYMM:-$(date -u +%Y%m)}"
+YYYYMMDD="${YYYYMMDD:-$(date -u +%Y%m%d)}"
 ROLE="${ROLE:-}"
 SESSION="${SESSION:-}"
 
@@ -107,32 +107,32 @@ slugify_region() {
   printf '%s\n' "${region//\//-}"
 }
 
-validate_yyyymm() {
-  local yyyymm="$1"
-  [[ "${yyyymm}" =~ ^[0-9]{6}$ ]] \
-    || die "${HUAVD_EXIT_INPUT}" "invalid YYYYMM: ${yyyymm}; expected 6 digits like 202607"
+validate_yyyymmdd() {
+  local yyyymmdd="$1"
+  [[ "${yyyymmdd}" =~ ^[0-9]{8}$ ]] \
+    || die "${HUAVD_EXIT_INPUT}" "invalid YYYYMMDD: ${yyyymmdd}; expected 8 digits like 20260818"
 }
 
-yyyymm_dash() {
-  local yyyymm="$1"
-  validate_yyyymm "${yyyymm}"
-  printf '%s-%s\n' "${yyyymm:0:4}" "${yyyymm:4:2}"
+yyyymmdd_dash() {
+  local yyyymmdd="$1"
+  validate_yyyymmdd "${yyyymmdd}"
+  printf '%s-%s-%s\n' "${yyyymmdd:0:4}" "${yyyymmdd:4:2}" "${yyyymmdd:6:2}"
 }
 
-session_from_region_yyyymm() {
+session_from_region_yyyymmdd() {
   local region="$1"
-  local yyyymm="$2"
-  validate_yyyymm "${yyyymm}"
-  printf '%s-%s\n' "$(slugify_region "${region}")" "${yyyymm}"
+  local yyyymmdd="$2"
+  validate_yyyymmdd "${yyyymmdd}"
+  printf '%s-%s\n' "$(slugify_region "${region}")" "${yyyymmdd}"
 }
 
 validate_session() {
   local session="$1"
-  [[ "${session}" =~ ^[a-z0-9]+(-[a-z0-9]+)*-[0-9]{6}$ ]] \
-    || die "${HUAVD_EXIT_INPUT}" "invalid SESSION: ${session}; expected {region-slug}-{yyyymm}, e.g. china-guangxi-202607"
+  [[ "${session}" =~ ^[a-z0-9]+(-[a-z0-9]+)*-[0-9]{8}$ ]] \
+    || die "${HUAVD_EXIT_INPUT}" "invalid SESSION: ${session}; expected {region-slug}-{yyyymmdd}, e.g. china-guangxi-20260818"
 }
 
-session_yyyymm() {
+session_yyyymmdd() {
   local session="$1"
   validate_session "${session}"
   printf '%s\n' "${session##*-}"
@@ -141,16 +141,16 @@ session_yyyymm() {
 session_region_slug() {
   local session="$1"
   validate_session "${session}"
-  printf '%s\n' "${session%-??????}"
+  printf '%s\n' "${session%-????????}"
 }
 
 normalize_session_vars() {
-  validate_yyyymm "${YYYYMM}"
+  validate_yyyymmdd "${YYYYMMDD}"
   if [[ -z "${SESSION}" ]]; then
-    SESSION="$(session_from_region_yyyymm "${REGION}" "${YYYYMM}")"
+    SESSION="$(session_from_region_yyyymmdd "${REGION}" "${YYYYMMDD}")"
   else
     validate_session "${SESSION}"
-    YYYYMM="$(session_yyyymm "${SESSION}")"
+    YYYYMMDD="$(session_yyyymmdd "${SESSION}")"
   fi
 }
 
@@ -197,7 +197,7 @@ region_slug() {
 
 artifact_stem() {
   local role="${1:-${ROLE}}"
-  printf '%s-%s.%s\n' "$(region_slug)" "${YYYYMM}" "${role}"
+  printf '%s-%s.%s\n' "$(region_slug)" "${YYYYMMDD}" "${role}"
 }
 
 build_pmtiles_path() {
@@ -309,7 +309,7 @@ parse_common_arg() {
   case "${arg}" in
     --workdir=*) WORKDIR="${arg#*=}"; return 0 ;;
     --region=*) REGION="${arg#*=}"; return 0 ;;
-    --yyyymm=*) YYYYMM="${arg#*=}"; SESSION=""; return 0 ;;
+    --yyyymmdd=*) YYYYMMDD="${arg#*=}"; SESSION=""; return 0 ;;
     --session=*) SESSION="${arg#*=}"; return 0 ;;
     --role=*) ROLE="${arg#*=}"; return 0 ;;
     *) return 1 ;;

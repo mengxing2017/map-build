@@ -18,7 +18,7 @@ for arg in "$@"; do
     --locale=*) STYLE_LOCALE="${arg#*=}" ;;
     --pmtiles-url=*) PMTILES_URL="${arg#*=}" ;;
     -h|--help)
-      printf 'usage: %s --region=<id> [--yyyymm=YYYYMM] [--workdir=<path>] [--locale=<tag>] [--pmtiles-url=<url>]\n' "$0"
+      printf 'usage: %s --region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--locale=<tag>] [--pmtiles-url=<url>]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;

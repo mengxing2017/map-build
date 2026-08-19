@@ -29,9 +29,9 @@ Makefile 入口：
 make setup
 make doctor
 make fetch REGION=china/guangxi
-make build REGION=china/guangxi YYYYMM=202607 ROLE=both
-make verify REGION=china/guangxi YYYYMM=202607 ROLE=both
-make pack SESSION=china-guangxi-202607 ROLE=both FORMAT=both
+make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=both
+make verify REGION=china/guangxi YYYYMMDD=20260818 ROLE=both
+make pack SESSION=china-guangxi-20260818 ROLE=both FORMAT=both
 ```
 
 文档入口：

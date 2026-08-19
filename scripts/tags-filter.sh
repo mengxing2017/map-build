@@ -18,7 +18,7 @@ for arg in "$@"; do
     --input=*) INPUT="${arg#*=}" ;;
     --layers=*) LAYERS="${arg#*=}" ;;
     -h|--help)
-      printf 'usage: %s --input=<pbf> --region=<id> [--layers=all|layer[,layer...]] [--workdir=<path>] [--yyyymm=YYYYMM]\n' "$0"
+      printf 'usage: %s --input=<pbf> --region=<id> [--layers=all|layer[,layer...]] [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;

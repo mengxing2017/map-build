@@ -14,7 +14,7 @@ defaults:
   force_feature_limit: false
   attribution: "\u00a9 OpenStreetMap contributors"
   output_role: "base"
-  layer_args_template: "-L {layer}:staging/{region-slug}-{yyyymm}/layers/{layer}.geojsonseq"
+  layer_args_template: "-L {layer}:staging/{region-slug}-{yyyymmdd}/layers/{layer}.geojsonseq"
   source_layers:
     - "road"
     - "railway"

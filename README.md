@@ -38,13 +38,13 @@ devbox run doctor
 `make release`、`make release-tar`、`make release-zip` 会默认把实际工作目录隔离到 `${WORKDIR}/${SESSION}`。例如：
 
 ```bash
-make release WORKDIR=/home/dev/data/map REGION=china/anhui YYYYMM=202608 INPUT=/path/to/anhui.osm.pbf
+make release WORKDIR=/home/dev/data/map REGION=china/anhui YYYYMMDD=20260818 INPUT=/path/to/anhui.osm.pbf
 ```
 
 产物会写入：
 
 ```text
-/home/dev/data/map/china-anhui-202608/outputs/
+/home/dev/data/map/china-anhui-20260818/outputs/
 ```
 
 如需指定完整发布目录，可覆盖 `RELEASE_WORKDIR`。单独执行 `make build`、`make pack`、`make verify` 时仍直接使用 `WORKDIR`，便于对已有工作目录做增量操作。

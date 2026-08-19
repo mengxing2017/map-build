@@ -13,7 +13,7 @@ for arg in "$@"; do
   fi
   case "${arg}" in
     -h|--help)
-      printf 'usage: %s --region=<id> --role=<base|building> [--workdir=<path>] [--yyyymm=YYYYMM]\n' "$0"
+      printf 'usage: %s --region=<id> --role=<base|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;

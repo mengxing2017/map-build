@@ -44,7 +44,7 @@ for arg in "$@"; do
     --aggregate=true) AGGREGATE_MANIFEST="1" ;;
     --aggregate=false) AGGREGATE_MANIFEST="0" ;;
     -h|--help)
-      printf 'usage: %s --session=<session> [--role=base|building|both] [--format=tar|zip] [--output=<archive-path>] [--transfer-id=<id>] [--aggregate] [--workdir=<path>] [--region=<id>] [--yyyymm=YYYYMM]\n' "$0"
+      printf 'usage: %s --session=<session> [--role=base|building|both] [--format=tar|zip] [--output=<archive-path>] [--transfer-id=<id>] [--aggregate] [--workdir=<path>] [--region=<id>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BUILD_HOME="${HUAVD_MAP_BUILD_HOME:-/tmp/huavd-map-build}"
-SESSION="${HUAVD_MAP_BUILD_SESSION:-china-guangxi-202607}"
+SESSION="${HUAVD_MAP_BUILD_SESSION:-china-guangxi-20260818}"
 DIR_MODE="${HUAVD_MAP_BUILD_DIR_MODE:-0750}"
 CONFIG_DIR_MODE="${HUAVD_MAP_BUILD_CONFIG_DIR_MODE:-0755}"
 FILE_MODE="${HUAVD_MAP_BUILD_FILE_MODE:-0644}"
@@ -11,9 +11,9 @@ COPY_CONFIG="${HUAVD_MAP_BUILD_COPY_CONFIG:-0}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-if [[ ! "${SESSION}" =~ ^[a-z0-9]+(-[a-z0-9]+)*-[0-9]{6}$ ]]; then
+if [[ ! "${SESSION}" =~ ^[a-z0-9]+(-[a-z0-9]+)*-[0-9]{8}$ ]]; then
   printf 'invalid HUAVD_MAP_BUILD_SESSION: %s\n' "${SESSION}" >&2
-  printf 'expected {region-slug}-{yyyymm}, e.g. china-guangxi-202607\n' >&2
+  printf 'expected {region-slug}-{yyyymmdd}, e.g. china-guangxi-20260818\n' >&2
   exit 64
 fi
 

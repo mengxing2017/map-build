@@ -20,7 +20,7 @@ for arg in "$@"; do
     --glyph=*) GLYPH="${arg#*=}" ;;
     --force) FORCE=1 ;;
     -h|--help)
-      printf 'usage: %s --input=<path-to.osm.pbf> --region=<id> [--yyyymm=YYYYMM] [--role=base|building|both] [--workdir=<path>] [--glyph=0|1] [--force]\n' "$0"
+      printf 'usage: %s --input=<path-to.osm.pbf> --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base|building|both] [--workdir=<path>] [--glyph=0|1] [--force]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -113,21 +113,21 @@ source_link="$(staging_dir)/source.osm.pbf"
 ln -sf "${INPUT}" "${source_link}"
 log_info "source linked: ${source_link} -> ${INPUT}"
 
-"${SCRIPT_DIR}/tags-filter.sh" --input="${source_link}" --region="${REGION}" --yyyymm="${YYYYMM}" --workdir="${WORKDIR}" --layers="${preprocess_layers}"
-"${SCRIPT_DIR}/export.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --workdir="${WORKDIR}" --layers="${preprocess_layers}"
-"${SCRIPT_DIR}/normalize.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --workdir="${WORKDIR}" --layers="${preprocess_layers}"
+"${SCRIPT_DIR}/tags-filter.sh" --input="${source_link}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers}"
+"${SCRIPT_DIR}/export.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers}"
+"${SCRIPT_DIR}/normalize.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers}"
 
 for role in "${roles_to_build[@]}"; do
-  "${SCRIPT_DIR}/tippecanoe.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
-  "${SCRIPT_DIR}/metadata.sh" --pmtiles="$(build_pmtiles_path "${role}")" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
-  "${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
-  "${SCRIPT_DIR}/attribution.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
+  "${SCRIPT_DIR}/tippecanoe.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
+  "${SCRIPT_DIR}/metadata.sh" --pmtiles="$(build_pmtiles_path "${role}")" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
+  "${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
+  "${SCRIPT_DIR}/attribution.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
   write_sha512_file "$(build_pmtiles_path "${role}")"
-  "${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --role="${role}" --workdir="${WORKDIR}"
+  "${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
   printf 'build OK: %s\n' "$(build_pmtiles_path "${role}")"
 done
 
 if [[ "${GLYPH}" == "1" ]]; then
-  "${SCRIPT_DIR}/glyph.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --workdir="${WORKDIR}" --force
-  "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymm="${YYYYMM}" --workdir="${WORKDIR}"
+  "${SCRIPT_DIR}/glyph.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --force
+  "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 fi

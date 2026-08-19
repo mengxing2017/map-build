@@ -18,7 +18,7 @@ for arg in "$@"; do
     --locales=*) LOCALES="${arg#*=}" ;;
     --force) FORCE=1 ;;
     -h|--help)
-      printf 'usage: %s --region=<id> [--yyyymm=YYYYMM] [--workdir=<path>] [--locales=all|tag[,tag...]] [--force]\n' "$0"
+      printf 'usage: %s --region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--locales=all|tag[,tag...]] [--force]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;

@@ -30,7 +30,7 @@ done
 require_cmd tar zip sha256sum sha512sum
 [[ -n "${SESSION}" ]] || die "${HUAVD_EXIT_INPUT}" "--session is required"
 validate_session "${SESSION}"
-YYYYMM="$(session_yyyymm "${SESSION}")"
+YYYYMMDD="$(session_yyyymmdd "${SESSION}")"
 ROLE="${ROLE:-both}"
 
 case "${FORMAT}" in

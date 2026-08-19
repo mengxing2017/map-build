@@ -1,7 +1,7 @@
 WORKDIR        ?= /tmp/huavd-map-build
 REGION         ?= china/guangxi
-YYYYMM         ?= $(shell date -u +%Y%m)
-SESSION        ?= $(shell echo $(REGION) | tr '/' '-')-$(YYYYMM)
+YYYYMMDD       ?= $(shell date -u +%Y%m%d)
+SESSION        ?= $(shell echo $(REGION) | tr '/' '-')-$(YYYYMMDD)
 WORKDIR_ROOT   ?= $(WORKDIR)
 WORKDIR_ROOT   := $(WORKDIR_ROOT)
 RELEASE_WORKDIR ?= $(WORKDIR_ROOT)/$(SESSION)
@@ -61,39 +61,39 @@ build: init-workdir
 	  basename="$$(WORKDIR="$(WORKDIR)" REGION="$(REGION)" ./scripts/region-pbf-basename.sh "$(REGION)" 2>/dev/null || printf '%s-latest.osm.pbf\n' "$(REGION_BASENAME)")"; \
 	  input="mirror/$$basename"; \
 	fi; \
-	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymm="$(YYYYMM)" --role="$(ROLE)" --glyph="$(GLYPH)"
+	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ROLE)" --glyph="$(GLYPH)"
 
 build-dem: init-workdir
-	WORKDIR="$(WORKDIR)" ./scripts/build-dem.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" $(if $(DEM_SOURCE),--source="$(DEM_SOURCE)",) $(if $(DEM_INPUT),--input="$(DEM_INPUT)",) $(if $(DEM_ENCODING),--encoding="$(DEM_ENCODING)",)
+	WORKDIR="$(WORKDIR)" ./scripts/build-dem.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(DEM_SOURCE),--source="$(DEM_SOURCE)",) $(if $(DEM_INPUT),--input="$(DEM_INPUT)",) $(if $(DEM_ENCODING),--encoding="$(DEM_ENCODING)",)
 
 glyph: init-workdir
-	WORKDIR="$(WORKDIR)" ./scripts/glyph.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --force
+	WORKDIR="$(WORKDIR)" ./scripts/glyph.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --force
 
 style: init-workdir
-	WORKDIR="$(WORKDIR)" ./scripts/style.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)"
+	WORKDIR="$(WORKDIR)" ./scripts/style.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)"
 
 verify:
-	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)"
+	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)"
 
 verify-dem:
-	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role=dem --strict
+	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role=dem --strict
 
 pack:
-	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
+	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
 
 pack-tar:
-	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)" --format=tar
+	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format=tar
 
 pack-zip:
-	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$(ROLE)" --format=zip
+	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format=zip
 
 prepare-import:
 	role="$(ROLE)"; \
 	if [ "$$role" = "both" ]; then role="base"; fi; \
-	WORKDIR="$(WORKDIR)" ./scripts/prepare-import.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role="$$role" --format="$(IMPORT_FORMAT)"
+	WORKDIR="$(WORKDIR)" ./scripts/prepare-import.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$$role" --format="$(IMPORT_FORMAT)"
 
 prepare-import-all:
-	WORKDIR="$(WORKDIR)" ./scripts/prepare-import.sh --region="$(REGION)" --yyyymm="$(YYYYMM)" --session="$(SESSION)" --role=both --format="$(IMPORT_FORMAT)"
+	WORKDIR="$(WORKDIR)" ./scripts/prepare-import.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role=both --format="$(IMPORT_FORMAT)"
 
 clean:
 	rm -rf "$(WORKDIR)/staging/$(SESSION)" \
