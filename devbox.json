@@ -24,13 +24,14 @@
       "version": "latest",
       "outputs": ["out", "dev"]
     },
-    "go":      "1.25",
-    "git":     "latest",
-    "gcc":     "latest",
-    "yq-go":   "latest",
-    "python3": "latest",
-    "yq":      "latest",
-    "libyaml": "latest"
+    "go":                  "1.25",
+    "git":                 "latest",
+    "gcc":                 "latest",
+    "yq-go":               "latest",
+    "python3":             "latest",
+    "yq":                  "latest",
+    "libyaml":             "latest",
+    "python3Packages.pip": ""
   },
   "shell": {
     "init_hook": [

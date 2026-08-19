@@ -627,12 +627,300 @@ EOF
   log_info "build-glyphs installed: $(tool_version_line build-glyphs)"
 }
 
-check_glyph_tooling() {
-  if command -v fonttools >/dev/null 2>&1; then
-    log_info "fonttools already installed: $(tool_version_line fonttools)"
-  else
-    log_warn "fonttools is not installed; add it through devbox before validating custom font files"
+VENV_PYTHON="${REPO_ROOT}/.venv/bin/python"
+VENV_BIN_DIR="${REPO_ROOT}/.venv/bin"
+
+in_nix_environment() {
+  [[ -n "${IN_NIX_SHELL:-}" || -n "${NIX_CC:-}" || -n "${DEVBOX_SHELL_ENABLED:-}" ]] && return 0
+  local py
+  py="$(command -v python3 2>/dev/null || true)"
+  [[ "${py}" == /nix/store/* ]]
+}
+
+pip_venv_python() {
+  # Use the project's .venv if it exists. Installing into a venv avoids
+  # PEP 668's externally-managed-environment block that would otherwise reject
+  # `pip install` in devbox shell (where python3 is a Nix-managed immutable
+  # interpreter under /nix/store).
+  [[ -x "${VENV_PYTHON}" ]] || return 1
+  "${VENV_PYTHON}" -m pip --version >/dev/null 2>&1
+}
+
+pip_global_python() {
+  # Outside the project venv, fall back to `python3 -m pip` with
+  # --break-system-packages --user so PEP 668 doesn't block the install and
+  # pip writes to $HOME/.local instead of the (often read-only) system
+  # site-packages tree.
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -m pip --version >/dev/null 2>&1
+}
+
+pip_usable() {
+  pip_venv_python && return 0
+  pip_global_python && return 0
+  if command -v pip3 >/dev/null 2>&1 && pip3 --version >/dev/null 2>&1; then
+    return 0
   fi
+  if command -v pip >/dev/null 2>&1 && pip --version >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+run_pip() {
+  if pip_venv_python; then
+    "${VENV_PYTHON}" -m pip "$@"
+    return $?
+  fi
+  if in_nix_environment; then
+    log_error "pip is unavailable under Nix: python3 is /nix/store/... and any 'pip install' would hit 'externally-managed-environment'."
+    log_error "Bootstrap a project virtualenv and re-run setup, e.g.:"
+    log_error "  rm -rf ${REPO_ROOT}/.venv"
+    log_error "  python3 -m venv ${REPO_ROOT}/.venv"
+    log_error "  devbox run setup"
+    return 1
+  fi
+  if pip_global_python; then
+    python3 -m pip --break-system-packages --user "$@"
+    return $?
+  fi
+  if command -v pip3 >/dev/null 2>&1; then
+    pip3 --break-system-packages --user "$@"
+    return $?
+  fi
+  if command -v pip >/dev/null 2>&1; then
+    pip --break-system-packages --user "$@"
+    return $?
+  fi
+  log_error "pip is not usable; install it manually (e.g. sudo apt-get install python3-pip)"
+  return 1
+}
+
+ensure_venv() {
+  if [[ -x "${VENV_PYTHON}" ]]; then
+    return 0
+  fi
+
+  require_tooling python3 || return 1
+
+  log_info "creating project virtualenv at ${REPO_ROOT}/.venv"
+  if ! python3 -m venv "${REPO_ROOT}/.venv" 2> "${REPO_ROOT}/.venv-create.log"; then
+    log_warn "python3 -m venv failed; retrying with --system-site-packages"
+    log_warn "venv create log: $(head -n 5 "${REPO_ROOT}/.venv-create.log" 2>/dev/null | tr '\n' ' ')"
+    if ! python3 -m venv --system-site-packages "${REPO_ROOT}/.venv" 2> "${REPO_ROOT}/.venv-create.log"; then
+      log_error "failed to create project virtualenv at ${REPO_ROOT}/.venv"
+      log_error "venv create log: $(cat "${REPO_ROOT}/.venv-create.log" 2>/dev/null || true)"
+      rm -f "${REPO_ROOT}/.venv-create.log"
+      return 1
+    fi
+  fi
+  rm -f "${REPO_ROOT}/.venv-create.log"
+
+  [[ -x "${VENV_PYTHON}" ]]
+}
+
+ensure_pip() {
+  ensure_venv || return 1
+
+  if pip_usable; then
+    return 0
+  fi
+
+  # Bootstrapping pip inside the venv via ensurepip avoids touching
+  # /nix/store, which is read-only and would trigger
+  # `externally-managed-environment` even with --break-system-packages.
+  log_warn "pip is not usable; bootstrapping via venv ensurepip"
+  if "${VENV_PYTHON}" -m ensurepip --upgrade > "${REPO_ROOT}/.venv-ensurepip.log" 2>&1; then
+    rm -f "${REPO_ROOT}/.venv-ensurepip.log"
+    if pip_usable; then
+      log_info "pip bootstrapped via ensurepip"
+      return 0
+    fi
+  else
+    log_warn "ensurepip failed; log: $(head -n 5 "${REPO_ROOT}/.venv-ensurepip.log" 2>/dev/null | tr '\n' ' ')"
+  fi
+
+  if in_nix_environment; then
+    log_error "pip is not usable inside the project venv, and the host python3 is in /nix/store (read-only)."
+    log_error "Inside devbox, python3 -m venv normally provides pip via ensurepip; if it failed, re-create the venv:"
+    log_error "  rm -rf ${REPO_ROOT}/.venv && python3 -m venv ${REPO_ROOT}/.venv && devbox run setup"
+    rm -f "${REPO_ROOT}/.venv-ensurepip.log"
+    return 1
+  fi
+
+  if command -v apt-get >/dev/null 2>&1 && command -v sudo >/dev/null 2>&1; then
+    log_info "trying pip install via apt-get"
+    if sudo apt-get update && sudo apt-get install -y python3-pip && pip_usable; then
+      log_info "pip installed via apt-get"
+      rm -f "${REPO_ROOT}/.venv-ensurepip.log"
+      return 0
+    fi
+    log_warn "apt-get install failed for python3-pip"
+  fi
+
+  if command -v brew >/dev/null 2>&1; then
+    log_info "trying pip install via brew"
+    if (brew install python3-pip 2>/dev/null || brew install python) && pip_usable; then
+      log_info "pip installed via brew"
+      rm -f "${REPO_ROOT}/.venv-ensurepip.log"
+      return 0
+    fi
+    log_warn "brew install failed for pip"
+  fi
+
+  rm -f "${REPO_ROOT}/.venv-ensurepip.log"
+  log_error "pip is not available; install it manually (e.g. sudo apt-get install python3-pip)"
+  return 1
+}
+
+write_fonttools_wrapper() {
+  # The project's .venv is not on PATH by default. Drop a thin wrapper in
+  # BIN_DIR (which is on PATH via devbox's init_hook) that runs the venv's
+  # fonttools entry point so `command -v fonttools` succeeds without
+  # requiring the user to `source .venv/bin/activate`.
+  local wrapper="${BIN_DIR}/fonttools"
+  local venv_python="$1"
+
+  mkdir -p "${BIN_DIR}"
+  if ! cat > "${wrapper}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec ${venv_python} -m fontTools "\$@"
+EOF
+  then
+    log_error "failed to write fonttools wrapper to ${wrapper}"
+    return 1
+  fi
+  if ! chmod 0755 "${wrapper}"; then
+    log_error "failed to make fonttools wrapper executable: ${wrapper}"
+    return 1
+  fi
+  log_info "wrote fonttools wrapper: ${wrapper} -> ${venv_python} -m fontTools"
+}
+
+fonttools_works() {
+  local output status
+  # `fonttools --version` is broken: when invoked via `python -m fontTools`,
+  # Python consumes the first positional arg as the module name and tries to
+  # import a module called `fontTools.--version`, which doesn't exist.
+  # Run `fonttools` with no args instead — it prints the version line first.
+  output="$(fonttools 2>&1)"
+  status=$?
+  if ((status != 0)); then
+    return 1
+  fi
+  [[ "${output}" == *"fontTools v"* || "${output}" == *"fonttools v"* ]]
+}
+
+write_pip_wrapper() {
+  # Install a wrapper at BIN_DIR/pip (and a pip3 symlink) that takes
+  # precedence over the Nix-managed pip on PATH. Inside a virtualenv it
+  # passes through; if the project .venv exists it uses that; otherwise under
+  # Nix it silently appends --user so installs land in $HOME/.local instead of
+  # the read-only /nix/store. This lets users run `pip install tippecanoe` (or
+  # anything else) from a devbox shell without hitting
+  # `externally-managed-environment`.
+  local wrapper="${BIN_DIR}/pip"
+  local venv_python="$1"
+  local venv_pip_rel="${venv_python%/bin/python}/bin/pip"
+
+  mkdir -p "${BIN_DIR}"
+  if ! cat > "${wrapper}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ -n "\${VIRTUAL_ENV:-}" ]]; then
+  exec "\${VIRTUAL_ENV}/bin/python" -m pip "\$@"
+fi
+
+if [[ -x "${venv_python}" ]]; then
+  exec "${venv_python}" -m pip "\$@"
+fi
+
+in_nix=0
+if [[ -n "\${IN_NIX_SHELL:-}" || -n "\${NIX_CC:-}" || -n "\${DEVBOX_SHELL_ENABLED:-}" ]]; then
+  in_nix=1
+elif [[ "\$(command -v python3 2>/dev/null)" == /nix/store/* ]]; then
+  in_nix=1
+fi
+
+if ((in_nix == 1)); then
+  first=""
+  for arg in "\$@"; do
+    [[ -z "\${first}" ]] && first="\${arg}"
+  done
+
+  add_user=0
+  case "\${first}" in
+    install|i) add_user=1 ;;
+  esac
+
+  for arg in "\$@"; do
+    case "\${arg}" in
+      --user|-U|--target|--break-system-packages|-t) add_user=0 ;;
+    esac
+  done
+
+  if ((add_user == 1)); then
+    printf 'pip: Nix-managed python detected; forwarding to "python3 -m pip --user \$*" to avoid /nix/store writes\n' >&2
+    exec python3 -m pip --user "\$@"
+  fi
+fi
+
+exec python3 -m pip "\$@"
+EOF
+  then
+    log_error "failed to write pip wrapper to ${wrapper}"
+    return 1
+  fi
+  if ! chmod 0755 "${wrapper}"; then
+    log_error "failed to make pip wrapper executable: ${wrapper}"
+    return 1
+  fi
+
+  ln -sf pip "${wrapper%pip}pip3"
+  log_info "installed pip wrapper at ${wrapper} (-> python3 -m pip with Nix-safe --user fallback)"
+}
+
+check_glyph_tooling() {
+  if command -v fonttools >/dev/null 2>&1 && fonttools_works; then
+    log_info "fonttools already installed: $(tool_version_line fonttools)"
+    return 0
+  fi
+
+  if command -v fonttools >/dev/null 2>&1; then
+    log_warn "fonttools is on PATH but not runnable; reinstalling"
+  else
+    log_warn "fonttools is not installed; attempting pip install"
+  fi
+
+  if ! ensure_pip; then
+    log_error "cannot install fonttools because pip is not available"
+    return 1
+  fi
+
+  if ! run_pip install fonttools; then
+    if in_nix_environment; then
+      log_error "failed to install fonttools via pip inside the project venv"
+      log_error "verify the venv is healthy and re-run setup:"
+      log_error "  rm -rf ${REPO_ROOT}/.venv && python3 -m venv ${REPO_ROOT}/.venv && devbox run setup"
+    else
+      log_error "failed to install fonttools via pip; install it manually with: python3 -m pip install --break-system-packages --user fonttools"
+    fi
+    return 1
+  fi
+
+  log_info "fonttools installed via pip"
+
+  if [[ -x "${VENV_BIN_DIR}/fonttools" ]]; then
+    if ! command -v fonttools >/dev/null 2>&1 || ! fonttools_works; then
+      write_fonttools_wrapper "${VENV_PYTHON}" || return 1
+    fi
+  elif ! command -v fonttools >/dev/null 2>&1; then
+    log_warn "fonttools installed but not on PATH; ensure \$HOME/.local/bin is on PATH"
+  fi
+
+  return 0
 }
 
 main() {
@@ -651,7 +939,12 @@ main() {
   if ! install_build_glyphs; then
     failed=1
   fi
-  check_glyph_tooling
+  if ! check_glyph_tooling; then
+    failed=1
+  fi
+  if ! write_pip_wrapper "${VENV_PYTHON}"; then
+    failed=1
+  fi
 
   if ((failed)); then
     log_error "some tools failed to install; check the errors above, then see README.md environment setup"

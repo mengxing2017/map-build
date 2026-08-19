@@ -1195,6 +1195,10 @@
         }
       }
     },
+    "python3Packages.pip": {
+      "resolved": "github:NixOS/nixpkgs/3e41b24abd260e8f71dbe2f5737d24122f972158?narHash=sha256-rxO%2Buc%2FKFbSJp%2BpgyXRuAX6QlG9hJdnt0BXpEQRXY%2BU%3D#python3Packages.pip",
+      "source": "nixpkg"
+    },
     "rustup@1.29.0": {
       "last_modified": "2026-08-01T16:34:20Z",
       "plugin_version": "0.0.1",
