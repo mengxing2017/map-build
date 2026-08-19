@@ -18,7 +18,7 @@ for arg in "$@"; do
   case "${arg}" in
     --strict) STRICT=1 ;;
     -h|--help)
-      printf 'usage: %s --region=<id> --role=<base|building|both|dem|all> [--yyyymm=YYYYMM] [--session=<session>] [--strict]\n' "$0"
+      printf 'usage: %s --region=<id> --role=<base|building|both|dem|all> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--strict]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -29,7 +29,7 @@ require_cmd jq sha512sum stat
 ROLE="${ROLE:-base}"
 if [[ -n "${SESSION}" ]]; then
   validate_session "${SESSION}"
-  YYYYMM="$(session_yyyymm "${SESSION}")"
+  YYYYMMDD="$(session_yyyymmdd "${SESSION}")"
   inferred_region="$(region_id_from_slug "$(session_region_slug "${SESSION}")")"
   if [[ -n "${inferred_region}" ]]; then
     REGION="${inferred_region}"
@@ -231,6 +231,35 @@ has_file_matching() {
   [[ -n "$(find "${dir}" -type f -name "${pattern}" -print -quit)" ]]
 }
 
+verify_manifest_package_version() {
+  local manifest="$1"
+  local role="$2"
+  local package_version
+  package_version="$(jq -r '.huavd_record.package_version // empty' "${manifest}")"
+  if [[ -z "${package_version}" ]]; then
+    fail "manifest package_version empty (region=${REGION} role=${role})"
+  elif [[ ! "${package_version}" =~ ^[A-Za-z0-9._+-]+$ ]]; then
+    fail "manifest package_version invalid chars: ${package_version} (region=${REGION} role=${role})"
+  else
+    ok "manifest package_version (role=${role})"
+  fi
+}
+
+verify_install_json_package_version() {
+  local install_json="$1"
+  [[ -f "${install_json}" ]] || return 0
+  if jq -e '.offline_maps[]? | (."package-version" // "") | length == 0' "${install_json}" >/dev/null 2>&1; then
+    fail "install.json offline_maps package-version missing"
+  else
+    ok "install.json offline_maps package-version"
+  fi
+  if jq -e '.bundles[]? | (.["bundle-version"] // "") | length == 0' "${install_json}" >/dev/null 2>&1; then
+    fail "install.json bundles bundle-version missing"
+  else
+    ok "install.json bundles bundle-version"
+  fi
+}
+
 check_package_assets_for_install_json() {
   local package_dir="$1"
   local install_json="${package_dir}/install.json"
@@ -258,6 +287,7 @@ verify_packaged_assets() {
   pack_dir="$(pack_cache_dir)/${SESSION}"
   if [[ -d "${pack_dir}" ]]; then
     check_package_assets_for_install_json "${pack_dir}"
+    verify_install_json_package_version "${pack_dir}/install.json"
   fi
 }
 
@@ -370,6 +400,7 @@ verify_role() {
   check_eq "manifest output.sha512" "${manifest_sha}" "${actual_sha}"
 
   if ((STRICT)); then
+    verify_manifest_package_version "${manifest}" "${role}"
     if header_json="$(pmtiles_cli_header_json "${pmtiles}")" && jq -e . >/dev/null 2>&1 <<< "${header_json}"; then
       ok "pmtiles header-json"
       jq -e '
@@ -443,6 +474,7 @@ verify_dem_role() {
   check_eq "manifest output.sha512" "${manifest_sha}" "${actual_sha}"
 
   if ((STRICT)); then
+    verify_manifest_package_version "${manifest}" "dem"
     if header_json="$(pmtiles_cli_header_json "${pmtiles}")" && jq -e . >/dev/null 2>&1 <<< "${header_json}"; then
       ok "dem pmtiles header-json"
       jq -e '.tile_type | IN(2,3,4,5)' >/dev/null <<< "${header_json}" \
