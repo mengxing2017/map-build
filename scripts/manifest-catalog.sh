@@ -117,24 +117,25 @@ def inherited(index, id, *path)
   nil
 end
 
-def source_id_for(index, source_id_mappings, id)
-  current = id
-  seen = {}
+def source_id_for(index, id, config)
+  region = index.fetch(id)
+  
+  # 1. 优先使用当前 region 显式配置的 source_id（不沿父链继承）
+  source_id = region.dig("huavd", "source_id")
+  return source_id unless source_id.nil? || source_id == ""
 
-  while current
-    abort("parent cycle while resolving source_id for #{id}") if seen[current]
-    seen[current] = true
-    region = index.fetch(current)
-    source_id = region.dig("huavd", "source_id")
-    return source_id unless source_id.nil? || source_id == ""
+  # 2. 使用模板自动生成（基于 region_slug）
+  template = config.dig("huavd", "default_source_id_template")
+  return nil if template.nil? || template == ""
 
-    mapped = source_id_mappings[current]
-    return mapped unless mapped.nil? || mapped == ""
+  slug = region_slug(id)
+  template.gsub("{region_slug}", slug)
+end
 
-    current = region.dig("geofabrik", "parent_region")
-  end
-
-  nil
+def region_slug(region_id)
+  # 将 region_id 转换为 slug 形式
+  # 如 "china/guangxi" → "china-guangxi"
+  region_id.gsub("/", "-")
 end
 
 def depth_for(index, id, memo, visiting)
@@ -173,7 +174,7 @@ catalog_regions = regions.map do |region|
     "depth" => depth_for(index, id, depths, []),
     "parent_region" => parent_region_id,
     "asset_role" => inherited(index, id, "huavd", "asset_role") || "base-vector",
-    "source_id" => source_id_for(index, source_id_mappings, id),
+    "source_id" => source_id_for(index, id, config),
     "source_type" => inherited(index, id, "huavd", "source_type") || "osm-pbf",
     "style_id" => inherited(index, id, "huavd", "style_id") || "osm-dev",
     "mapping_status" => huavd["mapping_status"] || inherited(index, id, "huavd", "mapping_status") || "pending-source-id",

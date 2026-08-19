@@ -28,6 +28,11 @@ huavd:
   package_version_template_per_role:
     building: "{yyyymmdd}-building"
     dem: "{yyyymmdd}-dem"
+  default_source_id_template: "osm-{region_slug}"
+  source_id_template_per_role:
+    base: "osm-{region_slug}"
+    building: "osm-{region_slug}-building"
+    dem: "osm-{region_slug}-dem"
 regions:
   - id: "africa"
     slug: "africa"

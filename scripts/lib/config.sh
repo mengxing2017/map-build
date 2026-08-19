@@ -139,9 +139,31 @@ region_id_from_slug() {
 
 region_source_id() {
   local region="$1"
-  local current="${region}"
-  local source_id mapped parent
+  local role="${2:-base}"
+  local source_id
 
+  # 1. 优先使用当前 region 显式配置的 source_id（不沿父链继承）
+  source_id="$(region_get huavd.source_id "${region}")"
+  if [[ -n "${source_id}" && "${source_id}" != "null" ]]; then
+    printf '%s\n' "${source_id}"
+    return 0
+  fi
+
+  # 2. 使用模板自动生成（基于 region_slug）
+  local template
+  template="$(jq -r --arg role "${role}" '.huavd.source_id_template_per_role[$role] // .huavd.default_source_id_template // empty' "$(regions_json)")"
+  if [[ -n "${template}" && "${template}" != "null" ]]; then
+    # 获取 region_slug（如 china/guangxi → china-guangxi）
+    local slug
+    slug="$(slugify_region "${region}")"
+    template="${template//\{region_slug\}/${slug}}"
+    printf '%s\n' "${template}"
+    return 0
+  fi
+
+  # 3. 兜底：沿父链查找（仅当模板不可用时）
+  local current="${region}"
+  local parent
   while [[ -n "${current}" && "${current}" != "null" ]]; do
     source_id="$(region_get huavd.source_id "${current}")"
     if [[ -n "${source_id}" && "${source_id}" != "null" ]]; then
@@ -149,15 +171,11 @@ region_source_id() {
       return 0
     fi
 
-    mapped="$(jq -r --arg id "${current}" '.source_id_mappings[$id] // empty' "$(regions_json)")"
-    if [[ -n "${mapped}" && "${mapped}" != "null" ]]; then
-      printf '%s\n' "${mapped}"
-      return 0
-    fi
-
     parent="$(region_get geofabrik.parent_region "${current}")"
     current="${parent}"
   done
+
+  return 1
 }
 
 region_stable_id() {
