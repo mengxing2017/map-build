@@ -93,6 +93,16 @@ verify_label_metadata_fields() {
   check_metadata_layer_field "${metadata}" "poi_label" "shop"
   check_metadata_layer_field "${metadata}" "poi_label" "tourism"
   check_metadata_layer_field "${metadata}" "transport_label" "public_transport"
+  check_metadata_layer_field "${metadata}" "transport_label" "railway"
+  check_metadata_layer_field "${metadata}" "transport_label" "ref"
+  check_metadata_layer_field "${metadata}" "transport_label" "network"
+  check_metadata_layer_field "${metadata}" "peak" "natural"
+  check_metadata_layer_field "${metadata}" "peak" "ele"
+  check_metadata_layer_minzoom "${metadata}" "peak" "10"
+  check_metadata_layer_field "${metadata}" "highway_point" "highway"
+  check_metadata_layer_field "${metadata}" "highway_point" "ref"
+  check_metadata_layer_field "${metadata}" "highway_point" "network"
+  check_metadata_layer_minzoom "${metadata}" "highway_point" "10"
 }
 
 check_config_final_field_in_include_tags() {
@@ -162,7 +172,7 @@ verify_name_locale_config_fields() {
   else
     fail "config global.name_coalesce_order must be name:zh-Hans, name:zh, name, name:en"
   fi
-  for layer_id in road railway water waterway landuse building admin natural_a natural_line leisure_a place_label poi_label transport_label island; do
+  for layer_id in road railway water waterway landuse building admin natural_a natural_line peak leisure_a place_label poi_label transport_label highway_point island; do
     check_config_final_field_in_include_tags "${layer_id}" "name:zh"
     check_config_final_field "${layer_id}" "name:zh"
   done
@@ -174,6 +184,14 @@ verify_label_config_fields() {
   check_config_final_field_in_include_tags "poi_label" "shop"
   check_config_final_field_in_include_tags "poi_label" "tourism"
   check_config_final_field_in_include_tags "transport_label" "public_transport"
+  check_config_final_field_in_include_tags "transport_label" "railway"
+  check_config_final_field_in_include_tags "transport_label" "ref"
+  check_config_final_field_in_include_tags "transport_label" "network"
+  check_config_final_field "transport_label" "railway"
+  check_config_final_field "transport_label" "ref"
+  check_config_final_field "transport_label" "network"
+  verify_layer_config_fields peak natural ele
+  verify_layer_config_fields highway_point highway ref network
 }
 
 verify_base_fill_config_fields() {
@@ -541,7 +559,7 @@ verify_role() {
   metadata="$(pmtiles_cli_metadata "${pmtiles}")" || fail "pmtiles metadata readable"
   if [[ -n "${metadata}" ]] && jq -e . >/dev/null 2>&1 <<< "${metadata}"; then
     ok "pmtiles metadata JSON"
-    expected_layers=14
+    expected_layers=16
     [[ "${role}" == "building" ]] && expected_layers=1
     actual_layers="$(jq -r '.vector_layers | length' <<< "${metadata}")"
     check_eq "metadata vector_layers length" "${actual_layers}" "${expected_layers}"
