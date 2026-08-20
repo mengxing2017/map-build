@@ -44,6 +44,14 @@ text_layers:
     placement: "line"
     symbol_spacing: 240
     text_optional: true
+  - id: "railway-labels"
+    source_layer: "railway"
+    minzoom: 11
+    font_stack: ["NotoSans-Regular"]
+    text_size: 10
+    placement: "line"
+    symbol_spacing: 480
+    text_optional: true
   - id: "building-labels"
     source_layer: "building"
     minzoom: 15
@@ -64,3 +72,76 @@ text_layers:
     font_stack: ["NotoSans-Regular"]
     text_size: 12
     text_optional: true
+  - id: "island-labels"
+    source_layer: "island"
+    minzoom: 8
+    font_stack: ["NotoSans-Regular"]
+    text_size: 11
+    text_optional: true
+
+paint_layers:
+  - id: "water"
+    source_layer: "water"
+    type: "fill"
+    minzoom: 0
+    paint:
+      fill-color: "#aad3df"
+      fill-opacity: 0.85
+  - id: "island"
+    source_layer: "island"
+    type: "fill"
+    minzoom: 0
+    paint:
+      fill-color: "#f2efe9"
+      fill-opacity: 1
+  - id: "railway"
+    source_layer: "railway"
+    type: "line"
+    minzoom: 8
+    layout:
+      line-cap: "round"
+      line-join: "round"
+    paint:
+      line-color:
+        match:
+          field: "railway"
+          cases:
+            "rail":
+              - "case"
+              - ["==", ["get", "highspeed"], "yes"]
+              - "#e03e3e"
+              - "#787878"
+            "subway": "#5b3e3e"
+            "tram": "#a85e1a"
+            "light_rail": "#a85e1a"
+            "narrow_gauge": "#787878"
+            "abandoned": "transparent"
+            "disused": "transparent"
+          default: "#787878"
+      line-width:
+        match:
+          field: "railway"
+          cases:
+            "rail": 1.2
+            "subway": 1
+            "tram": 0.8
+            "light_rail": 0.8
+            "narrow_gauge": 0.8
+            "abandoned": 0.5
+            "disused": 0.5
+          default: 1
+      line-dasharray:
+        match:
+          field: "railway"
+          cases:
+            "subway": [2, 2]
+            "narrow_gauge": [3, 3]
+            "abandoned": [1, 2]
+            "disused": [1, 2]
+          default: [1, 0]
+      line-opacity:
+        match:
+          field: "tunnel"
+          cases:
+            "yes": 0.5
+          default: 1
