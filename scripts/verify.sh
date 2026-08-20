@@ -300,6 +300,15 @@ verify_water_metadata_fields() {
   verify_layer_metadata_fields "${metadata}" water water intermittent place
 }
 
+verify_waterway_config_fields() {
+  verify_layer_config_fields waterway waterway width
+}
+
+verify_waterway_metadata_fields() {
+  local metadata="$1"
+  verify_layer_metadata_fields "${metadata}" waterway waterway width
+}
+
 verify_island_config_fields() {
   verify_layer_config_fields island place
 }
@@ -350,6 +359,61 @@ count_layer_features_with_place() {
     | jq --arg layer "${source_layer}" '
       [((.[$layer].features // [])[])
         | select((.properties.place // "") | IN("island","islet"))]
+      | length
+    ' 2>/dev/null || printf 0
+}
+
+count_waterway_features_with_width() {
+  local pmtiles="$1" z="$2" x="$3" y="$4"
+  decode_tile_feature_collections "${pmtiles}" "${z}" "${x}" "${y}" \
+    | jq '
+      {
+        total: ([(.waterway.features // [])[]] | length),
+        with_width: ([(.waterway.features // [])[] | select((.properties.width != null) and (.properties.width | type == "number"))] | length),
+        with_subtype: ([(.waterway.features // [])[] | select((.properties.waterway // "") | length > 0)] | length)
+      }
+    ' 2>/dev/null || printf '{"total":0,"with_width":0,"with_subtype":0}'
+}
+
+verify_waterway_value_distribution() {
+  local pmtiles="$1"
+  local stats total with_width with_subtype subtype_count width_pct
+  stats="$(count_waterway_features_with_width "${pmtiles}" 10 855 397)"
+  total="$(jq -r '.total // 0' <<< "${stats}")"
+  with_width="$(jq -r '.with_width // 0' <<< "${stats}")"
+  with_subtype="$(jq -r '.with_subtype // 0' <<< "${stats}")"
+  if (( total == 0 )); then
+    log_warn "waterway source-layer has no features at sampled z=10 tile (no value-distribution check)"
+    return 0
+  fi
+  if (( with_width > 0 )); then
+    width_pct=$((with_width * 100 / total))
+    ok "waterway sampled z=10 tile: ${with_width}/${total} features have numeric width (${width_pct}%)"
+    if (( width_pct < 5 )); then
+      log_warn "waterway width coverage low (${width_pct}%) at z=10; clients must use waterway subtype as primary"
+    fi
+  else
+    log_warn "waterway sampled z=10 tile: 0/${total} features have numeric width; clients must use waterway subtype as primary"
+  fi
+  if (( with_subtype > 0 )); then
+    ok "waterway sampled z=10 tile: ${with_subtype}/${total} features carry waterway subtype"
+  else
+    fail "waterway sampled z=10 tile: 0/${total} features carry waterway subtype"
+  fi
+  subtype_count="$(count_layer_features_with_place_or_subtype "${pmtiles}" waterway 10 855 397)"
+  if (( subtype_count > 0 )); then
+    ok "waterway source-layer has waterway=river features (sampled z=10 tile)"
+  else
+    fail "waterway source-layer has no waterway=river features at sampled z=10 tile"
+  fi
+}
+
+count_layer_features_with_place_or_subtype() {
+  local pmtiles="$1" source_layer="$2" z="$3" x="$4" y="$5"
+  decode_tile_feature_collections "${pmtiles}" "${z}" "${x}" "${y}" \
+    | jq --arg layer "${source_layer}" --arg subtype "river" '
+      [((.[$layer].features // [])[])
+        | select((.properties.waterway // "") == $subtype)]
       | length
     ' 2>/dev/null || printf 0
 }
@@ -507,11 +571,14 @@ verify_role() {
         verify_railway_metadata_fields "${metadata}"
         verify_water_config_fields
         verify_water_metadata_fields "${metadata}"
+        verify_waterway_config_fields
+        verify_waterway_metadata_fields "${metadata}"
         verify_post_filter_rules "water"
         verify_island_config_fields
         verify_island_metadata_fields "${metadata}"
         verify_water_layer_excludes_island_polygons "${pmtiles}"
         verify_island_layer_contains_island_polygons "${pmtiles}"
+        verify_waterway_value_distribution "${pmtiles}"
       fi
     fi
     header_bounds="$(pmtiles_bounds "${pmtiles}")"
