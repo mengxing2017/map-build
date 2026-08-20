@@ -248,7 +248,7 @@ verify_railway_metadata_fields() {
 verify_style_text_layers() {
   local style_file="$1"
   [[ -f "${style_file}" ]] || { fail "style.json missing"; return; }
-  for layer_id in railway-labels island-labels; do
+  for layer_id in railway-labels island-labels peak-symbol transport-station-symbol highway-point-symbol poi-tourism-symbol; do
     check_style_layer_present "${style_file}" "${layer_id}"
   done
 }
@@ -513,6 +513,15 @@ check_package_assets_for_install_json() {
       fail "package install.json declares styles-url but package styles/*.style.json is missing"
     fi
   fi
+
+  style_file="$(find "${package_dir}/styles" -type f -name '*.style.json' -print -quit 2>/dev/null || true)"
+  if [[ -n "${style_file}" ]] && jq -e '(.sprite // "") | startswith("huavd-map://sprite/")' "${style_file}" >/dev/null; then
+    if [[ -f "${package_dir}/sprite/sprite.json" && -f "${package_dir}/sprite/sprite.png" ]]; then
+      ok "package sprite files present"
+    else
+      fail "package style.json declares sprite but package sprite/sprite.json or sprite/sprite.png is missing"
+    fi
+  fi
 }
 
 verify_packaged_assets() {
@@ -616,11 +625,25 @@ verify_role() {
   if ((STRICT)); then
     style_file="$(build_style_path)"
     if [[ -f "${style_file}" ]]; then
-      jq -e '.version == 8 and (.sources | type == "object") and (.glyphs | strings | contains("{fontstack}") and contains("{range}.pbf"))' "${style_file}" >/dev/null \
-        && ok "style.json MapLibre glyph template" \
-        || fail "style.json is missing MapLibre version/source/glyph template"
+      jq -e '.version == 8 and (.sources | type == "object") and (.glyphs | strings | contains("{fontstack}") and contains("{range}.pbf")) and (.sprite | strings | startswith("huavd-map://sprite/"))' "${style_file}" >/dev/null \
+        && ok "style.json MapLibre glyph/sprite template" \
+        || fail "style.json is missing MapLibre version/source/glyph/sprite template"
       verify_style_text_layers "${style_file}"
       verify_style_paint_layers "${style_file}"
+    fi
+
+    sprite_dir="$(build_sprite_dir)"
+    if [[ -d "${sprite_dir}" ]]; then
+      if [[ -f "${sprite_dir}/sprite.json" && -f "${sprite_dir}/sprite.png" ]]; then
+        ok "sprite json/png present"
+      else
+        fail "sprite output directory is missing sprite.json or sprite.png"
+      fi
+      if [[ -f "${sprite_dir}/sprite.json.sha512" && -f "${sprite_dir}/sprite.png.sha512" ]]; then
+        ok "sprite sha512 sidecars present"
+      else
+        fail "sprite output directory is missing sha512 sidecars"
+      fi
     fi
 
     glyphs_dir="$(build_glyphs_dir)"

@@ -271,6 +271,19 @@ install_package_has_style() {
     && [[ -n "$(find "${package_dir}/styles" -type f -name '*.style.json' -print -quit)" ]]
 }
 
+install_package_has_sprite() {
+  local package_dir="$1"
+  [[ -f "${package_dir}/sprite/sprite.json" ]] && [[ -f "${package_dir}/sprite/sprite.png" ]]
+}
+
+install_package_style_requires_sprite() {
+  local package_dir="$1"
+  local style_file
+  style_file="$(find "${package_dir}/styles" -type f -name '*.style.json' -print -quit 2>/dev/null || true)"
+  [[ -n "${style_file}" ]] || return 1
+  jq -e '(.sprite // "") | startswith("huavd-map://sprite/")' "${style_file}" >/dev/null
+}
+
 install_require_declared_assets() {
   local package_dir="$1"
   local offline_maps_json="$2"
@@ -280,6 +293,9 @@ install_require_declared_assets() {
   fi
   if install_offline_maps_require_styles "${offline_maps_json}" && ! install_package_has_style "${package_dir}"; then
     die "${HUAVD_EXIT_INPUT}" "install.json declares huavd-map styles-url, but package is missing styles/*.style.json; run style generation before packaging"
+  fi
+  if install_package_style_requires_sprite "${package_dir}" && ! install_package_has_sprite "${package_dir}"; then
+    die "${HUAVD_EXIT_INPUT}" "style.json declares huavd-map sprite, but package is missing sprite/sprite.json and sprite/sprite.png; run sprite generation before packaging"
   fi
 }
 
@@ -293,6 +309,19 @@ install_outputs_have_style() {
   [[ -f "$(build_style_path)" ]]
 }
 
+install_outputs_have_sprite() {
+  local sprite_dir
+  sprite_dir="$(build_sprite_dir)"
+  [[ -f "${sprite_dir}/sprite.json" ]] && [[ -f "${sprite_dir}/sprite.png" ]]
+}
+
+install_output_style_requires_sprite() {
+  local style_file
+  style_file="$(build_style_path)"
+  [[ -f "${style_file}" ]] || return 1
+  jq -e '(.sprite // "") | startswith("huavd-map://sprite/")' "${style_file}" >/dev/null
+}
+
 install_ensure_declared_outputs() {
   local offline_maps_json="$1"
 
@@ -303,6 +332,10 @@ install_ensure_declared_outputs() {
   if install_offline_maps_require_styles "${offline_maps_json}" && ! install_outputs_have_style; then
     log_info "style output missing; generating style before packaging"
     "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --workdir="${WORKDIR}"
+  fi
+  if install_outputs_have_style && install_output_style_requires_sprite && ! install_outputs_have_sprite; then
+    log_info "sprite output missing; generating sprite before packaging"
+    "${SCRIPT_DIR}/sprite.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --workdir="${WORKDIR}" --force
   fi
 }
 
