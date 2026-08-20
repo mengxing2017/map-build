@@ -46,6 +46,11 @@ metadata:
   tile_compression: "gzip"
   vector_layer_count: 16
 
+raster_bake:
+  tile_type: 4
+  tile_compression: 1
+  vector_layer_count: 0
+
 high_density:
   - region_match: "japan/tokyo-tokyo"
     max_zoom: 15

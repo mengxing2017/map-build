@@ -3,6 +3,15 @@ source:
   id: "huavd-offline"
   type: "vector"
   url: "pmtiles://{pmtiles}"
+raster_source:
+  id: "raster-bake"
+  type: "raster"
+  url: "pmtiles://{raster_pmtiles}"
+  tile_size: 256
+raster_overlays:
+  bake_layer_types: ["background", "fill", "line"]
+  vector_overlay_layer_types: ["symbol"]
+  exclude_bake_layer_types: ["symbol", "fill-extrusion"]
 glyphs_url: "huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf"
 sprite: "huavd-map://sprite/sprite"
 
