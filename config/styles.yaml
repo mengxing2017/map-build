@@ -4,7 +4,7 @@ source:
   type: "vector"
   url: "pmtiles://{pmtiles}"
 glyphs_url: "huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf"
-sprite: null
+sprite: "huavd-map://sprite/sprite"
 
 locales:
   - tag: "zh-Hans"
@@ -80,6 +80,100 @@ text_layers:
     text_optional: true
 
 paint_layers:
+  - id: "peak-symbol"
+    source_layer: "peak"
+    type: "symbol"
+    minzoom: 10
+    layout:
+      icon-image: "peak"
+      icon-size: 0.85
+      icon-allow-overlap: false
+      text-field: ["coalesce", ["get", "name"], ["get", "name:en"]]
+      text-font: ["NotoSans-Regular"]
+      text-size: 10
+      text-offset: [0, 0.8]
+      text-anchor: "top"
+      text-optional: true
+    paint:
+      text-color: "#4b5563"
+      text-halo-color: "#ffffff"
+      text-halo-width: 1
+  - id: "transport-station-symbol"
+    source_layer: "transport_label"
+    type: "symbol"
+    minzoom: 12
+    filter: ["match", ["get", "railway"], ["station", "halt", "tram_stop", "subway_entrance", "stop"], true, false]
+    layout:
+      icon-image:
+        match:
+          field: "railway"
+          cases:
+            "subway_entrance": "rail-metro"
+            "tram_stop": "rail-light"
+          default: "rail"
+      icon-size: 0.8
+      icon-allow-overlap: false
+      text-field: ["coalesce", ["get", "name"], ["get", "ref"]]
+      text-font: ["NotoSans-Regular"]
+      text-size: 10
+      text-offset: [0, 0.8]
+      text-anchor: "top"
+      text-optional: true
+    paint:
+      text-color: "#374151"
+      text-halo-color: "#ffffff"
+      text-halo-width: 1
+  - id: "highway-point-symbol"
+    source_layer: "highway_point"
+    type: "symbol"
+    minzoom: 12
+    layout:
+      icon-image:
+        match:
+          field: "highway"
+          cases:
+            "motorway_junction": "road-junction"
+            "bus_stop": "bus"
+          default: "road-junction"
+      icon-size: 0.8
+      icon-allow-overlap: false
+      text-field: ["coalesce", ["get", "ref"], ["get", "name"]]
+      text-font: ["NotoSans-Regular"]
+      text-size: 10
+      text-offset: [0, 0.8]
+      text-anchor: "top"
+      text-optional: true
+    paint:
+      text-color: "#4b5563"
+      text-halo-color: "#ffffff"
+      text-halo-width: 1
+  - id: "poi-tourism-symbol"
+    source_layer: "poi_label"
+    type: "symbol"
+    minzoom: 14
+    filter: ["match", ["get", "tourism"], ["museum", "attraction", "viewpoint", "hotel", "information"], true, false]
+    layout:
+      icon-image:
+        match:
+          field: "tourism"
+          cases:
+            "museum": "museum"
+            "attraction": "attraction"
+            "viewpoint": "viewpoint"
+            "hotel": "lodging"
+          default: "attraction"
+      icon-size: 0.75
+      icon-allow-overlap: false
+      text-field: ["coalesce", ["get", "name"], ["get", "name:en"]]
+      text-font: ["NotoSans-Regular"]
+      text-size: 10
+      text-offset: [0, 0.8]
+      text-anchor: "top"
+      text-optional: true
+    paint:
+      text-color: "#4b5563"
+      text-halo-color: "#ffffff"
+      text-halo-width: 1
   - id: "water"
     source_layer: "water"
     type: "fill"
