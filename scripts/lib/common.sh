@@ -224,6 +224,10 @@ build_glyphs_dir() {
   printf '%s/%s.glyphs\n' "$(outputs_dir)" "${SESSION}"
 }
 
+build_sprite_dir() {
+  printf '%s/%s.sprite\n' "$(outputs_dir)" "${SESSION}"
+}
+
 build_style_path() {
   printf '%s/%s.style.json\n' "$(outputs_dir)" "${SESSION}"
 }

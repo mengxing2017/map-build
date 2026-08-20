@@ -77,6 +77,10 @@ styles_json() {
   config_json_path styles
 }
 
+icons_json() {
+  config_json_path icons/manifest
+}
+
 dem_json() {
   config_json_path dem
 }
@@ -215,6 +219,10 @@ glyphs_url_template() {
 
 styles_url() {
   printf 'huavd-map://styles/%s\n' "$(basename -- "$(build_style_path)")"
+}
+
+sprite_url() {
+  jq -r '.sprite // "huavd-map://sprite/sprite"' "$(styles_json)"
 }
 
 region_asset_role() {

@@ -167,6 +167,12 @@ if [[ -d "${glyphs_dir}" ]]; then
     || die "${HUAVD_EXIT_DISK}" "failed to copy glyphs into import package"
 fi
 
+sprite_dir="$(build_sprite_dir)"
+if [[ -d "${sprite_dir}" ]]; then
+  cp -R "${sprite_dir}" "${import_dir}/sprite" \
+    || die "${HUAVD_EXIT_DISK}" "failed to copy sprite into import package"
+fi
+
 install_require_declared_assets "${import_dir}" "${offline_maps_json}"
 
 case "${FORMAT}" in

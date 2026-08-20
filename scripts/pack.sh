@@ -79,7 +79,7 @@ if (( INCLUDE_BUILD_LOG )); then
 fi
 
 copy_declared_assets() {
-  local style_file glyphs_dir
+  local style_file glyphs_dir sprite_dir
   style_file="$(build_style_path)"
   if [[ -f "${style_file}" ]]; then
     rm -rf "${pack_dir}/styles"
@@ -91,6 +91,12 @@ copy_declared_assets() {
   if [[ -d "${glyphs_dir}" ]]; then
     rm -rf "${pack_dir}/glyphs"
     cp -R "${glyphs_dir}" "${pack_dir}/glyphs"
+  fi
+
+  sprite_dir="$(build_sprite_dir)"
+  if [[ -d "${sprite_dir}" ]]; then
+    rm -rf "${pack_dir}/sprite"
+    cp -R "${sprite_dir}" "${pack_dir}/sprite"
   fi
 }
 

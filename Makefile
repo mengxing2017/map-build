@@ -15,7 +15,7 @@ GLYPH          ?= 0
 FORCE_BUILDING ?= 0
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem glyph style verify verify-dem pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip lint diff-products
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem glyph sprite style verify verify-dem pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip lint diff-products
 
 init: init-workdir
 
@@ -69,6 +69,9 @@ build-dem: init-workdir
 
 glyph: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/glyph.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --force
+
+sprite: init-workdir
+	WORKDIR="$(WORKDIR)" ./scripts/sprite.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --force
 
 style: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/style.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)"
@@ -133,6 +136,7 @@ clean:
 	  "$(WORKDIR)/outputs/$(SESSION).dem.manifest.json" \
 	  "$(WORKDIR)/outputs/$(SESSION).dem.attribution.json" \
 	  "$(WORKDIR)/outputs/$(SESSION).glyphs" \
+	  "$(WORKDIR)/outputs/$(SESSION).sprite" \
 	  "$(WORKDIR)/outputs/$(SESSION).style.json" \
 	  "$(WORKDIR)/outputs/$(SESSION).style.json.sha512"
 	find "$(WORKDIR)/cache" "$(WORKDIR)/staging" "$(WORKDIR)/outputs" -depth -type d -empty -delete 2>/dev/null || true
