@@ -96,12 +96,37 @@ while IFS= read -r layer; do
         ($post_filter.exclude // {}) as $rules
         | ($rules | keys) as $fields
         | any($fields[]; . as $f | ($props[$f] // null) as $v | $v != null and ($rules[$f] | index($v)));
+      def bbox_points:
+        [.. | arrays | select(length == 2 and (.[0] | type) == "number" and (.[1] | type) == "number")];
+      def bbox_center:
+        (bbox_points) as $pts
+        | if ($pts | length) == 0 then
+            null
+          else
+            [
+              (((($pts | map(.[0]) | min) + ($pts | map(.[0]) | max)) / 2)),
+              (((($pts | map(.[1]) | min) + ($pts | map(.[1]) | max)) / 2))
+            ]
+          end;
+      def key_amenity_area_label($props):
+        ["hospital", "clinic", "doctors", "school", "university", "college", "kindergarten"] | index($props.amenity // "");
+      def normalize_poi_label_geometry:
+        if $layer == "poi_label"
+          and (.geometry.type == "Polygon" or .geometry.type == "MultiPolygon")
+          and key_amenity_area_label(.properties)
+        then
+          (.geometry.coordinates | bbox_center) as $center
+          | if $center == null then empty else .geometry = {type: "Point", coordinates: $center} end
+        else
+          .
+        end;
 
       if .properties then
         if excluded_by_post_filter(.properties) then
           empty
         else
-          .properties as $props
+          normalize_poi_label_geometry
+          | .properties as $props
           | .properties.name = (coalesced_name($props) // $props.name)
           | .properties.name = clean_bilingual_name($props; .properties.name)
           | if $layer == "building" then
