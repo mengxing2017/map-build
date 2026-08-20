@@ -163,7 +163,7 @@ devbox run doctor
 
 ### 发布构建工作目录
 
-`make release`、`make release-tar`、`make release-zip` 会默认把实际工作目录隔离到 `${WORKDIR}/${SESSION}`。例如：
+`make release`、`make release-tar`、`make release-zip`、`make build-raster`、`make pack-raster` 和 `make release-raster` 会默认把实际工作目录隔离到 `${WORKDIR}/${SESSION}`。例如：
 
 ```bash
 make release WORKDIR=/home/dev/data/map REGION=china/anhui YYYYMMDD=20260818 INPUT=/path/to/anhui.osm.pbf
@@ -175,7 +175,7 @@ make release WORKDIR=/home/dev/data/map REGION=china/anhui YYYYMMDD=20260818 INP
 /home/dev/data/map/china-anhui-20260818/outputs/
 ```
 
-如需指定完整发布目录，可覆盖 `RELEASE_WORKDIR`。单独执行 `make build`、`make pack`、`make verify` 时仍直接使用 `WORKDIR`，便于对已有工作目录做增量操作。
+如需指定完整发布目录，可覆盖 `RELEASE_WORKDIR`。单独执行 `make build`、`make pack`、`make verify` 时仍直接使用 `WORKDIR`，便于对已有工作目录做增量操作。对 `make build-raster` 产物打包时，使用 `make pack-raster`，它会自动读取同一个 session 工作目录。
 
 ### 自动安装行为
 
