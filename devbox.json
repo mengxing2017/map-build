@@ -5,6 +5,7 @@
     "pnpm":                        "latest",
     "nodejs":                      "22",
     "python312Packages.fonttools": "latest",
+    "python312Packages.pyyaml":  "latest",
     "jq":                          "1.7.1",
     "wget":                        "1.21.4",
     "zip":                         "3.0",

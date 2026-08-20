@@ -952,6 +952,39 @@ check_mapbox_vector_tile() {
   return 0
 }
 
+check_pyyaml_tooling() {
+  # sprite.sh hardparse YAML via `import yaml`; without PyYAML `make pack`
+  # fails when style.json references a sprite and pack auto-invokes sprite.sh.
+  # Install into the project venv so the runtime sees the same Python site
+  # as fonttools / mapbox_vector_tile. Skip when run under bare Nix because
+  # pure-Python PyYAML builds are slow and the system python3 (from devbox)
+  # already provides it via python3Packages.pyyaml.
+  if [[ -x "${VENV_PYTHON}" ]] && "${VENV_PYTHON}" -c "import yaml" 2>/dev/null; then
+    log_info "PyYAML already installed"
+    return 0
+  fi
+
+  if in_nix_environment; then
+    log_warn "PyYAML missing in venv; under Nix python3Packages.pyyaml is the expected source — re-run devbox install"
+    return 0
+  fi
+
+  log_warn "PyYAML is not installed; attempting pip install"
+
+  if ! ensure_pip; then
+    log_error "cannot install PyYAML because pip is not available"
+    return 1
+  fi
+
+  if ! run_pip install PyYAML; then
+    log_error "failed to install PyYAML via pip; install it manually with: python3 -m pip install --break-system-packages --user PyYAML"
+    return 1
+  fi
+
+  log_info "PyYAML installed via pip"
+  return 0
+}
+
 main() {
   mkdir -p "${BIN_DIR}" "${BUILD_ROOT}"
 
@@ -972,6 +1005,9 @@ main() {
     failed=1
   fi
   if ! check_mapbox_vector_tile; then
+    failed=1
+  fi
+  if ! check_pyyaml_tooling; then
     failed=1
   fi
   if ! write_pip_wrapper "${VENV_PYTHON}"; then
