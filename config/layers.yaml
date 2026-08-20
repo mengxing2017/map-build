@@ -145,6 +145,7 @@ source_layers:
       - "name:en"
       - "name:ja"
       - "name:ko"
+      - "waterway"
       - "width"
     final_fields:
       name: "String"
@@ -153,6 +154,7 @@ source_layers:
       "name:en": "String"
       "name:ja": "String"
       "name:ko": "String"
+      waterway: "String"
       width: "Number"
     renderer: "MapLibre"
 
