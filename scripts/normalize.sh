@@ -108,6 +108,8 @@ while IFS= read -r layer; do
               .properties.type = (.properties.type // .properties.building)
               | .properties.levels = (.properties.levels // .properties["building:levels"])
               | .properties.roof_height = (.properties.roof_height // .properties["roof:height"])
+            elif $layer == "waterway" then
+              .properties.width = (.properties.width | if . == null then null else (try tonumber catch null) end)
             else . end
           | .properties |= with_entries(select((.key as $key | $allowed | index($key)) and (.value != null)))
         end
