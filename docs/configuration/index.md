@@ -80,6 +80,8 @@ base role 的 `building` metadata minzoom 当前为 12,用于 HMI 在常用 zoom
 
 `place=island` / `place=islet` 的 polygon 由 `island` source-layer 持有,`water` layer 在 `post_filter.exclude.place` 阶段把同名 polygon 排除,避免岛被填成蓝色。`scripts/normalize.sh` 通过读取每层 `post_filter` 配置通用地应用 exclude 规则,新增 layer 直接在 `config/layers.yaml` 声明即可,无需在 normalize.sh 里写特例。
 
+水系线(`waterway` source-layer)必须保留 OSM `waterway` 子类型字段(`river` / `canal` / `stream` / `drain` / `ditch` 等)与 `width` 字段(数值类型)。`scripts/normalize.sh` 会对 `waterway` layer 的 `width` 做 `tonumber` 归一化,无效字符串 fallback 为 `null`。OSM 中 `width=*` 字段覆盖率仅约 5-10%(国内地区更低),客户端不能把 `width` 作为唯一线宽依据,必须按 `waterway` 子类型做阶梯默认宽度,`width` 仅在存在且为 number 时作为覆盖值。HMI style-loader 的 `line-width` 推荐按 zoom 做 `interpolate`,子类型 fallback:`river=1.0→6.0`、`canal=0.8→4.0`、`stream=0.4→2.5`、`drain=0.3→1.5`、`ditch=0.3→1.5`;`width` 字段存在且 ≥ 1 时可按 `max(0.3, width/8)` / `min(12, width*0.5)` 缩放覆盖。
+
 ## glyphs.yaml
 
 `config/glyphs.yaml` 定义离线 MapLibre glyph 生成输入。`scripts/glyph.sh` 会把 YAML 转为 JSON 后读取该配置，并调用 `generator.command` 指定的本地命令。

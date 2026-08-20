@@ -93,6 +93,7 @@ huavd:
 - `--strict` 模式下,配置是否保留所有 label 可用的 `name:zh` 字段,防止中文 locale 下被 `name:en` 抢先显示。
 - `--strict` 模式下,metadata 是否包含底色 / 建筑样式必需字段:`landuse.landuse`、`natural_a.natural`、`leisure_a.leisure`、`building.building`,并校验 `building` metadata minzoom 为 12。
 - `--strict` 模式下,metadata 是否包含铁路样式必需字段:`railway.railway`、`railway.bridge`、`railway.tunnel`。
+- `--strict` 模式下,metadata 是否包含水系线样式必需字段:`waterway.waterway`(子类型)、`waterway.width`,并对 z=10 抽样瓦片统计 `width` 数值覆盖率与 `waterway=river` 特征存在性(覆盖 < 5% 仅 WARN,因为 OSM width 字段本身就稀疏)。
 - `--role=dem` 时,PMTiles `tile_type` 必须是 raster (`2`/`3`/`4`/`5`),metadata 必须包含合法 `dem-encoding`、`huavd:vertical-datum`、`attribution` 和与 header 一致的 bounds。
 - manifest `output.size_bytes` 是否匹配文件大小。
 - manifest `output.sha512` 和 sidecar SHA512 是否匹配。
