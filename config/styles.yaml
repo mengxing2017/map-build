@@ -136,7 +136,8 @@ paint_layers:
             "bus_stop": "bus"
           default: "road-junction"
       icon-size: 0.8
-      icon-allow-overlap: false
+      icon-allow-overlap: true
+      icon-ignore-placement: true
       text-field: ["coalesce", ["get", "ref"], ["get", "name"]]
       text-font: ["NotoSans-Regular"]
       text-size: 10
@@ -172,6 +173,44 @@ paint_layers:
       text-optional: true
     paint:
       text-color: "#4b5563"
+      text-halo-color: "#ffffff"
+      text-halo-width: 1
+  - id: "poi-amenity-symbol"
+    source_layer: "poi_label"
+    type: "symbol"
+    minzoom: 13
+    filter: ["match", ["get", "amenity"], ["hospital", "clinic", "doctors", "school", "university", "college", "kindergarten"], true, false]
+    layout:
+      icon-image:
+        match:
+          field: "amenity"
+          cases:
+            "hospital": "hospital"
+            "clinic": "hospital"
+            "doctors": "hospital"
+            "school": "school"
+            "university": "school"
+            "college": "school"
+            "kindergarten": "school"
+          default: "school"
+      icon-size: 0.78
+      icon-allow-overlap: true
+      icon-ignore-placement: true
+      text-field: ["coalesce", ["get", "name:zh-Hans"], ["get", "name:zh"], ["get", "name"], ["get", "name:en"]]
+      text-font: ["NotoSans-Regular"]
+      text-size: 10
+      text-offset: [0, 0.8]
+      text-anchor: "top"
+      text-optional: true
+    paint:
+      text-color:
+        match:
+          field: "amenity"
+          cases:
+            "hospital": "#b91c1c"
+            "clinic": "#b91c1c"
+            "doctors": "#b91c1c"
+          default: "#334155"
       text-halo-color: "#ffffff"
       text-halo-width: 1
   - id: "water"
