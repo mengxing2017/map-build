@@ -69,12 +69,35 @@ jq -n \
   --arg locale "${STYLE_LOCALE}" \
   --argjson viewport "${viewport_json}" \
   '
+    def text_field($fields): ["coalesce"] + ($fields | map(["get", .]));
+    def convert_paint_value:
+      if type == "object" and has("match") then
+        .match as $m
+        | ["match", ["get", $m.field]]
+          + (reduce ($m.cases | to_entries[]) as $pair ([]; . + [$pair.key, $pair.value]))
+          + [$m.default]
+      else
+        .
+      end;
+    def convert_paint_layer:
+      . as $l
+      | {
+          id: $l.id,
+          type: $l.type,
+          source: $source_id,
+          "source-layer": $l.source_layer,
+          minzoom: ($l.minzoom // 0)
+        }
+        + (if ($l.layout // null) != null then {layout: ($l.layout | with_entries(.value |= convert_paint_value))} else {} end)
+        + {
+          paint: ($l.paint | with_entries(.value |= convert_paint_value))
+        };
     ($config[0]) as $c
     | ($c.locales[] | select(.tag == $locale)) as $locale_config
     | ($locale_config.name_fields) as $name_fields
     | (($locale_config.font_stack // ["NotoSans-Regular"]) | if type == "array" and length > 0 then . else ["NotoSans-Regular"] end) as $locale_font_stack
-    | def text_field($fields): ["coalesce"] + ($fields | map(["get", .]));
-    {
+    | (($c.paint_layers // []) | map(convert_paint_layer)) as $paint_layers
+    | {
       version: 8,
       name: $name,
       glyphs: $glyphs_url,
@@ -92,6 +115,7 @@ jq -n \
             paint: {"background-color": "#f4f2ed"}
           }
         ]
+        + $paint_layers
         + ($c.text_layers | map({
           id: .id,
           type: "symbol",
