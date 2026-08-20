@@ -8,6 +8,8 @@ source "${SCRIPT_DIR}/lib/common.sh"
 source "${SCRIPT_DIR}/lib/config.sh"
 # shellcheck source=lib/pmtiles.sh
 source "${SCRIPT_DIR}/lib/pmtiles.sh"
+# shellcheck source=lib/viewport.sh
+source "${SCRIPT_DIR}/lib/viewport.sh"
 
 STRICT=0
 
@@ -160,7 +162,7 @@ verify_name_locale_config_fields() {
   else
     fail "config global.name_coalesce_order must be name:zh-Hans, name:zh, name, name:en"
   fi
-  for layer_id in road railway water waterway landuse building admin natural_a natural_line leisure_a place_label poi_label transport_label; do
+  for layer_id in road railway water waterway landuse building admin natural_a natural_line leisure_a place_label poi_label transport_label island; do
     check_config_final_field_in_include_tags "${layer_id}" "name:zh"
     check_config_final_field "${layer_id}" "name:zh"
   done
@@ -223,6 +225,155 @@ verify_railway_metadata_fields() {
   check_metadata_layer_field "${metadata}" "railway" "highspeed"
   check_metadata_layer_field "${metadata}" "railway" "bridge"
   check_metadata_layer_field "${metadata}" "railway" "tunnel"
+}
+
+verify_style_text_layers() {
+  local style_file="$1"
+  [[ -f "${style_file}" ]] || { fail "style.json missing"; return; }
+  for layer_id in railway-labels island-labels; do
+    check_style_layer_present "${style_file}" "${layer_id}"
+  done
+}
+
+check_style_layer_present() {
+  local style_file="$1"
+  local layer_id="$2"
+  if jq -e --arg id "${layer_id}" '.layers[] | select(.id == $id)' "${style_file}" >/dev/null; then
+    ok "style.json layer=${layer_id}"
+  else
+    fail "style.json missing layer=${layer_id}"
+  fi
+}
+
+verify_style_paint_layers() {
+  local style_file="$1"
+  [[ -f "${style_file}" ]] || { fail "style.json missing"; return; }
+  for layer_id in water island railway; do
+    if jq -e --arg id "${layer_id}" '
+      (.layers | map(select(.id == $id)) | first) as $match
+      | $match != null
+        and ($match.type == "line" or $match.type == "fill" or $match.type == "circle" or $match.type == "background")
+        and (($match.paint // {}) | type == "object" and (keys | length) > 0)
+    ' "${style_file}" >/dev/null 2>&1; then
+      ok "style.json paint_layer=${layer_id}"
+    else
+      fail "style.json missing or empty paint_layer=${layer_id}"
+    fi
+  done
+}
+
+config_dir_export() {
+  printf '%s\n' "${CONFIG_DIR}/export-config/$1.json"
+}
+
+verify_layer_config_fields() {
+  local layer_id="$1"
+  shift
+  local field
+  for field in "$@"; do
+    if jq -e --arg field "${field}" '
+      (.include_tags // []) | index($field)
+    ' "$(config_dir_export "${layer_id}")" >/dev/null 2>&1; then
+      check_export_config_include_tag "${layer_id}" "${field}"
+    fi
+    check_config_final_field_in_include_tags "${layer_id}" "${field}"
+    check_config_final_field "${layer_id}" "${field}"
+  done
+}
+
+verify_layer_metadata_fields() {
+  local metadata="$1"
+  local layer_id="$2"
+  shift 2
+  local field
+  for field in "$@"; do
+    check_metadata_layer_field "${metadata}" "${layer_id}" "${field}"
+  done
+}
+
+verify_water_config_fields() {
+  verify_layer_config_fields water water intermittent place
+}
+
+verify_water_metadata_fields() {
+  local metadata="$1"
+  verify_layer_metadata_fields "${metadata}" water water intermittent place
+}
+
+verify_island_config_fields() {
+  verify_layer_config_fields island place
+}
+
+verify_island_metadata_fields() {
+  local metadata="$1"
+  verify_layer_metadata_fields "${metadata}" island place
+}
+
+verify_post_filter_rules() {
+  local layer_id="$1"
+  jq -e --arg layer "${layer_id}" '
+    .source_layers[$layer].post_filter.exclude.place
+    | index("island") != null and index("islet") != null
+  ' "$(layers_json)" >/dev/null \
+    && ok "config layer=${layer_id} post_filter excludes place=island and islet" \
+    || fail "config layer=${layer_id} post_filter must exclude place=island and islet"
+}
+
+TILE_FEATURE_CACHE_DIR="$(mktemp -d)"
+trap 'rm -rf "${TILE_FEATURE_CACHE_DIR}"' EXIT
+
+decode_tile_feature_collections() {
+  local pmtiles="$1"
+  local z="$2" x="$3" y="$4"
+  local cache="${TILE_FEATURE_CACHE_DIR}/${z}-${x}-${y}.json"
+  if [[ -s "${cache}" ]]; then
+    cat "${cache}"
+    return
+  fi
+  pmtiles tile "${pmtiles}" "${z}" "${x}" "${y}" 2>/dev/null \
+    | python_with_mvt -c "
+import sys, json
+try:
+    import mapbox_vector_tile
+    data = sys.stdin.buffer.read()
+    tile = mapbox_vector_tile.decode(data) if data else {}
+except Exception:
+    tile = {}
+print(json.dumps(tile, ensure_ascii=False))
+" > "${cache}" 2>/dev/null || printf '{}' > "${cache}"
+  cat "${cache}"
+}
+
+count_layer_features_with_place() {
+  local pmtiles="$1" source_layer="$2" z="$3" x="$4" y="$5"
+  decode_tile_feature_collections "${pmtiles}" "${z}" "${x}" "${y}" \
+    | jq --arg layer "${source_layer}" '
+      [((.[$layer].features // [])[])
+        | select((.properties.place // "") | IN("island","islet"))]
+      | length
+    ' 2>/dev/null || printf 0
+}
+
+verify_island_layer_contains_island_polygons() {
+  local pmtiles="$1"
+  local features
+  features="$(count_layer_features_with_place "${pmtiles}" "island" 10 855 397)"
+  if [[ "${features}" -gt 0 ]]; then
+    ok "island source-layer has place=island/islet features (sampled z=10 tile)"
+  else
+    fail "island source-layer has no place=island/islet features at sampled z=10 tile"
+  fi
+}
+
+verify_water_layer_excludes_island_polygons() {
+  local pmtiles="$1"
+  local matches
+  matches="$(count_layer_features_with_place "${pmtiles}" "water" 10 855 397)"
+  if [[ "${matches}" == "0" ]]; then
+    ok "water source-layer excludes place=island/islet (sampled z=10 tile)"
+  else
+    fail "water source-layer contains ${matches} place=island/islet features; post_filter should remove them"
+  fi
 }
 
 has_file_matching() {
@@ -326,7 +477,7 @@ verify_role() {
   metadata="$(pmtiles_cli_metadata "${pmtiles}")" || fail "pmtiles metadata readable"
   if [[ -n "${metadata}" ]] && jq -e . >/dev/null 2>&1 <<< "${metadata}"; then
     ok "pmtiles metadata JSON"
-    expected_layers=13
+    expected_layers=14
     [[ "${role}" == "building" ]] && expected_layers=1
     actual_layers="$(jq -r '.vector_layers | length' <<< "${metadata}")"
     check_eq "metadata vector_layers length" "${actual_layers}" "${expected_layers}"
@@ -354,6 +505,13 @@ verify_role() {
         verify_road_metadata_fields "${metadata}"
         verify_railway_config_fields
         verify_railway_metadata_fields "${metadata}"
+        verify_water_config_fields
+        verify_water_metadata_fields "${metadata}"
+        verify_post_filter_rules "water"
+        verify_island_config_fields
+        verify_island_metadata_fields "${metadata}"
+        verify_water_layer_excludes_island_polygons "${pmtiles}"
+        verify_island_layer_contains_island_polygons "${pmtiles}"
       fi
     fi
     header_bounds="$(pmtiles_bounds "${pmtiles}")"
@@ -376,6 +534,8 @@ verify_role() {
       jq -e '.version == 8 and (.sources | type == "object") and (.glyphs | strings | contains("{fontstack}") and contains("{range}.pbf"))' "${style_file}" >/dev/null \
         && ok "style.json MapLibre glyph template" \
         || fail "style.json is missing MapLibre version/source/glyph template"
+      verify_style_text_layers "${style_file}"
+      verify_style_paint_layers "${style_file}"
     fi
 
     glyphs_dir="$(build_glyphs_dir)"
