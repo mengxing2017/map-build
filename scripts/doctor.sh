@@ -195,7 +195,7 @@ check_regions_config() {
 check_regions_config
 
 check_multilingual_config() {
-  local glyphs styles
+  local glyphs styles icons
   if ! glyphs="$(glyphs_json)"; then
     printf 'FAIL %-12s %s\n' "glyphs" "failed to parse config/glyphs.yaml"
     FAILURES=$((FAILURES + 1))
@@ -203,6 +203,11 @@ check_multilingual_config() {
   fi
   if ! styles="$(styles_json)"; then
     printf 'FAIL %-12s %s\n' "styles" "failed to parse config/styles.yaml"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+  if ! icons="$(icons_json)"; then
+    printf 'FAIL %-12s %s\n' "icons" "failed to parse config/icons/manifest.yaml"
     FAILURES=$((FAILURES + 1))
     return
   fi
@@ -233,6 +238,18 @@ check_multilingual_config() {
     printf 'OK   %-12s %s\n' "styles" "schema"
   else
     printf 'FAIL %-12s %s\n' "styles" "schema invalid"
+    FAILURES=$((FAILURES + 1))
+  fi
+
+  if jq -e '
+    .schema_version == 1
+    and (.sprite.icon_size | type == "number" and . > 0)
+    and (.icons | type == "array" and length > 0)
+    and (.icons | all((.id | type == "string" and length > 0) and (.shape | type == "string") and (.color | test("^#[0-9A-Fa-f]{6}$"))))
+  ' "${icons}" >/dev/null; then
+    printf 'OK   %-12s %s\n' "icons" "schema"
+  else
+    printf 'FAIL %-12s %s\n' "icons" "schema invalid"
     FAILURES=$((FAILURES + 1))
   fi
 }
