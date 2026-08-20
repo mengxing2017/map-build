@@ -99,6 +99,11 @@ source_layers:
     geofabrik_shapefile: "gis_osm_water_a_free_1.shp"
     tags_filter:
       - "a/natural=water"
+    post_filter:
+      exclude:
+        place:
+          - "island"
+          - "islet"
     include_tags:
       - "name"
       - "name:zh-Hans"
@@ -107,6 +112,10 @@ source_layers:
       - "name:ja"
       - "name:ko"
       - "width"
+      - "water"
+      - "intermittent"
+      - "seasonal"
+      - "place"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
@@ -115,6 +124,10 @@ source_layers:
       "name:ja": "String"
       "name:ko": "String"
       width: "Number"
+      water: "String"
+      intermittent: "String"
+      seasonal: "String"
+      place: "String"
     renderer: "MapLibre"
 
   waterway:
@@ -258,6 +271,7 @@ source_layers:
       - "name:ja"
       - "name:ko"
       - "natural"
+      - "place"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
@@ -266,6 +280,7 @@ source_layers:
       "name:ja": "String"
       "name:ko": "String"
       natural: "String"
+      place: "String"
     renderer: "MapLibre"
 
   natural_line:
@@ -409,3 +424,33 @@ source_layers:
       "name:ko": "String"
       public_transport: "String"
     renderer: "MapLibre symbol"
+
+  island:
+    order: 14
+    geometry: "polygon"
+    osm_tags:
+      - "place=island"
+      - "place=islet"
+    geofabrik_shapefile: null
+    tags_filter:
+      - "a/place=island"
+      - "a/place=islet"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "name:ja"
+      - "name:ko"
+      - "place"
+      - "natural"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:zh": "String"
+      "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
+      place: "String"
+      natural: "String"
+    renderer: "MapLibre"

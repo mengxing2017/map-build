@@ -29,6 +29,7 @@ defaults:
     - "place_label"
     - "poi_label"
     - "transport_label"
+    - "island"
   high_density_baseline:
     max_zoom: 14
     maximum_tile_bytes: 2097152
@@ -40,7 +41,7 @@ metadata:
   data_license: "ODbL-1.0"
   tile_type: "MVT"
   tile_compression: "gzip"
-  vector_layer_count: 13
+  vector_layer_count: 14
 
 high_density:
   - region_match: "japan/tokyo-tokyo"
