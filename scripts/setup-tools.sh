@@ -12,6 +12,7 @@ PMTILES_VERSION="${PMTILES_VERSION:-v1.31.2}"
 BUILD_GLYPHS_CRATE="${BUILD_GLYPHS_CRATE:-versatiles_glyphs}"
 BUILD_GLYPHS_BINARY="${BUILD_GLYPHS_BINARY:-versatiles_glyphs}"
 BUILD_GLYPHS_VERSION="${BUILD_GLYPHS_VERSION:-0.9.1}"
+MBGL_RENDERER_NPM_PACKAGE="${MBGL_RENDERER_NPM_PACKAGE:-mbgl-renderer}"
 INSTALL_PREFIX="${INSTALL_PREFIX:-$HOME/.local}"
 BIN_DIR="${BIN_DIR:-${INSTALL_PREFIX}/bin}"
 BUILD_ROOT="${BUILD_ROOT:-/tmp/huavd-map-build-tools}"
@@ -266,8 +267,8 @@ tippecanoe_make_includes() {
     flags="$(pkg-config --cflags sqlite3 zlib) ${flags}"
   fi
   if using_nix_toolchain; then
-    flags="$(append_unique_flag "${flags}" "$(devbox_lock_include_flags_for 'sqlite@latest' sqlite3.h)")"
-    flags="$(append_unique_flag "${flags}" "$(devbox_lock_include_flags_for 'zlib@latest' zlib.h)")"
+    flags="$(append_unique_flag "${flags}" "$(devbox_lock_include_flags_for 'sqlite@3.53.3' sqlite3.h)")"
+    flags="$(append_unique_flag "${flags}" "$(devbox_lock_include_flags_for 'zlib@1.3.2' zlib.h)")"
   else
     flags="$(append_unique_flag "${flags}" "-I/usr/local/include")"
     flags="$(append_unique_flag "${flags}" "-I/usr/include")"
@@ -283,8 +284,8 @@ tippecanoe_make_libs() {
     flags="$(pkg-config --libs-only-L --libs-only-other sqlite3 zlib) ${flags}"
   fi
   if using_nix_toolchain; then
-    flags="$(append_unique_flag "${flags}" "$(devbox_lock_lib_flags_for 'sqlite@latest' 'libsqlite3.so*')")"
-    flags="$(append_unique_flag "${flags}" "$(devbox_lock_lib_flags_for 'zlib@latest' 'libz.so*')")"
+    flags="$(append_unique_flag "${flags}" "$(devbox_lock_lib_flags_for 'sqlite@3.53.3' 'libsqlite3.so*')")"
+    flags="$(append_unique_flag "${flags}" "$(devbox_lock_lib_flags_for 'zlib@1.3.2' 'libz.so*')")"
   else
     flags="$(append_unique_flag "${flags}" "-L/usr/local/lib")"
     if [[ -d /usr/lib/x86_64-linux-gnu ]]; then
@@ -625,6 +626,167 @@ EOF
   fi
 
   log_info "build-glyphs installed: $(tool_version_line build-glyphs)"
+}
+
+install_mbgl_render() {
+  if command -v mbgl-render >/dev/null 2>&1; then
+    log_info "mbgl-render already installed: $(tool_version_line mbgl-render)"
+    write_mbgl_render_wrapper || return 1
+    return 0
+  fi
+
+  if command -v pnpm >/dev/null 2>&1; then
+    log_info "installing mbgl-render CLI from npm package ${MBGL_RENDERER_NPM_PACKAGE}"
+    if pnpm add -g "${MBGL_RENDERER_NPM_PACKAGE}"; then
+      mbgl_render_npm_bin_path >/dev/null || {
+        log_error "${MBGL_RENDERER_NPM_PACKAGE} installation completed but npm CLI target was not found"
+        return 1
+      }
+      write_mbgl_render_wrapper || return 1
+      return 0
+    fi
+    log_warn "pnpm global install failed for ${MBGL_RENDERER_NPM_PACKAGE}"
+  fi
+
+  if command -v npm >/dev/null 2>&1; then
+    log_info "installing mbgl-render CLI from npm package ${MBGL_RENDERER_NPM_PACKAGE}"
+    if npm install -g "${MBGL_RENDERER_NPM_PACKAGE}"; then
+      mbgl_render_npm_bin_path >/dev/null || {
+        log_error "${MBGL_RENDERER_NPM_PACKAGE} installation completed but npm CLI target was not found"
+        return 1
+      }
+      write_mbgl_render_wrapper || return 1
+      return 0
+    fi
+    log_warn "npm global install failed for ${MBGL_RENDERER_NPM_PACKAGE}"
+  fi
+
+  log_warn "mbgl-render is not installed; raster bake needs npm package mbgl-renderer or MBGL_RENDER_TILE_COMMAND"
+  return 0
+}
+
+mbgl_render_npm_bin_path() {
+  command -v npm >/dev/null 2>&1 || return 1
+  local npm_root npm_prefix candidate
+  npm_prefix="$(npm prefix -g 2>/dev/null || true)"
+  if [[ -n "${npm_prefix}" ]]; then
+    candidate="${npm_prefix}/bin/mbgl-render"
+    if [[ -x "${candidate}" && "${candidate}" != "${BIN_DIR}/mbgl-render" ]]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  fi
+
+  npm_root="$(npm root -g 2>/dev/null || true)"
+  if [[ -n "${npm_root}" && -f "${npm_root}/mbgl-renderer/dist/cli.js" ]]; then
+    printf '%s\n' "${npm_root}/mbgl-renderer/dist/cli.js"
+    return 0
+  fi
+
+  return 1
+}
+
+append_ld_dir() {
+  local current="$1"
+  local dir="$2"
+  [[ -d "${dir}" ]] || {
+    printf '%s\n' "${current}"
+    return
+  }
+  case ":${current}:" in
+    *":${dir}:"*) printf '%s\n' "${current}" ;;
+    *) printf '%s:%s\n' "${current}" "${dir}" ;;
+  esac
+}
+
+mbgl_render_ld_library_path() {
+  local current="$1"
+  shift
+  local package path
+  for package in "$@"; do
+    while IFS= read -r path; do
+      [[ -n "${path}" ]] || continue
+      current="$(append_ld_dir "${current}" "${path}/lib")"
+    done < <(devbox_lock_package_paths "${package}")
+  done
+  printf '%s\n' "${current}"
+}
+
+default_mbgl_render_ld_library_path() {
+  local ld_path
+  ld_path=""
+  ld_path="$(mbgl_render_ld_library_path "${ld_path}" \
+    "libjpeg8@3.1.4.1" \
+    "libglvnd@1.7.0" \
+    "mesa@26.2.0" \
+    "xorg.libX11@1.8.12" \
+    "xorg.libXext@1.3.6" \
+    "curl@8.17.0" \
+    "icu74@74.2" \
+    "libpng@1.6.43" \
+    "libuv@1.52.1" \
+    "libwebp@1.6.0" \
+    "zlib@1.3.2")"
+
+  printf '%s\n' "${ld_path#:}"
+}
+
+write_mbgl_render_wrapper() {
+  local wrapper target default_ld
+  wrapper="${BIN_DIR}/mbgl-render"
+  target="$(mbgl_render_npm_bin_path || true)"
+  [[ -n "${target}" ]] || {
+    log_warn "mbgl-renderer is installed but npm CLI target was not found"
+    return 0
+  }
+  default_ld="$(default_mbgl_render_ld_library_path)"
+
+  mkdir -p "${BIN_DIR}"
+  if ! cat > "${wrapper}" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+target="${target}"
+default_ld="${default_ld}"
+
+if [[ -n "\${HUAVD_MBGL_RENDER_LD_LIBRARY_PATH:-}" ]]; then
+  export LD_LIBRARY_PATH="\${HUAVD_MBGL_RENDER_LD_LIBRARY_PATH}\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}"
+elif [[ -n "\${default_ld}" ]]; then
+  export LD_LIBRARY_PATH="\${default_ld}\${LD_LIBRARY_PATH:+:\${LD_LIBRARY_PATH}}"
+fi
+
+exec "\${target}" "\$@"
+EOF
+  then
+    log_error "failed to write mbgl-render wrapper to ${wrapper}"
+    return 1
+  fi
+  if ! chmod 0755 "${wrapper}"; then
+    log_error "failed to make mbgl-render wrapper executable: ${wrapper}"
+    return 1
+  fi
+  log_info "wrote mbgl-render wrapper: ${wrapper} -> ${target}"
+}
+
+install_maplibre_native_mbgl_render() {
+  local url="${MAPLIBRE_NATIVE_MBGL_RENDER_BINARY_URL:-}"
+
+  if [[ -z "${url}" ]]; then
+    return 0
+  fi
+
+  require_tooling wget tar find install || return 1
+  log_info "installing maplibre-native mbgl-render from MAPLIBRE_NATIVE_MBGL_RENDER_BINARY_URL"
+  install_binary_from_url \
+    "${url}" \
+    mbgl-render \
+    "${BUILD_ROOT}/mbgl-render.tar.gz" \
+    "${BUILD_ROOT}/mbgl-render-bin"
+
+  already_installed mbgl-render || {
+    log_error "mbgl-render installation completed but command is not on PATH"
+    return 1
+  }
 }
 
 VENV_PYTHON="${REPO_ROOT}/.venv/bin/python"
@@ -1004,6 +1166,12 @@ main() {
     failed=1
   fi
   if ! install_build_glyphs; then
+    failed=1
+  fi
+  if ! install_mbgl_render; then
+    failed=1
+  fi
+  if ! install_maplibre_native_mbgl_render; then
     failed=1
   fi
   if ! check_glyph_tooling; then

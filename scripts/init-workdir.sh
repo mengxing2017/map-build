@@ -18,18 +18,21 @@ if [[ ! "${SESSION}" =~ ^[a-z0-9]+(-[a-z0-9]+)*-[0-9]{8}$ ]]; then
 fi
 
 mkdir -p \
-  "${BUILD_HOME}/bin" \
-  "${BUILD_HOME}/mirror" \
-  "${BUILD_HOME}/cache/tags-filter" \
+	  "${BUILD_HOME}/bin" \
+	  "${BUILD_HOME}/tools" \
+	  "${BUILD_HOME}/mirror" \
+	  "${BUILD_HOME}/cache/bake" \
+	  "${BUILD_HOME}/cache/tags-filter" \
   "${BUILD_HOME}/staging/${SESSION}/layers" \
   "${BUILD_HOME}/outputs" \
   "${BUILD_HOME}/config/regions" \
   "${BUILD_HOME}/config/export-config"
 
-chmod 0755 "${BUILD_HOME}" "${BUILD_HOME}/bin" "${BUILD_HOME}/config" "${BUILD_HOME}/config/regions" "${BUILD_HOME}/config/export-config"
+chmod 0755 "${BUILD_HOME}" "${BUILD_HOME}/bin" "${BUILD_HOME}/tools" "${BUILD_HOME}/config" "${BUILD_HOME}/config/regions" "${BUILD_HOME}/config/export-config"
 chmod "${DIR_MODE}" \
   "${BUILD_HOME}/mirror" \
-  "${BUILD_HOME}/cache" \
+	  "${BUILD_HOME}/cache" \
+	  "${BUILD_HOME}/cache/bake" \
   "${BUILD_HOME}/cache/tags-filter" \
   "${BUILD_HOME}/staging" \
   "${BUILD_HOME}/staging/${SESSION}" \

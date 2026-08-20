@@ -23,6 +23,8 @@ REQUIRED=(
   osmium
   tippecanoe
   pmtiles
+  cwebp
+  xargs
   node
   pnpm
   fonttools
@@ -57,6 +59,74 @@ check_cmd() {
 for cmd in "${REQUIRED[@]}"; do
   check_cmd "${cmd}"
 done
+
+check_mbgl_render_cli() {
+  local output diagnostic
+  if ! command -v mbgl-render >/dev/null 2>&1; then
+    printf 'WARN %-12s missing; raster bake default requires npm package mbgl-renderer, or MBGL_RENDER_TILE_COMMAND\n' "mbgl-render"
+    WARNINGS=$((WARNINGS + 1))
+    return
+  fi
+
+  output="$(mbgl-render --help 2>&1 || true)"
+  if printf '%s\n' "${output}" | head -n 20 | grep -Eq '(^|[[:space:]])(Usage|usage|Options|--style|--width|--height)'; then
+    printf 'OK   %-12s CLI self-test\n' "mbgl-render"
+  else
+    diagnostic="$(printf '%s\n' "${output}" | awk '/libpng version mismatch/ {sub(/^[[:space:]]*what\(\):[[:space:]]*/, ""); print; found=1; exit} END {if (!found) exit 1}' || true)"
+    if [[ -z "${diagnostic}" ]]; then
+      diagnostic="$(printf '%s\n' "${output}" | awk 'NF {print; exit}')"
+    fi
+    printf 'WARN %-12s found but failed CLI self-test%s%s\n' \
+      "mbgl-render" \
+      "${diagnostic:+: }" \
+      "${diagnostic}"
+    printf 'hint %-12s run devbox run setup to refresh the project wrapper; libpng version mismatch requires a compatible mbgl-renderer build or MBGL_RENDER_TILE_COMMAND\n' "mbgl-render"
+    WARNINGS=$((WARNINGS + 1))
+  fi
+}
+
+check_mbgl_render_cli
+
+check_mbgl_native_deps() {
+  command -v npm >/dev/null 2>&1 || return 0
+  command -v ldd >/dev/null 2>&1 || return 0
+
+  local npm_root addon ldd_output missing wrapper ld_prefix
+  npm_root="$(npm root -g 2>/dev/null || true)"
+  [[ -n "${npm_root}" && -d "${npm_root}/mbgl-renderer" ]] || return 0
+
+  addon="$(find "${npm_root}/mbgl-renderer/node_modules/@maplibre/maplibre-gl-native" -name '*.node' -print -quit 2>/dev/null || true)"
+  [[ -n "${addon}" ]] || return 0
+
+  wrapper="$(command -v mbgl-render 2>/dev/null || true)"
+  ld_prefix=""
+  if [[ -n "${wrapper}" && -f "${wrapper}" ]]; then
+    ld_prefix="$(sed -n 's/^default_ld="\([^"]*\)"$/\1/p' "${wrapper}" | head -n 1)"
+  fi
+  if [[ -n "${ld_prefix}" ]]; then
+    ldd_output="$(LD_LIBRARY_PATH="${ld_prefix}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" ldd "${addon}" 2>&1 || true)"
+  else
+    ldd_output="$(ldd "${addon}" 2>&1 || true)"
+  fi
+  missing="$(printf '%s\n' "${ldd_output}" | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ')"
+  if [[ -n "${missing}" ]]; then
+    printf 'WARN %-12s missing native library: %s\n' "mbgl-deps" "${missing}"
+    printf 'hint %-12s run devbox install, re-enter devbox shell, then devbox run doctor\n' "mbgl-deps"
+    printf 'hint %-12s if libjpeg.so.8 remains missing on this distro, use a compatible mbgl-renderer build or MBGL_RENDER_TILE_COMMAND\n' "mbgl-deps"
+    WARNINGS=$((WARNINGS + 1))
+  else
+    printf 'OK   %-12s native library deps\n' "mbgl-deps"
+  fi
+}
+
+check_mbgl_native_deps
+
+if command -v pmtiles >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+  printf 'OK   %-12s %s\n' "raster-bake" "PMTiles convert path available"
+else
+  printf 'WARN %-12s missing pmtiles or python3 for raster bake MBTiles conversion\n' "raster-bake"
+  WARNINGS=$((WARNINGS + 1))
+fi
 
 VENV_PYTHON="${REPO_ROOT}/.venv/bin/python"
 VENV_BIN_DIR="${REPO_ROOT}/.venv/bin"

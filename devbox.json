@@ -12,17 +12,29 @@
     "gnumake":                     "4.4.1",
     "gnused":                      "4.9",
     "coreutils":                   "latest",
+    "findutils":                   "latest",
+    "libwebp":                     "1.6.0",
+    "libglvnd":                    "1.7.0",
+    "libjpeg8":                    "3.1.4.1",
+    "curl":                        "8.17.0",
+    "icu":                         "latest",
+    "icu74":                       "74.2",
+    "libpng":                      "1.6.43",
+    "libuv":                       "1.52.1",
+    "mesa":                        "26.2.0",
+    "xorg.libX11":                 "1.8.12",
+    "xorg.libXext":                "1.3.6",
     "cmake":                       "latest",
     "pkg-config":                  "latest",
     "boost":                       "latest",
     "expat":                       "latest",
     "bzip2":                       "latest",
     "zlib": {
-      "version": "latest",
+      "version": "1.3.2",
       "outputs": ["out", "dev"]
     },
     "sqlite": {
-      "version": "latest",
+      "version": "3.53.3",
       "outputs": ["out", "dev"]
     },
     "go":                  "1.25",
@@ -38,7 +50,8 @@
     "init_hook": [
       "export GOPATH=\"${GOPATH:-$HOME/go}\"",
       "export CARGO_HOME=\"${CARGO_HOME:-$HOME/.cargo}\"",
-      "export PATH=\"$HOME/.local/bin:$GOPATH/bin:$CARGO_HOME/bin:$PATH\"",
+      "export HUAVD_MAP_BUILD_HOME=\"${HUAVD_MAP_BUILD_HOME:-/tmp/huavd-map-build}\"",
+      "export PATH=\"$HOME/.local/bin:$HUAVD_MAP_BUILD_HOME/tools/maplibre-native/bin:$GOPATH/bin:$CARGO_HOME/bin:$PATH\"",
       ". $VENV_DIR/bin/activate",
       "export LD_LIBRARY_PATH=$(dirname $(gcc -print-file-name=libstdc++.so.6)):$LD_LIBRARY_PATH"
     ],
