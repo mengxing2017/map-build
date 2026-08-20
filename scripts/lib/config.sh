@@ -465,10 +465,12 @@ layer_min_zoom() {
   case "${layer}" in
     building) printf '12\n' ;;
     natural_line) printf '10\n' ;;
+    peak) printf '10\n' ;;
     leisure_a) printf '10\n' ;;
     place_label) printf '2\n' ;;
     poi_label) printf '14\n' ;;
     transport_label) printf '13\n' ;;
+    highway_point) printf '10\n' ;;
     *) printf '0\n' ;;
   esac
 }
@@ -476,7 +478,7 @@ layer_min_zoom() {
 layer_default_max_zoom() {
   local layer="$1"
   case "${layer}" in
-    road|building|natural_line|poi_label|transport_label) printf '15\n' ;;
+    road|building|natural_line|poi_label|transport_label|peak|highway_point) printf '15\n' ;;
     admin) printf '8\n' ;;
     *) printf '14\n' ;;
   esac

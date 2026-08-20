@@ -313,8 +313,36 @@ source_layers:
       natural: "String"
     renderer: "MapLibre"
 
-  leisure_a:
+  peak:
     order: 10
+    geometry: "point"
+    osm_tags:
+      - "natural=peak"
+    geofabrik_shapefile: null
+    tags_filter:
+      - "n/natural=peak"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "name:ja"
+      - "name:ko"
+      - "natural"
+      - "ele"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:zh": "String"
+      "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
+      natural: "String"
+      ele: "Number"
+    renderer: "MapLibre symbol"
+
+  leisure_a:
+    order: 11
     geometry: "polygon"
     osm_tags:
       - "leisure=*"
@@ -340,7 +368,7 @@ source_layers:
     renderer: "MapLibre"
 
   place_label:
-    order: 11
+    order: 12
     geometry: "point"
     osm_tags:
       - "place=*"
@@ -368,7 +396,7 @@ source_layers:
     renderer: "MapLibre symbol"
 
   poi_label:
-    order: 12
+    order: 13
     geometry: "point"
     osm_tags:
       - "amenity=*"
@@ -402,13 +430,23 @@ source_layers:
     renderer: "MapLibre symbol"
 
   transport_label:
-    order: 13
+    order: 14
     geometry: "point"
     osm_tags:
       - "public_transport=*"
+      - "railway=station"
+      - "railway=halt"
+      - "railway=tram_stop"
+      - "railway=subway_entrance"
+      - "railway=stop"
     geofabrik_shapefile: "gis_osm_transport_free_1.shp"
     tags_filter:
       - "n/public_transport"
+      - "n/railway=station"
+      - "n/railway=halt"
+      - "n/railway=tram_stop"
+      - "n/railway=subway_entrance"
+      - "n/railway=stop"
     include_tags:
       - "name"
       - "name:zh-Hans"
@@ -417,6 +455,9 @@ source_layers:
       - "name:ja"
       - "name:ko"
       - "public_transport"
+      - "railway"
+      - "ref"
+      - "network"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
@@ -425,10 +466,49 @@ source_layers:
       "name:ja": "String"
       "name:ko": "String"
       public_transport: "String"
+      railway: "String"
+      ref: "String"
+      network: "String"
+    renderer: "MapLibre symbol"
+
+  highway_point:
+    order: 15
+    geometry: "point"
+    osm_tags:
+      - "highway=motorway_junction"
+      - "highway=bus_stop"
+      - "highway=services"
+      - "highway=rest_area"
+    geofabrik_shapefile: null
+    tags_filter:
+      - "n/highway=motorway_junction"
+      - "n/highway=bus_stop"
+      - "n/highway=services"
+      - "n/highway=rest_area"
+    include_tags:
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "name:ja"
+      - "name:ko"
+      - "highway"
+      - "ref"
+      - "network"
+    final_fields:
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:zh": "String"
+      "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
+      highway: "String"
+      ref: "String"
+      network: "String"
     renderer: "MapLibre symbol"
 
   island:
-    order: 14
+    order: 16
     geometry: "polygon"
     osm_tags:
       - "place=island"
