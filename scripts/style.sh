@@ -41,6 +41,7 @@ source_type="$(jq -r '.source.type // "vector"' "${styles_config}")"
 source_url="${PMTILES_URL:-$(jq -r '.source.url // "pmtiles://{pmtiles}"' "${styles_config}")}"
 glyphs_template="$(jq -r '.glyphs_url // "huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf"' "${styles_config}")"
 glyphs_url="${glyphs_template//\{locale\}/${STYLE_LOCALE}}"
+sprite_template="$(sprite_url)"
 style_path="$(build_style_path)"
 ensure_dir "$(dirname -- "${style_path}")"
 
@@ -66,6 +67,7 @@ jq -n \
   --arg source_type "${source_type}" \
   --arg source_url "${source_url}" \
   --arg glyphs_url "${glyphs_url}" \
+  --arg sprite_url "${sprite_template}" \
   --arg locale "${STYLE_LOCALE}" \
   --argjson viewport "${viewport_json}" \
   '
@@ -89,9 +91,8 @@ jq -n \
           minzoom: ($l.minzoom // 0)
         }
         + (if ($l.layout // null) != null then {layout: ($l.layout | with_entries(.value |= convert_paint_value))} else {} end)
-        + {
-          paint: ($l.paint | with_entries(.value |= convert_paint_value))
-        };
+        + (if ($l.paint // null) != null then {paint: ($l.paint | with_entries(.value |= convert_paint_value))} else {} end)
+        + (if ($l.filter // null) != null then {filter: $l.filter} else {} end);
     ($config[0]) as $c
     | ($c.locales[] | select(.tag == $locale)) as $locale_config
     | ($locale_config.name_fields) as $name_fields
@@ -145,6 +146,7 @@ jq -n \
         "huavd:viewport": $viewport
       }
     }
+    + (if $sprite_url == "" or $sprite_url == "null" then {} else {sprite: $sprite_url} end)
   ' > "${style_path}"
 
 write_sha512_file "${style_path}"
