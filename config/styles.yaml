@@ -278,3 +278,21 @@ paint_layers:
           cases:
             "yes": 0.5
           default: 1
+  - id: "road-shield"
+    source_layer: "road"
+    type: "symbol"
+    minzoom: 8
+    filter: ["all", ["has", "ref"], ["!=", ["get", "ref"], ""], ["match", ["get", "highway"], ["motorway", "trunk", "primary", "secondary"], true, false]]
+    layout:
+      text-field: ["get", "ref"]
+      text-font: ["NotoSans-Regular"]
+      text-size: ["interpolate", ["linear"], ["zoom"], 8, 10, 12, 11, 16, 13]
+      symbol-placement: "line"
+      symbol-spacing: ["interpolate", ["linear"], ["zoom"], 8, 360, 12, 520, 16, 680]
+      text-allow-overlap: false
+      text-ignore-placement: false
+      text-optional: true
+    paint:
+      text-color: "#263238"
+      text-halo-color: "#ffffff"
+      text-halo-width: 1.6
