@@ -20,6 +20,50 @@ usage() {
   printf 'usage: %s --region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--base-pmtiles=<path>] [--bbox=w,s,e,n] [--min-zoom=Z] [--max-zoom=Z] [--force]\n' "$0"
 }
 
+PMTILES_SERVE_PID=""
+
+cleanup_render_bake() {
+  if [[ -n "${PMTILES_SERVE_PID}" ]] && kill -0 "${PMTILES_SERVE_PID}" >/dev/null 2>&1; then
+    kill "${PMTILES_SERVE_PID}" >/dev/null 2>&1 || true
+    wait "${PMTILES_SERVE_PID}" >/dev/null 2>&1 || true
+  fi
+}
+
+pick_local_port() {
+  python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.bind(("127.0.0.1", 0))
+    print(s.getsockname()[1])
+PY
+}
+
+wait_for_local_port() {
+  local port="$1" pid="$2" log_file="$3"
+  local attempt
+  for attempt in $(seq 1 50); do
+    if python3 - "${port}" <<'PY' >/dev/null 2>&1
+import socket
+import sys
+
+port = int(sys.argv[1])
+with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+    pass
+PY
+    then
+      return 0
+    fi
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      tail -n 20 "${log_file}" >&2 2>/dev/null || true
+      return 1
+    fi
+    sleep 0.1
+  done
+  tail -n 20 "${log_file}" >&2 2>/dev/null || true
+  return 1
+}
+
 render_one_tile() {
   local z="$1" x="$2" y="$3" lng="$4" lat="$5"
   local png="${BAKE_PNG_DIR}/${z}/${x}/${y}.png"
@@ -129,7 +173,7 @@ base_tile_type="$(pmtiles_tile_type "${BASE_PMTILES}")"
 [[ "${base_tile_type}" == "1" ]] \
   || die "${HUAVD_EXIT_VERIFY}" "base PMTiles must be MVT tile_type=1, got ${base_tile_type}"
 
-if [[ ! -f "$(bake_render_style_path)" ]]; then
+if [[ ! -f "$(bake_render_style_path)" || "${SCRIPT_DIR}/style.sh" -nt "$(bake_render_style_path)" || "${CONFIG_DIR}/styles.yaml" -nt "$(bake_render_style_path)" ]]; then
   "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 fi
 require_file "$(bake_render_style_path)"
@@ -167,10 +211,31 @@ webp_dir="${bake_dir}/webp"
 mbtiles="${bake_dir}/raster_bake.mbtiles"
 ensure_dir "${bake_dir}" "${png_dir}" "${webp_dir}" "$(outputs_dir)"
 
-jq --arg base_url "pmtiles://${BASE_PMTILES}" '
+runtime_source_url="pmtiles://${BASE_PMTILES}"
+runtime_tile_url=""
+if [[ -z "${MBGL_RENDER_TILE_COMMAND:-}" && "${MBGL_RENDER_ENGINE}" == "mbgl-renderer" ]]; then
+  trap cleanup_render_bake EXIT
+  pmtiles_serve_dir="$(dirname -- "${BASE_PMTILES}")"
+  pmtiles_archive="$(basename -- "${BASE_PMTILES}")"
+  pmtiles_archive="${pmtiles_archive%.pmtiles}"
+  pmtiles_serve_port="${BAKE_PMTILES_SERVE_PORT:-$(pick_local_port)}"
+  pmtiles_serve_log="${bake_dir}/pmtiles-serve.log"
+  pmtiles serve "${pmtiles_serve_dir}" --interface=127.0.0.1 --port="${pmtiles_serve_port}" > "${pmtiles_serve_log}" 2>&1 &
+  PMTILES_SERVE_PID="$!"
+  wait_for_local_port "${pmtiles_serve_port}" "${PMTILES_SERVE_PID}" "${pmtiles_serve_log}" \
+    || die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "pmtiles serve failed to start; see ${pmtiles_serve_log}"
+  runtime_tile_url="http://127.0.0.1:${pmtiles_serve_port}/${pmtiles_archive}/{z}/{x}/{y}.mvt"
+  log_info "pmtiles serve OK: ${pmtiles_serve_dir} on 127.0.0.1:${pmtiles_serve_port}"
+fi
+
+jq --arg base_url "${runtime_source_url}" --arg tile_url "${runtime_tile_url}" '
   .sources |= with_entries(
     if .value.type == "vector" then
-      .value.url = $base_url
+      if $tile_url == "" then
+        .value |= (.url = $base_url)
+      else
+        .value |= (del(.url) + {tiles: [$tile_url]})
+      end
     else
       .
     end
