@@ -455,6 +455,11 @@ layer_final_field_names_json() {
   layer_final_fields_json "${layer}" | jq -c 'keys'
 }
 
+layer_post_filter_json() {
+  local layer="$1"
+  jq -c --arg layer "${layer}" '.source_layers[$layer].post_filter // {}' "$(layers_json)"
+}
+
 layer_min_zoom() {
   local layer="$1"
   case "${layer}" in

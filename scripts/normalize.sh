@@ -35,6 +35,7 @@ while IFS= read -r layer; do
   input="${stage_layers}/${layer}.geojsonseq"
   require_file "${input}"
   allowed="$(layer_final_field_names_json "${layer}")"
+  post_filter="$(layer_post_filter_json "${layer}")"
   tmp="${input}.tmp"
   bak="${input}.bak"
 
@@ -43,6 +44,7 @@ while IFS= read -r layer; do
     --arg layer "${layer}" \
     --argjson name_order "${name_order}" \
     --argjson allowed "${allowed}" \
+    --argjson post_filter "${post_filter}" \
     '
       def coalesced_name($props):
         ($name_order
@@ -90,9 +92,13 @@ while IFS= read -r layer; do
         else
           $candidate
         end;
+      def excluded_by_post_filter($props):
+        ($post_filter.exclude // {}) as $rules
+        | ($rules | keys) as $fields
+        | any($fields[]; . as $f | ($props[$f] // null) as $v | $v != null and ($rules[$f] | index($v)));
 
       if .properties then
-        if $layer == "natural_a" and .properties.natural == "water" then
+        if excluded_by_post_filter(.properties) then
           empty
         else
           .properties as $props
