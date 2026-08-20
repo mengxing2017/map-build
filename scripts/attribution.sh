@@ -13,7 +13,7 @@ for arg in "$@"; do
   fi
   case "${arg}" in
     -h|--help)
-      printf 'usage: %s --region=<id> --role=<base|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
+      printf 'usage: %s --region=<id> --role=<base|building|raster_bake> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -23,8 +23,8 @@ done
 require_cmd jq
 require_region "${REGION}"
 normalize_session_vars
-[[ "${ROLE}" == "base" || "${ROLE}" == "building" ]] \
-  || die "${HUAVD_EXIT_INPUT}" "attribution role must be base or building"
+[[ "${ROLE}" == "base" || "${ROLE}" == "building" || "${ROLE}" == "raster_bake" ]] \
+  || die "${HUAVD_EXIT_INPUT}" "attribution role must be base, building, or raster_bake"
 
 output="$(build_attribution_path "${ROLE}")"
 ensure_dir "$(dirname -- "${output}")"

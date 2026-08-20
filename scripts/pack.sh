@@ -20,7 +20,7 @@ for arg in "$@"; do
     --format=*) FORMAT="${arg#*=}" ;;
     --include-build-log) INCLUDE_BUILD_LOG=1 ;;
     -h|--help)
-      printf 'usage: %s --session=<session> [--role=base|building|both|dem|all] [--format=tar|zip|both] [--workdir=<path>]\n' "$0"
+      printf 'usage: %s --session=<session> [--role=base|building|raster_bake|base_raster|both_raster|both|dem|all] [--format=tar|zip|both] [--workdir=<path>]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -79,13 +79,18 @@ if (( INCLUDE_BUILD_LOG )); then
 fi
 
 copy_declared_assets() {
-  local style_file glyphs_dir sprite_dir
-  style_file="$(build_style_path)"
-  if [[ -f "${style_file}" ]]; then
-    rm -rf "${pack_dir}/styles"
-    ensure_dir "${pack_dir}/styles"
-    cp "${style_file}" "${style_file}.sha512" "${pack_dir}/styles/"
-  fi
+	  local style_file raster_style_file glyphs_dir sprite_dir
+	  style_file="$(build_style_path)"
+	  if [[ -f "${style_file}" ]]; then
+	    rm -rf "${pack_dir}/styles"
+	    ensure_dir "${pack_dir}/styles"
+	    cp "${style_file}" "${style_file}.sha512" "${pack_dir}/styles/"
+	  fi
+	  raster_style_file="$(build_raster_style_path)"
+	  if [[ -f "${raster_style_file}" ]]; then
+	    ensure_dir "${pack_dir}/styles"
+	    cp "${raster_style_file}" "${raster_style_file}.sha512" "${pack_dir}/styles/"
+	  fi
 
   glyphs_dir="$(build_glyphs_dir)"
   if [[ -d "${glyphs_dir}" ]]; then

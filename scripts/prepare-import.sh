@@ -44,7 +44,7 @@ for arg in "$@"; do
     --aggregate=true) AGGREGATE_MANIFEST="1" ;;
     --aggregate=false) AGGREGATE_MANIFEST="0" ;;
     -h|--help)
-      printf 'usage: %s --session=<session> [--role=base|building|both] [--format=tar|zip] [--output=<archive-path>] [--transfer-id=<id>] [--aggregate] [--workdir=<path>] [--region=<id>] [--yyyymmdd=YYYYMMDD]\n' "$0"
+      printf 'usage: %s --session=<session> [--role=base|building|raster_bake|base_raster|both_raster|both] [--format=tar|zip] [--output=<archive-path>] [--transfer-id=<id>] [--aggregate] [--workdir=<path>] [--region=<id>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -159,6 +159,13 @@ if [[ -f "${style_file}" ]]; then
   ensure_dir "${import_dir}/styles"
   cp "${style_file}" "${style_file}.sha512" "${import_dir}/styles/" \
     || die "${HUAVD_EXIT_DISK}" "failed to copy style into import package"
+fi
+
+raster_style_file="$(build_raster_style_path)"
+if [[ -f "${raster_style_file}" ]]; then
+  ensure_dir "${import_dir}/styles"
+  cp "${raster_style_file}" "${raster_style_file}.sha512" "${import_dir}/styles/" \
+    || die "${HUAVD_EXIT_DISK}" "failed to copy raster style into import package"
 fi
 
 glyphs_dir="$(build_glyphs_dir)"
