@@ -629,6 +629,14 @@ EOF
 
 VENV_PYTHON="${REPO_ROOT}/.venv/bin/python"
 VENV_BIN_DIR="${REPO_ROOT}/.venv/bin"
+PYTHON_PIP_DEPENDENCIES=(
+  "fonttools|fontTools|fonttools|required"
+  "PyYAML|yaml|PyYAML|required"
+  "mapbox-vector-tile|mapbox_vector_tile|mapbox_vector_tile|optional_nix"
+  "shapely|shapely|shapely|optional_nix"
+  "pyclipper|pyclipper|pyclipper|optional_nix"
+  "protobuf|google.protobuf|protobuf|optional_nix"
+)
 
 in_nix_environment() {
   [[ -n "${IN_NIX_SHELL:-}" || -n "${NIX_CC:-}" || -n "${DEVBOX_SHELL_ENABLED:-}" ]] && return 0
@@ -812,6 +820,64 @@ fonttools_works() {
   [[ "${output}" == *"fontTools v"* || "${output}" == *"fonttools v"* ]]
 }
 
+python_module_available() {
+  local module="$1"
+  local import_stmt="import ${module}"
+
+  if [[ -x "${VENV_PYTHON}" ]]; then
+    "${VENV_PYTHON}" -c "${import_stmt}" >/dev/null 2>&1
+    return $?
+  fi
+
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 -c "${import_stmt}" >/dev/null 2>&1
+}
+
+install_python_package() {
+  local package="$1"
+  local label="$2"
+
+  log_warn "${label} is not installed; attempting pip install ${package}"
+
+  if ! ensure_pip; then
+    log_error "cannot install ${label} because pip is not available"
+    return 1
+  fi
+
+  if ! run_pip install "${package}"; then
+    if in_nix_environment; then
+      log_error "failed to install ${label} via pip inside the project venv"
+      log_error "verify the venv is healthy and re-run setup:"
+      log_error "  rm -rf ${REPO_ROOT}/.venv && python3 -m venv ${REPO_ROOT}/.venv && devbox run setup"
+    else
+      log_error "failed to install ${label} via pip; install it manually with: python3 -m pip install --break-system-packages --user ${package}"
+    fi
+    return 1
+  fi
+
+  log_info "${label} installed via pip"
+}
+
+check_python_package_dependency() {
+  local spec="$1"
+  local package module label mode
+  IFS='|' read -r package module label mode <<< "${spec}"
+
+  if python_module_available "${module}"; then
+    log_info "${label} already installed"
+    return 0
+  fi
+
+  if [[ "${mode}" == "optional_nix" ]] && in_nix_environment; then
+    log_warn "${label} is not available in Nix environment"
+    log_warn "pip-installed binary packages may be incompatible with Nix Python"
+    log_warn "viewport and verification tile decoding will use fallbacks where possible"
+    return 0
+  fi
+
+  install_python_package "${package}" "${label}"
+}
+
 write_pip_wrapper() {
   # Install a wrapper at BIN_DIR/pip (and a pip3 symlink) that takes
   # precedence over the Nix-managed pip on PATH. Inside a virtualenv it
@@ -894,23 +960,7 @@ check_glyph_tooling() {
     log_warn "fonttools is not installed; attempting pip install"
   fi
 
-  if ! ensure_pip; then
-    log_error "cannot install fonttools because pip is not available"
-    return 1
-  fi
-
-  if ! run_pip install fonttools; then
-    if in_nix_environment; then
-      log_error "failed to install fonttools via pip inside the project venv"
-      log_error "verify the venv is healthy and re-run setup:"
-      log_error "  rm -rf ${REPO_ROOT}/.venv && python3 -m venv ${REPO_ROOT}/.venv && devbox run setup"
-    else
-      log_error "failed to install fonttools via pip; install it manually with: python3 -m pip install --break-system-packages --user fonttools"
-    fi
-    return 1
-  fi
-
-  log_info "fonttools installed via pip"
+  install_python_package "fonttools" "fonttools" || return 1
 
   if [[ -x "${VENV_BIN_DIR}/fonttools" ]]; then
     if ! command -v fonttools >/dev/null 2>&1 || ! fonttools_works; then
@@ -923,66 +973,21 @@ check_glyph_tooling() {
   return 0
 }
 
-check_mapbox_vector_tile() {
-  if "${VENV_PYTHON}" -c "import mapbox_vector_tile" 2>/dev/null; then
-    log_info "mapbox_vector_tile already installed"
-    return 0
-  fi
-
-  if in_nix_environment; then
-    log_warn "mapbox_vector_tile is not available in Nix environment"
-    log_warn "pip-installed binary packages (shapely) are incompatible with Nix Python"
-    log_warn "viewport center calculation will use fallback (bounds center)"
-    return 0
-  fi
-
-  log_warn "mapbox_vector_tile is not installed; attempting pip install"
-
-  if ! ensure_pip; then
-    log_error "cannot install mapbox_vector_tile because pip is not available"
-    return 1
-  fi
-
-  if ! run_pip install mapbox-vector-tile; then
-    log_error "failed to install mapbox_vector_tile via pip; install it manually with: python3 -m pip install --break-system-packages --user mapbox-vector-tile"
-    return 1
-  fi
-
-  log_info "mapbox_vector_tile installed via pip"
-  return 0
-}
-
-check_pyyaml_tooling() {
+check_python_pip_dependencies() {
   # sprite.sh hardparse YAML via `import yaml`; without PyYAML `make pack`
   # fails when style.json references a sprite and pack auto-invokes sprite.sh.
-  # Install into the project venv so the runtime sees the same Python site
-  # as fonttools / mapbox_vector_tile. Skip when run under bare Nix because
-  # pure-Python PyYAML builds are slow and the system python3 (from devbox)
-  # already provides it via python3Packages.pyyaml.
-  if [[ -x "${VENV_PYTHON}" ]] && "${VENV_PYTHON}" -c "import yaml" 2>/dev/null; then
-    log_info "PyYAML already installed"
-    return 0
-  fi
+  # mapbox-vector-tile is optional in Nix, but when it is installed all of its
+  # runtime imports must work or tile decoding silently falls back to {}.
+  local failed=0
+  local spec
 
-  if in_nix_environment; then
-    log_warn "PyYAML missing in venv; under Nix python3Packages.pyyaml is the expected source — re-run devbox install"
-    return 0
-  fi
+  for spec in "${PYTHON_PIP_DEPENDENCIES[@]}"; do
+    if ! check_python_package_dependency "${spec}"; then
+      failed=1
+    fi
+  done
 
-  log_warn "PyYAML is not installed; attempting pip install"
-
-  if ! ensure_pip; then
-    log_error "cannot install PyYAML because pip is not available"
-    return 1
-  fi
-
-  if ! run_pip install PyYAML; then
-    log_error "failed to install PyYAML via pip; install it manually with: python3 -m pip install --break-system-packages --user PyYAML"
-    return 1
-  fi
-
-  log_info "PyYAML installed via pip"
-  return 0
+  return "${failed}"
 }
 
 main() {
@@ -1004,10 +1009,7 @@ main() {
   if ! check_glyph_tooling; then
     failed=1
   fi
-  if ! check_mapbox_vector_tile; then
-    failed=1
-  fi
-  if ! check_pyyaml_tooling; then
+  if ! check_python_pip_dependencies; then
     failed=1
   fi
   if ! write_pip_wrapper "${VENV_PYTHON}"; then
