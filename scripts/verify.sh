@@ -230,6 +230,9 @@ verify_base_fill_metadata_fields() {
 }
 
 verify_road_config_fields() {
+  check_config_final_field_in_include_tags "road" "ref"
+  check_config_final_field "road" "ref"
+  check_export_config_include_tag "road" "ref"
   check_config_final_field_in_include_tags "road" "highway"
   check_config_final_field "road" "highway"
   check_export_config_include_tag "road" "highway"
@@ -237,6 +240,7 @@ verify_road_config_fields() {
 
 verify_road_metadata_fields() {
   local metadata="$1"
+  check_metadata_layer_field "${metadata}" "road" "ref"
   check_metadata_layer_field "${metadata}" "road" "highway"
   check_metadata_layer_field "${metadata}" "road" "bridge"
   check_metadata_layer_field "${metadata}" "road" "tunnel"
@@ -262,9 +266,15 @@ verify_railway_metadata_fields() {
 verify_style_text_layers() {
   local style_file="$1"
   [[ -f "${style_file}" ]] || { fail "style.json missing"; return; }
-  for layer_id in railway-labels island-labels peak-symbol transport-station-symbol highway-point-symbol poi-tourism-symbol poi-amenity-symbol; do
+  for layer_id in road-shield railway-labels island-labels peak-symbol transport-station-symbol highway-point-symbol poi-tourism-symbol poi-amenity-symbol; do
     check_style_layer_present "${style_file}" "${layer_id}"
   done
+  check_style_layer_source_layer "${style_file}" "road-shield" "road"
+  check_style_layer_layout_contains "${style_file}" "road-shield" "text-field" "ref"
+  check_style_layer_filter_contains "${style_file}" "road-shield" "ref"
+  check_style_layer_filter_contains "${style_file}" "road-shield" "highway"
+  check_style_layer_filter_excludes "${style_file}" "road-shield" "network"
+  check_style_layer_filter_excludes "${style_file}" "road-shield" "int_ref"
   check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "hospital"
   check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "school"
   check_style_layer_layout_bool "${style_file}" "highway-point-symbol" "icon-allow-overlap" "true"
@@ -280,6 +290,63 @@ check_style_layer_present() {
     ok "style.json layer=${layer_id}"
   else
     fail "style.json missing layer=${layer_id}"
+  fi
+}
+
+check_style_layer_source_layer() {
+  local style_file="$1"
+  local layer_id="$2"
+  local source_layer="$3"
+  if jq -e --arg id "${layer_id}" --arg source_layer "${source_layer}" '
+    (.layers | map(select(.id == $id)) | first) as $match
+    | $match["source-layer"] == $source_layer
+  ' "${style_file}" >/dev/null; then
+    ok "style.json layer=${layer_id} source-layer=${source_layer}"
+  else
+    fail "style.json layer=${layer_id} source-layer must be ${source_layer}"
+  fi
+}
+
+check_style_layer_layout_contains() {
+  local style_file="$1"
+  local layer_id="$2"
+  local key="$3"
+  local expected="$4"
+  if jq -e --arg id "${layer_id}" --arg key "${key}" --arg expected "${expected}" '
+    (.layers | map(select(.id == $id)) | first) as $match
+    | (($match.layout[$key] // null) | tostring | contains($expected))
+  ' "${style_file}" >/dev/null; then
+    ok "style.json layer=${layer_id} layout.${key} contains ${expected}"
+  else
+    fail "style.json layer=${layer_id} layout.${key} must contain ${expected}"
+  fi
+}
+
+check_style_layer_filter_contains() {
+  local style_file="$1"
+  local layer_id="$2"
+  local expected="$3"
+  if jq -e --arg id "${layer_id}" --arg expected "${expected}" '
+    (.layers | map(select(.id == $id)) | first) as $match
+    | (($match.filter // null) | tostring | contains($expected))
+  ' "${style_file}" >/dev/null; then
+    ok "style.json layer=${layer_id} filter contains ${expected}"
+  else
+    fail "style.json layer=${layer_id} filter must contain ${expected}"
+  fi
+}
+
+check_style_layer_filter_excludes() {
+  local style_file="$1"
+  local layer_id="$2"
+  local forbidden="$3"
+  if jq -e --arg id "${layer_id}" --arg forbidden "${forbidden}" '
+    (.layers | map(select(.id == $id)) | first) as $match
+    | (($match.filter // null) | tostring | contains($forbidden) | not)
+  ' "${style_file}" >/dev/null; then
+    ok "style.json layer=${layer_id} filter excludes ${forbidden}"
+  else
+    fail "style.json layer=${layer_id} filter must not contain ${forbidden}"
   fi
 }
 
