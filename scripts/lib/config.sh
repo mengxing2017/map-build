@@ -69,6 +69,10 @@ tippecanoe_json() {
   config_json_path tippecanoe
 }
 
+bake_json() {
+  config_json_path bake
+}
+
 glyphs_json() {
   config_json_path glyphs
 }
@@ -365,6 +369,10 @@ styles_url() {
   printf 'huavd-map://styles/%s\n' "$(basename -- "$(build_style_path)")"
 }
 
+raster_styles_url() {
+  printf 'huavd-map://styles/%s\n' "$(basename -- "$(build_raster_style_path)")"
+}
+
 sprite_url() {
   jq -r '.sprite // "huavd-map://sprite/sprite"' "$(styles_json)"
 }
@@ -449,6 +457,8 @@ role_asset_role() {
     printf 'building-vector\n'
   elif [[ "${role}" == "dem" ]]; then
     printf 'dem-raster\n'
+  elif [[ "${role}" == "raster_bake" ]]; then
+    printf 'raster-baked\n'
   else
     printf 'base-vector\n'
   fi
@@ -458,6 +468,8 @@ role_source_type() {
   local role="${1:-base}"
   if [[ "${role}" == "dem" ]]; then
     printf 'dem\n'
+  elif [[ "${role}" == "raster_bake" ]]; then
+    printf 'osm-raster-baked\n'
   else
     printf 'osm-pbf\n'
   fi
@@ -577,6 +589,8 @@ role_layers_json() {
   local role="${1:-base}"
   if [[ "${role}" == "building" ]]; then
     jq -n '["building"]'
+  elif [[ "${role}" == "raster_bake" ]]; then
+    jq -n '[]'
   else
     jq -c '.defaults.source_layers' "$(tippecanoe_json)"
   fi

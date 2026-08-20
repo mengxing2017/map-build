@@ -156,7 +156,7 @@ install_role_record_json() {
     --arg fallback_style_id "osm-dev" \
     --arg fallback_released_at "$(timestamp_utc)" \
     --arg fallback_glyphs_url "$(glyphs_url_template)" \
-    --arg fallback_styles_url "$(styles_url)" \
+    --arg fallback_styles_url "$(if [[ "${role}" == "raster_bake" ]]; then raster_styles_url; else styles_url; fi)" \
     --arg fallback_package_version "${fallback_package_version}" \
     --arg role "${role}" \
     --arg sha512 "${file_sha}" \
@@ -213,9 +213,11 @@ install_role_record_json() {
       elif (."coord-system" != "EPSG:3857") then
         error("install.json coord-system must be EPSG:3857")
       elif ($role == "dem" and (."source-type" != "dem" or ."asset-role" != "dem-raster" or (."dem-encoding" // "") == "")) then
-        error("install.json DEM entry must use source-type=dem, asset-role=dem-raster and dem-encoding")
-      elif ($role != "dem" and ."source-type" != "osm-pbf") then
-        error("install.json vector source-type must be osm-pbf")
+	        error("install.json DEM entry must use source-type=dem, asset-role=dem-raster and dem-encoding")
+	      elif ($role == "raster_bake" and (."source-type" != "osm-raster-baked" or ."asset-role" != "raster-baked")) then
+	        error("install.json raster_bake entry must use source-type=osm-raster-baked and asset-role=raster-baked")
+	      elif (($role != "dem" and $role != "raster_bake") and ."source-type" != "osm-pbf") then
+	        error("install.json vector source-type must be osm-pbf")
       else
         .
       end
@@ -572,8 +574,8 @@ install_write_document_impl() {
           ["standard", "standard-buildings", "terrain-3d", "terrain-3d-buildings"]
         end;
 
-      def asset_required($role):
-        if $role == "base-vector" then true else false end;
+	      def asset_required($role):
+	        if $role == "base-vector" or $role == "raster-baked" then true else false end;
 
       def asset_record($entry; $required; $order; $include_region):
         {
@@ -588,20 +590,23 @@ install_write_document_impl() {
       def bundle_assets($maps; $aggregate):
         ($maps | map(select(."asset-role" == "base-vector")) | .[0]) as $base
         | ($maps | map(select(."asset-role" == "base-vector"))) as $bases
-        | ($maps | map(select(."asset-role" == "building-vector"))) as $buildings
-        | ($maps | map(select(."asset-role" == "dem-raster"))) as $dems
+	        | ($maps | map(select(."asset-role" == "raster-baked"))) as $rasters
+	        | ($maps | map(select(."asset-role" == "building-vector"))) as $buildings
+	        | ($maps | map(select(."asset-role" == "dem-raster"))) as $dems
         | if $base == null then
             []
           elif $aggregate == "1" then
-            (($bases | to_entries | map(asset_record(.; true; .key; "1")))
-             + ($buildings | to_entries | map(asset_record(.; false; (.key + ($bases | length)); "1")))
-             + ($dems | to_entries | map(asset_record(.; false; (.key + ($bases | length) + ($buildings | length)); "1"))))
-          else
-            (
-              [({key: 0, value: $base} | asset_record(.; true; 0; "0"))]
-              + ($buildings | to_entries | map(asset_record(.; false; (.key + 1); "0")))
-              + ($dems | to_entries | map(asset_record(.; false; (.key + 1 + ($buildings | length)); "0")))
-            )
+	            (($rasters | to_entries | map(asset_record(.; true; .key; "1")))
+	             + ($bases | to_entries | map(asset_record(.; true; (.key + ($rasters | length)); "1")))
+	             + ($buildings | to_entries | map(asset_record(.; false; (.key + ($rasters | length) + ($bases | length)); "1")))
+	             + ($dems | to_entries | map(asset_record(.; false; (.key + ($rasters | length) + ($bases | length) + ($buildings | length)); "1"))))
+	          else
+	            (
+	              ($rasters | to_entries | map(asset_record(.; true; .key; "0")))
+	              + [({key: 0, value: $base} | asset_record(.; true; ($rasters | length); "0"))]
+	              + ($buildings | to_entries | map(asset_record(.; false; (.key + 1 + ($rasters | length)); "0")))
+	              + ($dems | to_entries | map(asset_record(.; false; (.key + 1 + ($rasters | length) + ($buildings | length)); "0")))
+	            )
           end;
 
       def bundles($maps; $aggregate):

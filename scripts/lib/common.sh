@@ -167,8 +167,12 @@ mirror_dir() {
   printf '%s/mirror\n' "${WORKDIR}"
 }
 
+cache_dir() {
+  printf '%s/cache\n' "${WORKDIR}"
+}
+
 tags_filter_cache_dir() {
-  printf '%s/cache/tags-filter\n' "${WORKDIR}"
+  printf '%s/tags-filter\n' "$(cache_dir)"
 }
 
 place_admin_cache_dir() {
@@ -202,15 +206,15 @@ island_anchor_report_path() {
 }
 
 configs_cache_dir() {
-  printf '%s/cache/configs\n' "${WORKDIR}"
+  printf '%s/configs\n' "$(cache_dir)"
 }
 
 pack_cache_dir() {
-  printf '%s/cache/pack\n' "${WORKDIR}"
+  printf '%s/pack\n' "$(cache_dir)"
 }
 
 import_cache_dir() {
-  printf '%s/cache/import\n' "${WORKDIR}"
+  printf '%s/import\n' "$(cache_dir)"
 }
 
 staging_dir() {
@@ -262,6 +266,18 @@ build_style_path() {
   printf '%s/%s.style.json\n' "$(outputs_dir)" "${SESSION}"
 }
 
+build_raster_style_path() {
+  printf '%s/%s.style-raster.json\n' "$(outputs_dir)" "${SESSION}"
+}
+
+bake_cache_dir() {
+  printf '%s/bake/%s\n' "$(cache_dir)" "${SESSION}"
+}
+
+bake_render_style_path() {
+  printf '%s/style-render.json\n' "$(bake_cache_dir)"
+}
+
 build_sha512_path() {
   local role="${1:-${ROLE}}"
   printf '%s/%s.pmtiles.sha512\n' "$(outputs_dir)" "$(artifact_stem "${role}")"
@@ -293,15 +309,18 @@ resolve_workspace_path() {
 }
 
 role_list() {
-  local role="${1:-${ROLE}}"
-  case "${role}" in
-    base) printf 'base\n' ;;
-    building) printf 'building\n' ;;
-    both) printf 'base\nbuilding\n' ;;
-    dem) printf 'dem\n' ;;
-    all) printf 'base\nbuilding\ndem\n' ;;
-    *) die "${HUAVD_EXIT_INPUT}" "invalid role: ${role}; expected base, building, both, dem, or all" ;;
-  esac
+	local role="${1:-${ROLE}}"
+	case "${role}" in
+	  base) printf 'base\n' ;;
+	  building) printf 'building\n' ;;
+	  raster_bake) printf 'raster_bake\n' ;;
+	  base_raster) printf 'base\nraster_bake\n' ;;
+	  both_raster) printf 'base\nbuilding\nraster_bake\n' ;;
+	  both) printf 'base\nbuilding\n' ;;
+	  dem) printf 'dem\n' ;;
+	  all) printf 'base\nbuilding\ndem\n' ;;
+	  *) die "${HUAVD_EXIT_INPUT}" "invalid role: ${role}; expected base, building, raster_bake, base_raster, both_raster, both, dem, or all" ;;
+	esac
 }
 
 write_sha512_file() {
