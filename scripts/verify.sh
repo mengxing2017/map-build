@@ -183,6 +183,8 @@ verify_label_config_fields() {
   check_config_final_field_in_include_tags "poi_label" "amenity"
   check_config_final_field_in_include_tags "poi_label" "shop"
   check_config_final_field_in_include_tags "poi_label" "tourism"
+  check_config_layer_tags_filter "poi_label" "a/amenity=hospital"
+  check_config_layer_tags_filter "poi_label" "a/amenity=school"
   check_config_final_field_in_include_tags "transport_label" "public_transport"
   check_config_final_field_in_include_tags "transport_label" "railway"
   check_config_final_field_in_include_tags "transport_label" "ref"
@@ -192,6 +194,18 @@ verify_label_config_fields() {
   check_config_final_field "transport_label" "network"
   verify_layer_config_fields peak natural ele
   verify_layer_config_fields highway_point highway ref network
+}
+
+check_config_layer_tags_filter() {
+  local layer_id="$1"
+  local filter="$2"
+  if jq -e --arg layer "${layer_id}" --arg filter "${filter}" '
+    .source_layers[$layer].tags_filter | index($filter)
+  ' "$(layers_json)" >/dev/null; then
+    ok "config layer=${layer_id} tags_filter=${filter}"
+  else
+    fail "config layer=${layer_id} missing tags_filter=${filter}"
+  fi
 }
 
 verify_base_fill_config_fields() {
@@ -248,9 +262,15 @@ verify_railway_metadata_fields() {
 verify_style_text_layers() {
   local style_file="$1"
   [[ -f "${style_file}" ]] || { fail "style.json missing"; return; }
-  for layer_id in railway-labels island-labels peak-symbol transport-station-symbol highway-point-symbol poi-tourism-symbol; do
+  for layer_id in railway-labels island-labels peak-symbol transport-station-symbol highway-point-symbol poi-tourism-symbol poi-amenity-symbol; do
     check_style_layer_present "${style_file}" "${layer_id}"
   done
+  check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "hospital"
+  check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "school"
+  check_style_layer_layout_bool "${style_file}" "highway-point-symbol" "icon-allow-overlap" "true"
+  check_style_layer_layout_bool "${style_file}" "highway-point-symbol" "icon-ignore-placement" "true"
+  check_style_layer_layout_bool "${style_file}" "poi-amenity-symbol" "icon-allow-overlap" "true"
+  check_style_layer_layout_bool "${style_file}" "poi-amenity-symbol" "icon-ignore-placement" "true"
 }
 
 check_style_layer_present() {
@@ -260,6 +280,37 @@ check_style_layer_present() {
     ok "style.json layer=${layer_id}"
   else
     fail "style.json missing layer=${layer_id}"
+  fi
+}
+
+check_style_layer_icon_image_contains() {
+  local style_file="$1"
+  local layer_id="$2"
+  local icon_id="$3"
+  if jq -e --arg id "${layer_id}" --arg icon "${icon_id}" '
+    (.layers | map(select(.id == $id)) | first) as $match
+    | ($match.layout["icon-image"] // null) as $icon_image
+    | $icon_image != null
+      and (($icon_image | tostring) | contains($icon))
+  ' "${style_file}" >/dev/null; then
+    ok "style.json layer=${layer_id} icon=${icon_id}"
+  else
+    fail "style.json layer=${layer_id} missing icon=${icon_id}"
+  fi
+}
+
+check_style_layer_layout_bool() {
+  local style_file="$1"
+  local layer_id="$2"
+  local key="$3"
+  local expected="$4"
+  if jq -e --arg id "${layer_id}" --arg key "${key}" --argjson expected "${expected}" '
+    (.layers | map(select(.id == $id)) | first) as $match
+    | $match.layout[$key] == $expected
+  ' "${style_file}" >/dev/null; then
+    ok "style.json layer=${layer_id} layout.${key}=${expected}"
+  else
+    fail "style.json layer=${layer_id} layout.${key} must be ${expected}"
   fi
 }
 
