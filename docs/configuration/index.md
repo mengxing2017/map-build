@@ -76,7 +76,9 @@ config/export-config/building.json
 
 base role 的 `building` metadata minzoom 当前为 12,用于 HMI 在常用 zoom 下显示低透明度建筑底色。实际 tippecanoe base 打包仍使用全局 `defaults.min_zoom`;如需物理 per-layer minzoom,必须另行改造 tippecanoe 管线并重新评估 tile size / drop 策略。
 
-底色和铁路相关 layer 必须保留分类字段:`landuse.final_fields.landuse`、`natural_a.final_fields.natural`、`leisure_a.final_fields.leisure`、`building.final_fields.building` 和 `railway.final_fields.railway`。HMI style-loader 直接使用这些字段做 MapLibre `match` 表达式；铁路桥梁 / 隧道样式使用 `railway.final_fields.bridge` 和 `railway.final_fields.tunnel`。
+底色和铁路相关 layer 必须保留分类字段:`landuse.final_fields.landuse`、`natural_a.final_fields.natural`、`natural_a.final_fields.place`、`leisure_a.final_fields.leisure`、`building.final_fields.building`、`railway.final_fields.railway`、`water.final_fields.water`、`water.final_fields.intermittent`、`water.final_fields.place`、`island.final_fields.place`。HMI style-loader 直接使用这些字段做 MapLibre `match` 表达式；铁路桥梁 / 隧道样式使用 `railway.final_fields.bridge` 和 `railway.final_fields.tunnel`。
+
+`place=island` / `place=islet` 的 polygon 由 `island` source-layer 持有,`water` layer 在 `post_filter.exclude.place` 阶段把同名 polygon 排除,避免岛被填成蓝色。`scripts/normalize.sh` 通过读取每层 `post_filter` 配置通用地应用 exclude 规则,新增 layer 直接在 `config/layers.yaml` 声明即可,无需在 normalize.sh 里写特例。
 
 ## glyphs.yaml
 
