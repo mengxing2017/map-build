@@ -103,7 +103,7 @@ abs_path() {
 
 slugify_region() {
   local region="$1"
-  [[ "${region}" =~ ^[a-z0-9]+(/[a-z0-9-]+)*$ ]] \
+  [[ "${region}" =~ ^[a-z0-9]+(-[a-z0-9]+)*(/[a-z0-9]+(-[a-z0-9]+)*)*$ ]] \
     || die "${HUAVD_EXIT_INPUT}" "invalid region id: ${region}; expected lowercase like china/guangxi"
   printf '%s\n' "${region//\//-}"
 }
