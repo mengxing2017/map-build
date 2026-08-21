@@ -74,7 +74,9 @@ metadata、manifest 和标准 `install.json` 打包路径。
 
 ## Role
 
-`ROLE=base` 生成基础地图 PMTiles。`ROLE=building` 生成建筑专用 PMTiles。`ROLE=both` 会依次处理可构建的 role。
+`ROLE=base` 生成基础地图 PMTiles。`ROLE=building` 生成建筑专用 PMTiles。`ROLE=both` 会依次处理可构建的 vector role。
+
+`ROLE=raster_bake` 基于同 session 已存在的 base-vector PMTiles 生成无文字 WebP raster 底图，manifest/metadata 使用 `asset-role=raster-baked` 和 `source-type=osm-raster-baked`。`ROLE=base_raster` 表示 base-vector + raster-baked；`ROLE=both_raster` 表示 base-vector + 可选 building-vector + raster-baked。默认 `ROLE=both` 不包含 raster bake。
 
 `ROLE=dem` 只处理 DEM PMTiles 四件套。`ROLE=all` 用于打包或校验 base、building 和 dem 三类资产；其中 building 仍是可选派生产物，DEM 只有在显式请求或 region `huavd.dem_required=true` 时才作为必需产物。
 
@@ -101,6 +103,7 @@ huavd:
 - `--strict` 模式下,metadata 是否包含底色 / 建筑样式必需字段:`landuse.landuse`、`natural_a.natural`、`leisure_a.leisure`、`building.building`,并校验 `building` metadata minzoom 为 12。
 - `--strict` 模式下,metadata 是否包含铁路样式必需字段:`railway.railway`、`railway.bridge`、`railway.tunnel`。
 - `--strict` 模式下,metadata 是否包含水系线样式必需字段:`waterway.waterway`(子类型)、`waterway.width`,并对 z=10 抽样瓦片统计 `width` 数值覆盖率与 `waterway=river` 特征存在性(覆盖 < 5% 仅 WARN,因为 OSM width 字段本身就稀疏)。
+- `--role=raster_bake` 时,PMTiles `tile_type` 必须是 WebP (`4`),tile compression 必须是 none,metadata `vector_layers` 必须为空。
 - `--role=dem` 时,PMTiles `tile_type` 必须是 raster (`2`/`3`/`4`/`5`),metadata 必须包含合法 `dem-encoding`、`huavd:vertical-datum`、`attribution` 和与 header 一致的 bounds。
 - manifest `output.size_bytes` 是否匹配文件大小。
 - manifest `output.sha512` 和 sidecar SHA512 是否匹配。

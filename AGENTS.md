@@ -86,7 +86,8 @@ Defaults are defined in `Makefile` and `scripts/lib/common.sh`.
 - `REGION`: configured region id, default `china/guangxi`.
 - `YYYYMMDD`: build day in `YYYYMMDD` format, default current UTC day. 地图日更，所以用 8 位日期而不是月份。
 - `SESSION`: `{region-slug}-{yyyymmdd}`, for example `china-guangxi-20260818`.
-- `ROLE`: `base`, `building`, `both`, `dem`, or `all`.
+- `ROLE`: `base`, `building`, `raster_bake`, `base_raster`,
+  `both_raster`, `both`, `dem`, or `all`.
 - `FORMAT`: `tar`, `zip`, or `both` for packaging.
 - `INPUT`: PBF input path for `make build`; relative paths are resolved under
   `WORKDIR` when appropriate.
@@ -100,6 +101,8 @@ ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.pmtiles
 ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.pmtiles.sha512
 ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.manifest.json
 ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.attribution.json
+${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.raster_bake.pmtiles
+${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.style-raster.json
 ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.bundle.tar.gz
 ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.bundle.zip
 ${WORKDIR}/outputs/{overview-id}-{yyyymmdd}.overview.pmtiles
@@ -138,6 +141,14 @@ The `building` role is optional. It only builds when the region has
 `huavd.asset_role: building-vector` and `huavd.source_type: derived-building` in
 `config/regions.yaml`. If `ROLE=both` and building is not enabled, the build skips
 building with a warning.
+
+The `raster_bake` role builds a WebP PMTiles raster asset with HUAVD
+`asset-role=raster-baked` and `source-type=osm-raster-baked`. It is an OSM/vector
+style pre-rendered base map, not satellite imagery, so it must not use
+`asset-role=imagery-raster` and must not require imagery license metadata. Use
+`ROLE=base_raster` for base-vector + raster-baked and `ROLE=both_raster` for
+base-vector + optional building-vector + raster-baked. Bundle asset order is
+`raster-baked=10`, `base-vector=20`, `building-vector=30`, `dem-raster=40`.
 
 The `dem` role is a separate offline DEM asset path. It must use authorized local
 or internal mirror inputs declared in `config/dem.yaml`; do not add default public

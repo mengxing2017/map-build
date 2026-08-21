@@ -25,8 +25,8 @@ Geofabrik PBF 和 MD5 地址配置在 `config/regions.yaml`。`scripts/fetch.sh`
 
 - magic 为 `PMTiles`。
 - spec version 为 `3`。
-- tile type 为 `1`，即 MVT。
-- internal compression 与 tile compression 为 gzip。
+- vector 角色的 tile type 为 `1`，即 MVT；internal compression 与 tile compression 为 gzip。
+- `raster_bake` 角色的 tile type 为 `4`，即 WebP；tile compression 为 none。
 - root directory 必须完整位于文件前 16KiB 内。
 
 ## MapLibre glyph 约束
@@ -59,3 +59,9 @@ huavd:data-license
 ```
 
 地图产品契约和跨服务边界以 HUAVD 总体文档为真值源；本项目只负责离线地图构建产物。
+
+`raster_bake` 产物使用 HUAVD `asset-role=raster-baked` 和
+`source-type=osm-raster-baked`。它表示由 OSM/vector style 预烘焙得到的 WebP
+raster 底图，不是卫星影像，不应要求 `imagery-license-id`。打包 hybrid bundle
+时，`install.json.bundles[].assets` 的顺序固定为 `raster-baked=10`、
+`base-vector=20`、`building-vector=30`、`dem-raster=40`。

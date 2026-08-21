@@ -14,7 +14,7 @@
 | `regions[].geofabrik.md5_url` | MD5 下载地址 |
 | `regions[].geofabrik.basename` | mirror 中的 PBF 文件名 |
 | `regions[].huavd.source_id` | HUAVD source id，metadata 阶段需要 |
-| `regions[].huavd.asset_role` | `base-vector` 或 `building-vector` |
+| `regions[].huavd.asset_role` | region 源数据的默认 vector 资产角色，通常为 `base-vector` 或 `building-vector` |
 | `regions[].huavd.source_type` | `osm-pbf` 或 `derived-building` |
 | `regions[].huavd.package_version_template` | manifest package version 模板 |
 | `regions[].huavd.dem_required` | 可选;为 `true` 时 DEM 打包 / 校验缺失会失败 |
@@ -175,6 +175,14 @@ base role 的 `building` metadata minzoom 当前为 12,用于 HMI 在常用 zoom
 默认配置依赖 `fonts/NotoSans-Regular.ttf` 和 `fonts/NotoSansCJK*.otf`。这些字体不是脚本自动下载项，准备构建机时需要单独放置，并确认再分发许可。
 
 ## styles.yaml
+
+`config/styles.yaml` 同时驱动三类 style 输出：
+
+- `${SESSION}.style.json`：完整 vector style，包含 fill/line/symbol。
+- `${WORKDIR}/cache/bake/${SESSION}/style-render.json`：raster bake 渲染用 style，只保留 background/fill/line，不包含 symbol 和 fill-extrusion。
+- `${SESSION}.style-raster.json`：下游 hybrid style，使用 `raster-baked` raster source 作为底图，只叠加 base-vector symbol/icon layer。
+
+`raster_bake` 不是 region catalog 里的 `huavd.asset_role` 配置值，而是构建角色派生出的正式下游 asset role：`raster-baked`。它表示 OSM/vector style 预烘焙 WebP raster 底图，不是 `imagery-raster`。
 
 `config/styles.yaml` 定义生成 MapLibre style JSON 的最小模板。
 
