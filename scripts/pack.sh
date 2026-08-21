@@ -133,8 +133,21 @@ fi
 
 (
   cd -- "${pack_dir}"
-  rm -f SHA256SUMS
-  find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+  rm -f SHA256SUMS SHA512SUMS
+  find . -type f ! -name SHA256SUMS ! -name SHA512SUMS ! -name '*.sha512' -print0 \
+    | sort -z \
+    | xargs -0 sha256sum > SHA256SUMS
+  find . -type f ! -name SHA256SUMS ! -name SHA512SUMS ! -name '*.sha512' -print0 \
+    | sort -z \
+    | while IFS= read -r -d '' file; do
+        sidecar="${file}.sha512"
+        if [[ -f "${sidecar}" ]]; then
+          sha512="$(awk '{print $1; exit}' "${sidecar}")"
+          printf '%s  %s\n' "${sha512}" "${file}"
+        else
+          sha512sum "${file}"
+        fi
+      done > SHA512SUMS
 )
 
 if [[ "${FORMAT}" == "tar" || "${FORMAT}" == "both" ]]; then
