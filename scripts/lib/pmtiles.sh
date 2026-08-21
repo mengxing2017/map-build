@@ -43,6 +43,18 @@ pmtiles_root_length() {
   pmtiles_u64 "$1" 16
 }
 
+pmtiles_addressed_tiles_count() {
+  pmtiles_u64 "$1" 72
+}
+
+pmtiles_tile_entries_count() {
+  pmtiles_u64 "$1" 80
+}
+
+pmtiles_tile_contents_count() {
+  pmtiles_u64 "$1" 88
+}
+
 pmtiles_internal_compression() {
   pmtiles_byte "$1" 97
 }
@@ -92,6 +104,9 @@ pmtiles_header_manifest() {
     --argjson spec_version "$(pmtiles_spec_version "${file}")" \
     --argjson root_offset "$(pmtiles_root_offset "${file}")" \
     --argjson root_length "$(pmtiles_root_length "${file}")" \
+    --argjson addressed_tiles_count "$(pmtiles_addressed_tiles_count "${file}")" \
+    --argjson tile_entries_count "$(pmtiles_tile_entries_count "${file}")" \
+    --argjson tile_contents_count "$(pmtiles_tile_contents_count "${file}")" \
     --argjson internal_compression "$(pmtiles_internal_compression "${file}")" \
     --argjson tile_compression "$(pmtiles_tile_compression "${file}")" \
     --argjson tile_type "$(pmtiles_tile_type "${file}")" \
@@ -103,6 +118,9 @@ pmtiles_header_manifest() {
       spec_version: $spec_version,
       root_offset: $root_offset,
       root_length: $root_length,
+      addressed_tiles_count: $addressed_tiles_count,
+      tile_entries_count: $tile_entries_count,
+      tile_contents_count: $tile_contents_count,
       internal_compression: $internal_compression,
       tile_compression: $tile_compression,
       tile_type: $tile_type,
