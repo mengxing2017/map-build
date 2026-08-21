@@ -566,7 +566,9 @@ install_write_document_impl() {
         end;
 
       def presentation_scope($role):
-        if $role == "dem-raster" then
+        if $role == "raster-baked" then
+          ["standard", "standard-buildings"]
+        elif $role == "dem-raster" then
           ["terrain-3d", "terrain-3d-buildings", "satellite-3d", "city-3d"]
         elif $role == "building-vector" then
           ["standard-buildings", "terrain-3d-buildings", "city-3d"]
@@ -596,16 +598,16 @@ install_write_document_impl() {
         | if $base == null then
             []
           elif $aggregate == "1" then
-	            (($rasters | to_entries | map(asset_record(.; true; .key; "1")))
-	             + ($bases | to_entries | map(asset_record(.; true; (.key + ($rasters | length)); "1")))
-	             + ($buildings | to_entries | map(asset_record(.; false; (.key + ($rasters | length) + ($bases | length)); "1")))
-	             + ($dems | to_entries | map(asset_record(.; false; (.key + ($rasters | length) + ($bases | length) + ($buildings | length)); "1"))))
+	            (($rasters | to_entries | map(asset_record(.; true; (10 + .key); "1")))
+	             + ($bases | to_entries | map(asset_record(.; true; (20 + .key); "1")))
+	             + ($buildings | to_entries | map(asset_record(.; false; (30 + .key); "1")))
+	             + ($dems | to_entries | map(asset_record(.; false; (40 + .key); "1"))))
 	          else
 	            (
-	              ($rasters | to_entries | map(asset_record(.; true; .key; "0")))
-	              + [({key: 0, value: $base} | asset_record(.; true; ($rasters | length); "0"))]
-	              + ($buildings | to_entries | map(asset_record(.; false; (.key + 1 + ($rasters | length)); "0")))
-	              + ($dems | to_entries | map(asset_record(.; false; (.key + 1 + ($rasters | length) + ($buildings | length)); "0")))
+	              ($rasters | to_entries | map(asset_record(.; true; (10 + .key); "0")))
+	              + [({key: 0, value: $base} | asset_record(.; true; 20; "0"))]
+	              + ($buildings | to_entries | map(asset_record(.; false; (30 + .key); "0")))
+	              + ($dems | to_entries | map(asset_record(.; false; (40 + .key); "0")))
 	            )
           end;
 
