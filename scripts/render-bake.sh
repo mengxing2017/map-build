@@ -119,6 +119,33 @@ render_one_tile() {
     || die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "cwebp failed for PNG tile: ${png}"
 }
 
+write_missing_tiles() {
+  local input_list="$1" missing_list="$2"
+  python3 - "${input_list}" "${BAKE_WEBP_DIR}" "${missing_list}" <<'PY'
+import os
+import sys
+
+tile_list, webp_dir, missing_list = sys.argv[1:]
+missing = 0
+with open(tile_list, "r", encoding="utf-8") as src, open(missing_list, "w", encoding="utf-8") as dst:
+    for line in src:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) != 5:
+            continue
+        z, x, y = parts[:3]
+        webp = os.path.join(webp_dir, z, x, f"{y}.webp")
+        if not os.path.exists(webp) or os.path.getsize(webp) == 0:
+            dst.write(line)
+            missing += 1
+print(missing)
+PY
+}
+
+render_tile_list() {
+  local input_list="$1"
+  xargs -P "${parallel_jobs}" -n 5 "${BASH}" "$0" --render-one < "${input_list}"
+}
+
 for arg in "$@"; do
   if [[ "${arg}" == "--render-one" ]]; then
     RENDER_ONE=1
@@ -184,6 +211,9 @@ tile_size="$(jq -r '.tile_size // 256' <<< "${bake_defaults}")"
 min_zoom="${BAKE_MIN_ZOOM:-$(jq -r '.min_zoom // 0' <<< "${bake_defaults}")}"
 max_zoom="${BAKE_MAX_ZOOM:-$(jq -r '.max_zoom // 14' <<< "${bake_defaults}")}"
 parallel_jobs="${BAKE_JOBS:-$(jq -r '.parallel_jobs // 8' <<< "${bake_defaults}")}"
+bbox_padding_tiles="${BAKE_BBOX_PADDING_TILES:-$(jq -r '.bbox_padding_tiles // 0' <<< "${bake_defaults}")}"
+bake_retries="${BAKE_RETRIES:-$(jq -r '.retries // 2' <<< "${bake_defaults}")}"
+pmtiles_extract="${BAKE_PMTILES_EXTRACT:-$(jq -r '.pmtiles_extract // false' <<< "${bake_defaults}")}"
 skip_existing="$(jq -r '.skip_existing // true' <<< "${bake_defaults}")"
 png_retention="$(jq -r '.png_cache_retention // 0' <<< "${bake_defaults}")"
 webp_lossless="$(jq -r '.cwebp.lossless // true' <<< "${bake_defaults}")"
@@ -192,11 +222,14 @@ webp_metadata="$(jq -r '.cwebp.metadata // "none"' <<< "${bake_defaults}")"
 
 [[ "${min_zoom}" =~ ^[0-9]+$ && "${max_zoom}" =~ ^[0-9]+$ && "${tile_size}" =~ ^[0-9]+$ ]] \
   || die "${HUAVD_EXIT_INPUT}" "bake zooms and tile_size must be integers"
+[[ "${bbox_padding_tiles}" =~ ^[0-9]+$ && "${bake_retries}" =~ ^[0-9]+$ ]] \
+  || die "${HUAVD_EXIT_INPUT}" "BAKE_BBOX_PADDING_TILES and BAKE_RETRIES must be non-negative integers"
 (( min_zoom <= max_zoom )) || die "${HUAVD_EXIT_INPUT}" "bake min_zoom must be <= max_zoom"
 (( parallel_jobs > 0 )) || die "${HUAVD_EXIT_INPUT}" "BAKE_JOBS must be > 0"
 
 case "${skip_existing}" in true) skip_existing=1 ;; false) skip_existing=0 ;; 1|0) ;; *) skip_existing=1 ;; esac
 case "${webp_lossless}" in true) webp_lossless=1 ;; false) webp_lossless=0 ;; 1|0) ;; *) webp_lossless=1 ;; esac
+case "${pmtiles_extract}" in true) pmtiles_extract=1 ;; false) pmtiles_extract=0 ;; 1|0) ;; *) pmtiles_extract=0 ;; esac
 
 output="$(build_pmtiles_path raster_bake)"
 if [[ -e "${output}" && "${FORCE}" != "1" ]]; then
@@ -211,12 +244,24 @@ webp_dir="${bake_dir}/webp"
 mbtiles="${bake_dir}/raster_bake.mbtiles"
 ensure_dir "${bake_dir}" "${png_dir}" "${webp_dir}" "$(outputs_dir)"
 
+bounds="${BAKE_BBOX:-$(pmtiles_bounds "${BASE_PMTILES}" | jq -r '@csv' | tr -d '"')}"
 runtime_source_url="pmtiles://${BASE_PMTILES}"
 runtime_tile_url=""
 if [[ -z "${MBGL_RENDER_TILE_COMMAND:-}" && "${MBGL_RENDER_ENGINE}" == "mbgl-renderer" ]]; then
   trap cleanup_render_bake EXIT
-  pmtiles_serve_dir="$(dirname -- "${BASE_PMTILES}")"
-  pmtiles_archive="$(basename -- "${BASE_PMTILES}")"
+  serve_pmtiles="${BASE_PMTILES}"
+  if (( pmtiles_extract )); then
+    subset_pmtiles="${bake_dir}/base-bake-subset.pmtiles"
+    rm -f "${subset_pmtiles}"
+    pmtiles extract "${BASE_PMTILES}" "${subset_pmtiles}" --bbox="${bounds}" --minzoom="${min_zoom}" --maxzoom="${max_zoom}" \
+      || die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "pmtiles extract failed for raster bake subset"
+    [[ "$(pmtiles_tile_type "${subset_pmtiles}")" == "1" ]] \
+      || die "${HUAVD_EXIT_VERIFY}" "raster bake subset PMTiles must be MVT tile_type=1"
+    serve_pmtiles="${subset_pmtiles}"
+    log_info "raster bake PMTiles subset OK: ${subset_pmtiles}"
+  fi
+  pmtiles_serve_dir="$(dirname -- "${serve_pmtiles}")"
+  pmtiles_archive="$(basename -- "${serve_pmtiles}")"
   pmtiles_archive="${pmtiles_archive%.pmtiles}"
   pmtiles_serve_port="${BAKE_PMTILES_SERVE_PORT:-$(pick_local_port)}"
   pmtiles_serve_log="${bake_dir}/pmtiles-serve.log"
@@ -242,9 +287,7 @@ jq --arg base_url "${runtime_source_url}" --arg tile_url "${runtime_tile_url}" '
   )
 ' "$(bake_render_style_path)" > "${bake_runtime_style}"
 
-bounds="${BAKE_BBOX:-$(pmtiles_bounds "${BASE_PMTILES}" | jq -r '@csv' | tr -d '"')}"
-
-python3 - "${bounds}" "${min_zoom}" "${max_zoom}" "${tile_list}" <<'PY'
+python3 - "${bounds}" "${min_zoom}" "${max_zoom}" "${tile_list}" "${bbox_padding_tiles}" <<'PY'
 import math
 import sys
 
@@ -252,6 +295,7 @@ bounds = [float(part) for part in sys.argv[1].split(",")]
 min_zoom = int(sys.argv[2])
 max_zoom = int(sys.argv[3])
 out = sys.argv[4]
+padding = int(sys.argv[5])
 west, south, east, north = bounds
 
 def lon_to_x(lon, z):
@@ -276,15 +320,21 @@ with open(out, "w", encoding="utf-8") as f:
         xmax = max(0, min(max_index, lon_to_x(east, z)))
         ymin = max(0, min(max_index, lat_to_y(north, z)))
         ymax = max(0, min(max_index, lat_to_y(south, z)))
-        for x in range(min(xmin, xmax), max(xmin, xmax) + 1):
-            for y in range(min(ymin, ymax), max(ymin, ymax) + 1):
+        xmin, xmax = min(xmin, xmax), max(xmin, xmax)
+        ymin, ymax = min(ymin, ymax), max(ymin, ymax)
+        xmin = max(0, xmin - padding)
+        xmax = min(max_index, xmax + padding)
+        ymin = max(0, ymin - padding)
+        ymax = min(max_index, ymax + padding)
+        for x in range(xmin, xmax + 1):
+            for y in range(ymin, ymax + 1):
                 lon, lat = tile_center(x, y, z)
                 f.write(f"{z}\t{x}\t{y}\t{lon:.8f}\t{lat:.8f}\n")
 PY
 
 tile_count="$(wc -l < "${tile_list}" | tr -d '[:space:]')"
 (( tile_count > 0 )) || die "${HUAVD_EXIT_INPUT}" "bake tile list is empty for bounds=${bounds}"
-log_info "raster bake tiles=${tile_count} zoom=${min_zoom}-${max_zoom} bounds=${bounds}"
+log_info "raster bake tiles=${tile_count} zoom=${min_zoom}-${max_zoom} padding=${bbox_padding_tiles} bounds=${bounds}"
 
 export BAKE_STYLE="${bake_runtime_style}"
 export BAKE_PNG_DIR="${png_dir}"
@@ -302,14 +352,42 @@ read -r preflight_z preflight_x preflight_y preflight_lng preflight_lat < "${til
 log_info "raster bake renderer preflight z=${preflight_z} x=${preflight_x} y=${preflight_y}"
 render_one_tile "${preflight_z}" "${preflight_x}" "${preflight_y}" "${preflight_lng}" "${preflight_lat}"
 
-xargs -P "${parallel_jobs}" -n 5 "${BASH}" "$0" --render-one < "${tile_list}"
+render_input="${tile_list}"
+missing_list="${bake_dir}/missing.tsv"
+for attempt in $(seq 0 "${bake_retries}"); do
+  if (( attempt > 0 )); then
+    log_warn "retry raster bake missing tiles attempt=${attempt}/${bake_retries}"
+  fi
+  render_failed=0
+  render_tile_list "${render_input}" || render_failed=1
+  missing_count="$(write_missing_tiles "${tile_list}" "${missing_list}" | tr -d '[:space:]')"
+  if (( missing_count == 0 )); then
+    log_info "raster bake webp tiles complete: ${tile_count}"
+    break
+  fi
+  if (( render_failed )); then
+    log_warn "raster bake renderer exited non-zero; missing tiles=${missing_count}"
+  fi
+  if (( attempt == bake_retries )); then
+    head -n 20 "${missing_list}" >&2
+    die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "raster bake has ${missing_count} missing WebP tiles after ${bake_retries} retries"
+  fi
+  render_input="${missing_list}"
+done
 
-python3 - "${webp_dir}" "${mbtiles}" "$(artifact_stem raster_bake)" "${bounds}" "${min_zoom}" "${max_zoom}" <<'PY'
+python3 - "${webp_dir}" "${mbtiles}" "$(artifact_stem raster_bake)" "${bounds}" "${min_zoom}" "${max_zoom}" "${tile_list}" <<'PY'
 import os
 import sqlite3
 import sys
 
-webp_dir, mbtiles, name, bounds, min_zoom, max_zoom = sys.argv[1:]
+webp_dir, mbtiles, name, bounds, min_zoom, max_zoom, tile_list = sys.argv[1:]
+expected = set()
+with open(tile_list, "r", encoding="utf-8") as f:
+    for line in f:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) == 5:
+            expected.add(tuple(int(part) for part in parts[:3]))
+
 if os.path.exists(mbtiles):
     os.remove(mbtiles)
 conn = sqlite3.connect(mbtiles)
@@ -326,8 +404,10 @@ try:
         "version": "1",
         "description": "HUAVD raster baked non-label base map",
         "attribution": "© OpenStreetMap contributors",
+        "tile_count": str(len(expected)),
     }
     conn.executemany("insert into metadata(name, value) values (?, ?)", metadata.items())
+    inserted = 0
     for root, _dirs, files in os.walk(webp_dir):
         for file_name in files:
             if not file_name.endswith(".webp"):
@@ -340,6 +420,10 @@ try:
             z = int(parts[0])
             x = int(parts[1])
             y = int(parts[2][:-5])
+            if (z, x, y) not in expected:
+                continue
+            if os.path.getsize(path) == 0:
+                continue
             tile_row = (1 << z) - 1 - y
             with open(path, "rb") as f:
                 data = f.read()
@@ -347,7 +431,10 @@ try:
                 "insert into tiles(zoom_level, tile_column, tile_row, tile_data) values (?, ?, ?, ?)",
                 (z, x, tile_row, data),
             )
+            inserted += 1
     conn.execute("create unique index tile_index on tiles (zoom_level, tile_column, tile_row)")
+    if inserted != len(expected):
+        raise SystemExit(f"MBTiles tile count mismatch: inserted={inserted} expected={len(expected)}")
     conn.commit()
 finally:
     conn.close()
@@ -356,6 +443,10 @@ PY
 rm -f "${output}" "${output}.sha512"
 pmtiles convert "${mbtiles}" "${output}" \
   || die "${HUAVD_EXIT_ERROR}" "pmtiles convert failed: ${mbtiles}"
+
+pmtiles_tile_count="$(pmtiles_addressed_tiles_count "${output}")"
+[[ "${pmtiles_tile_count}" == "${tile_count}" ]] \
+  || die "${HUAVD_EXIT_VERIFY}" "raster_bake PMTiles tile_count mismatch: header=${pmtiles_tile_count} expected=${tile_count}"
 
 "${SCRIPT_DIR}/metadata.sh" --pmtiles="${output}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
 "${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
