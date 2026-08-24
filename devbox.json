@@ -32,7 +32,6 @@
     "python3":             "latest",
     "yq":                  "latest",
     "libyaml":             "latest",
-    "gcc":                 "latest",
     "python3Packages.pip": ""
   },
   "shell": {
