@@ -89,6 +89,10 @@ overviews_json() {
   config_json_path overviews
 }
 
+tier_profiles_json() {
+  config_json_path tier-profiles
+}
+
 region_json() {
   local region="$1"
   jq -e --arg id "${region}" '.regions[] | select(.id == $id)' "$(regions_json)"
@@ -445,6 +449,161 @@ role_layers_json() {
 role_layers() {
   local role="${1:-base}"
   role_layers_json "${role}" | jq -r '.[]'
+}
+
+tier_profile_name() {
+  local region="$1"
+  jq -r --arg region "${region}" '.regions[$region].build_profile // empty' "$(tier_profiles_json)"
+}
+
+tier_profile_json() {
+  local profile="$1"
+  jq -e --arg profile "${profile}" '.profiles[$profile]' "$(tier_profiles_json)"
+}
+
+tier_profile_schema_version() {
+  jq -r '.schema_version' "$(tier_profiles_json)"
+}
+
+tier_profile_validate() {
+  local profile="$1"
+  local profile_json layers_json_path invalid_layer invalid_field
+  profile_json="$(tier_profile_json "${profile}")" \
+    || die "${HUAVD_EXIT_INPUT}" "unknown tier profile: ${profile}"
+  layers_json_path="$(layers_json)"
+
+  jq -e '
+    .min_zoom as $min | .max_zoom as $max | .source_layers as $source_layers | (.tippecanoe // {}) as $tippecanoe
+    | ($min | type == "number" and floor == . and . >= 0)
+    and ($max | type == "number" and floor == . and . >= $min and . <= 15)
+    and (.maximum_tile_bytes | type == "number" and floor == . and . > 0)
+    and (.extend_zooms_if_still_dropping == false)
+    and (($source_layers | type) == "array")
+    and (($source_layers | length) > 0)
+    and (($source_layers | length) == ($source_layers | unique | length))
+    and (($tippecanoe | keys - ["simplify_only_low_zooms", "simplification_at_maximum_zoom"] | length) == 0)
+    and (($tippecanoe.simplify_only_low_zooms // false | type) == "boolean")
+    and ((($tippecanoe.simplify_only_low_zooms // false) | not) or (($tippecanoe.simplification_at_maximum_zoom // null) == null))
+    and ((($tippecanoe.simplification_at_maximum_zoom // null) == null) or (($tippecanoe.simplification_at_maximum_zoom | type) == "number" and $tippecanoe.simplification_at_maximum_zoom > 0))
+  ' <<< "${profile_json}" >/dev/null \
+    || die "${HUAVD_EXIT_INPUT}" "invalid tier profile: ${profile}"
+
+  while IFS= read -r invalid_layer; do
+    layer_exists "${invalid_layer}" || die "${HUAVD_EXIT_INPUT}" "tier profile ${profile} references unknown layer: ${invalid_layer}"
+    require_file "${CONFIG_DIR}/export-config/${invalid_layer}.json"
+  done < <(jq -r '.source_layers[]' <<< "${profile_json}")
+
+  invalid_layer="$(jq -r --argjson enabled "$(jq -c '.source_layers' <<< "${profile_json}")" '
+    (.feature_rules // {}) | keys[] | select($enabled | index(.) | not)
+  ' <<< "${profile_json}")"
+  [[ -z "${invalid_layer}" ]] \
+    || die "${HUAVD_EXIT_INPUT}" "tier profile ${profile} has rules for disabled layer: ${invalid_layer}"
+
+  jq -e '
+    .min_zoom as $profile_min | .max_zoom as $profile_max | (.feature_rules // {}) as $feature_rules
+    | all($feature_rules | to_entries[]?;
+      .value as $rule_set
+    | ($rule_set.default == "exclude")
+    and (($rule_set.rules | type) == "array")
+    and (($rule_set.rules | length) > 0)
+    and all($rule_set.rules[];
+      . as $rule | $rule.min_zoom as $rule_min | $rule.max_zoom as $rule_max
+      | (($rule.when | type) == "object")
+      and (($rule.when | length) > 0)
+      and ($rule_min | type == "number" and floor == . and . >= $profile_min)
+      and ($rule_max | type == "number" and floor == . and . >= $rule_min and . <= $profile_max)
+      and all($rule.when[]; . as $values | (type == "array") and (length > 0) and (length == (unique | length)) and all(.[]; type == "string" or type == "number" or type == "boolean"))
+    )
+    )
+  ' <<< "${profile_json}" >/dev/null \
+    || die "${HUAVD_EXIT_INPUT}" "tier profile ${profile} has invalid feature rules"
+
+  while IFS=$'\t' read -r rule_layer invalid_field; do
+    [[ -n "${rule_layer}" ]] || continue
+    jq -e --arg field "${invalid_field}" '.source_layers[$layer].final_fields[$field] != null' \
+      --arg layer "${rule_layer}" "${layers_json_path}" >/dev/null \
+      || die "${HUAVD_EXIT_INPUT}" "tier profile ${profile} rule references unknown final field: ${rule_layer}.${invalid_field}"
+  done < <(jq -r '
+    (.feature_rules // {}) | to_entries[] | .key as $layer | .value.rules[] | .when | keys[] | "\($layer)\t\(.)"
+  ' <<< "${profile_json}")
+}
+
+effective_build_profile() {
+  local region="$1" role="${2:-base}" profile
+  [[ "${role}" == "base" ]] || return 0
+  profile="$(tier_profile_name "${region}")"
+  [[ -n "${profile}" ]] || return 0
+  tier_profile_validate "${profile}"
+  printf '%s\n' "${profile}"
+}
+
+effective_tippecanoe_resolve() {
+  local region="$1" role="${2:-base}" profile params overrides
+  params="$(tippecanoe_resolve "${region}" "${role}")"
+  profile="$(effective_build_profile "${region}" "${role}")"
+  if [[ -n "${profile}" ]]; then
+    overrides="$(tier_profile_json "${profile}" | jq -c '{min_zoom, max_zoom, maximum_tile_bytes, extend_zooms_if_still_dropping, source_layers} + (.tippecanoe // {})')"
+    params="$(jq -cn --argjson base "${params}" --argjson overrides "${overrides}" '$base + $overrides')"
+  fi
+  jq -c '.' <<< "${params}"
+}
+
+effective_role_layers_json() {
+  local region="$1" role="${2:-base}" profile
+  profile="$(effective_build_profile "${region}" "${role}")"
+  if [[ -n "${profile}" ]]; then
+    tier_profile_json "${profile}" | jq -c '.source_layers'
+  else
+    role_layers_json "${role}"
+  fi
+}
+
+effective_role_layers() {
+  effective_role_layers_json "$1" "${2:-base}" | jq -r '.[]'
+}
+
+effective_layer_min_zoom() {
+  local region="$1" role="$2" layer="$3" profile
+  profile="$(effective_build_profile "${region}" "${role}")"
+  if [[ -n "${profile}" ]]; then
+    tier_profile_json "${profile}" | jq -r --arg layer "${layer}" --argjson fallback "$(layer_min_zoom "${layer}")" '
+      .feature_rules[$layer].rules // [] | if length == 0 then $fallback else map(.min_zoom) | min end
+    '
+  else
+    layer_min_zoom "${layer}"
+  fi
+}
+
+effective_layer_max_zoom() {
+  local region="$1" role="$2" layer="$3" tile_max="$4" profile max_zoom
+  profile="$(effective_build_profile "${region}" "${role}")"
+  if [[ -n "${profile}" ]]; then
+    max_zoom="$(tier_profile_json "${profile}" | jq -r --arg layer "${layer}" --argjson fallback "${tile_max}" '
+      .feature_rules[$layer].rules // [] | if length == 0 then $fallback else map(.max_zoom) | max end
+    ')"
+    if [[ "$(tier_profile_json "${profile}" | jq -r --arg layer "${layer}" '(.feature_rules[$layer].rules // []) | length' )" == "0" ]]; then
+      max_zoom="$(layer_effective_max_zoom "${layer}" "${role}" "${tile_max}")"
+    fi
+    (( max_zoom > tile_max )) && max_zoom="${tile_max}"
+    printf '%s\n' "${max_zoom}"
+  else
+    layer_effective_max_zoom "${layer}" "${role}" "${tile_max}"
+  fi
+}
+
+effective_vector_layers_json() {
+  local region="$1" role="$2" tile_max="$3" tmp layer
+  tmp="$(mktemp)"
+  while IFS= read -r layer; do
+    jq -n \
+      --arg id "${layer}" \
+      --argjson minzoom "$(effective_layer_min_zoom "${region}" "${role}" "${layer}")" \
+      --argjson maxzoom "$(effective_layer_max_zoom "${region}" "${role}" "${layer}" "${tile_max}")" \
+      --argjson fields "$(layer_final_fields_json "${layer}")" \
+      '{id:$id,minzoom:$minzoom,maxzoom:$maxzoom,fields:$fields}' >> "${tmp}"
+  done < <(effective_role_layers "${region}" "${role}")
+  jq -s '.' "${tmp}"
+  rm -f "${tmp}"
 }
 
 layer_tags_filter_args() {

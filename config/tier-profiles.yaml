@@ -1,0 +1,41 @@
+schema_version: 1
+description: "Explicit low-zoom build profiles for single-region base-vector assets."
+
+profiles:
+  country-low:
+    min_zoom: 0
+    max_zoom: 10
+    maximum_tile_bytes: 1572864
+    extend_zooms_if_still_dropping: false
+    source_layers:
+      - road
+      - railway
+      - water
+      - waterway
+      - landuse
+      - admin
+      - natural_a
+      - natural_line
+      - place_label
+      - island
+    feature_rules:
+      road:
+        default: exclude
+        rules:
+          - when:
+              highway: [motorway, trunk, primary, secondary, motorway_link, trunk_link]
+            min_zoom: 0
+            max_zoom: 10
+      place_label:
+        default: exclude
+        rules:
+          - when:
+              place: [country, state, city]
+            min_zoom: 0
+            max_zoom: 10
+    tippecanoe:
+      simplify_only_low_zooms: true
+
+regions:
+  china:
+    build_profile: country-low
