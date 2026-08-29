@@ -100,6 +100,8 @@ china-guangxi-20260829.bundle.zip
 
 区域、数据来源与 HUAVD 元数据在 `config/regions.yaml` 中维护；图层标签和最终属性在 `config/layers.yaml` 中维护；Tippecanoe 参数在 `config/tippecanoe.yaml` 中维护。新增或变更图层时，还应同步更新对应的 `config/export-config/*.json`、Tippecanoe 图层列表和验证预期。
 
+`config/tier-profiles.yaml` 为明确列出的单区域 `base` 资产定义低缩放 profile。profile 可以裁剪基础图层、按属性保留要素，并将 Feature 顶层的 Tippecanoe min/max zoom 写入 GeoJSONSeq；它不会改变 building role，也不会用于 multi-region overview。样式生成会自动省略 profile 未包含的 source layer，严格校验会拒绝样式引用这类缺失图层。当前 `china` 显式使用 `country-low`（z0-z10，禁用自动扩展 zoom）。未列出的 region 保持既有 16 图层和 Tippecanoe 参数。
+
 常用命令：
 
 ```bash
