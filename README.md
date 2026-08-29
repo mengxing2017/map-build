@@ -1,5 +1,94 @@
 # huavd-map-build
 
+`huavd-map-build` 将 Geofabrik 提供的 OpenStreetMap `.osm.pbf` 区域数据构建为可离线分发的 PMTiles 地图包。项目以 Bash 脚本和声明式 YAML 配置组成，面向 HUAVD 的离线地图生产流程，也可作为基于 OSM、Tippecanoe 和 PMTiles 的区域地图构建参考。
+
+## 功能概览
+
+- 从 `config/regions.yaml` 读取区域目录，下载并校验对应的 Geofabrik PBF 与 MD5 文件。
+- 按 `config/layers.yaml` 中的 OSM 标签规则过滤、导出和规范化 GeoJSONSeq，构建道路、铁路、水域、水系、土地利用、建筑、行政区、自然要素、山峰、休闲区和多类标注等 16 个矢量图层。
+- 使用 Tippecanoe 将矢量图层生成 gzip 压缩的 MVT PMTiles；缩放级别、密度控制和高密度区域覆盖均由 `config/tippecanoe.yaml` 配置。
+- 支持 `base` 基础矢量、可选 `building` 建筑矢量，以及来自已授权本地或内网输入的 `dem` 栅格地形三类资产。建筑角色仅在区域配置声明为派生建筑数据时启用；DEM 不会默认下载公开数据源。
+- 统一处理多语言名称、数值和布尔属性；建筑缺失高度时可按楼层推导高度，用于 3D 建筑渲染。
+- 为每个资产写入 PMTiles 元数据、构建清单、OpenStreetMap 署名信息和 SHA-512 校验文件，并验证 PMTiles 格式、图层元数据、清单和哈希。
+- 将构建结果打包为 `tar.gz`、`zip` 或两者，并生成 `install.json`、`SHA256SUMS` 和可选的导入包，便于离线安装和传输。
+- 可生成 MapLibre 样式、精灵图和 glyph 字体资源；提供样式、视口和图层密度检查，以及区域成品差异对比。
+
+## 构建流程
+
+```text
+区域配置 / OSM PBF
+        |
+  下载与输入校验
+        |
+标签过滤 -> GeoJSONSeq 导出 -> 属性规范化
+        |
+  Tippecanoe PMTiles 构建
+        |
+元数据、清单、署名、校验
+        |
+ tar.gz / zip 离线地图包
+```
+
+基础矢量构建会处理全部基础图层；单独构建 `building` 时只处理建筑图层。`ROLE=both` 在区域未启用建筑角色时会保留基础矢量产物并记录跳过原因。
+
+## 快速使用
+
+首次安装工具后，按区域获取、构建、验证和打包：
+
+```bash
+devbox run setup
+devbox run doctor
+make fetch REGION=china/guangxi
+make build REGION=china/guangxi YYYYMMDD=20260829 ROLE=both
+make verify REGION=china/guangxi YYYYMMDD=20260829 ROLE=both
+make pack REGION=china/guangxi YYYYMMDD=20260829 ROLE=both FORMAT=both
+```
+
+若 PBF 已在本地，可跳过下载并指定输入路径：
+
+```bash
+make build REGION=china/guangxi YYYYMMDD=20260829 \
+  INPUT=/path/to/guangxi-latest.osm.pbf ROLE=base
+```
+
+默认工作目录为 `/tmp/huavd-map-build`。相对 `INPUT` 会在该目录中解析；可通过 `WORKDIR` 指向持久化构建目录。`make release` 会为每次发布隔离工作目录，并按构建、打包、校验的顺序执行。
+
+## 输出产物
+
+以 `china-guangxi-20260829` 会话为例，产物位于 `${WORKDIR}/outputs/`：
+
+```text
+china-guangxi-20260829.base.pmtiles
+china-guangxi-20260829.base.pmtiles.sha512
+china-guangxi-20260829.base.manifest.json
+china-guangxi-20260829.base.attribution.json
+china-guangxi-20260829.building.pmtiles              # 已启用时生成
+china-guangxi-20260829.dem.pmtiles                   # 构建 DEM 时生成
+china-guangxi-20260829.bundle.tar.gz
+china-guangxi-20260829.bundle.zip
+```
+
+包内包含已声明资产、各自的校验与元数据文件、`install.json` 和 `SHA256SUMS`。样式、glyph 和精灵图资源已生成时也会随包分发。
+
+## 配置与命令
+
+区域、数据来源与 HUAVD 元数据在 `config/regions.yaml` 中维护；图层标签和最终属性在 `config/layers.yaml` 中维护；Tippecanoe 参数在 `config/tippecanoe.yaml` 中维护。新增或变更图层时，还应同步更新对应的 `config/export-config/*.json`、Tippecanoe 图层列表和验证预期。
+
+常用命令：
+
+```bash
+make catalog                                      # 输出区域资产清单
+make fetch REGION=china/guangxi                   # 下载并校验 OSM PBF
+make build REGION=china/guangxi ROLE=base         # 构建基础矢量
+make build-dem REGION=china/guangxi               # 从已授权输入构建 DEM
+make glyph REGION=china/guangxi                   # 生成 MapLibre glyph
+make sprite REGION=china/guangxi                  # 生成样式精灵图
+make style REGION=china/guangxi                   # 生成 MapLibre 样式
+make lint                                         # 检查样式与视口配置
+make prepare-import-all REGION=china/guangxi      # 准备离线导入包
+make diff-products REGION_A=china/guangxi REGION_B=china/guangdong
+```
+
 ## 环境准备
 
 本项目使用 [devbox](https://www.jetify.com/devbox) 管理开发环境。`devbox shell` 只负责进入环境和设置 `PATH`，不会自动编译或下载 osmium、tippecanoe、pmtiles；首次使用前需要手动执行一次安装。
