@@ -60,8 +60,13 @@ fi
 tools_osmium="$(cmd_version osmium)"
 tools_tippecanoe="$(cmd_version tippecanoe)"
 tools_pmtiles="$(cmd_version pmtiles)"
-tippecanoe_params="$(tippecanoe_resolve "${REGION}" "${ROLE}")"
-vector_layer_names="$(role_layers_json "${ROLE}")"
+tippecanoe_params="$(effective_tippecanoe_resolve "${REGION}" "${ROLE}")"
+vector_layer_names="$(effective_role_layers_json "${REGION}" "${ROLE}")"
+build_profile="$(effective_build_profile "${REGION}" "${ROLE}")"
+build_profile_schema="null"
+if [[ -n "${build_profile}" ]]; then
+  build_profile_schema="$(tier_profile_schema_version)"
+fi
 package_version="$(region_package_version "${REGION}" "${ROLE}")"
 source_id="$(role_source_id "${REGION}" "${ROLE}")"
 asset_role="$(role_asset_role "${ROLE}")"
@@ -98,6 +103,8 @@ jq -n \
   --argjson max_zoom "${max_zoom}" \
   --argjson bounds "${bounds}" \
   --argjson vector_layers "${vector_layer_names}" \
+  --arg build_profile "${build_profile}" \
+  --argjson build_profile_schema "${build_profile_schema}" \
   --arg source_id "${source_id}" \
   --arg asset_role "${asset_role}" \
   --arg source_type "${source_type}" \
@@ -164,6 +171,9 @@ jq -n \
       data_license: "ODbL-1.0",
       attribution: "© OpenStreetMap contributors"
     }
-  }' > "${manifest}"
+  }
+  + (if $build_profile == "" then {} else {
+      build_profile: {name: $build_profile, schema_version: $build_profile_schema}
+    } end)' > "${manifest}"
 
 log_info "manifest OK: ${manifest}"

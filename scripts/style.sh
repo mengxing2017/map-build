@@ -44,6 +44,7 @@ glyphs_url="${glyphs_template//\{locale\}/${STYLE_LOCALE}}"
 sprite_template="$(sprite_url)"
 style_path="$(build_style_path)"
 ensure_dir "$(dirname -- "${style_path}")"
+effective_base_layers="$(effective_role_layers_json "${REGION}" base)"
 
 base_pmtiles="$(build_pmtiles_path base)"
 viewport_json="{}"
@@ -70,6 +71,7 @@ jq -n \
   --arg sprite_url "${sprite_template}" \
   --arg locale "${STYLE_LOCALE}" \
   --argjson viewport "${viewport_json}" \
+  --argjson effective_base_layers "${effective_base_layers}" \
   '
     def text_field($fields): ["coalesce"] + ($fields | map(["get", .]));
     def convert_paint_value:
@@ -97,7 +99,9 @@ jq -n \
     | ($c.locales[] | select(.tag == $locale)) as $locale_config
     | ($locale_config.name_fields) as $name_fields
     | (($locale_config.font_stack // ["NotoSans-Regular"]) | if type == "array" and length > 0 then . else ["NotoSans-Regular"] end) as $locale_font_stack
-    | (($c.paint_layers // []) | map(convert_paint_layer)) as $paint_layers
+    | (($c.paint_layers // [])
+      | map(select(.source_layer as $layer | $effective_base_layers | index($layer)))
+      | map(convert_paint_layer)) as $paint_layers
     | {
       version: 8,
       name: $name,
@@ -117,7 +121,9 @@ jq -n \
           }
         ]
         + $paint_layers
-        + ($c.text_layers | map({
+        + ($c.text_layers
+          | map(select(.source_layer as $layer | $effective_base_layers | index($layer)))
+          | map({
           id: .id,
           type: "symbol",
           source: $source_id,

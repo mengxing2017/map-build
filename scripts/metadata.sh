@@ -43,7 +43,12 @@ min_zoom="$(pmtiles_min_zoom "${PMTILES}")"
 max_zoom="$(pmtiles_max_zoom "${PMTILES}")"
 bounds="$(pmtiles_bounds "${PMTILES}")"
 center="$(pmtiles_center "${PMTILES}")"
-vector_layers="$(vector_layers_json "${ROLE}" "${max_zoom}")"
+vector_layers="$(effective_vector_layers_json "${REGION}" "${ROLE}" "${max_zoom}")"
+build_profile="$(effective_build_profile "${REGION}" "${ROLE}")"
+build_profile_schema="null"
+if [[ -n "${build_profile}" ]]; then
+  build_profile_schema="$(tier_profile_schema_version)"
+fi
 source_id="$(role_source_id "${REGION}" "${ROLE}")"
 asset_role="$(role_asset_role "${ROLE}")"
 available_locales="$(available_locales_json)"
@@ -69,6 +74,8 @@ jq -n \
   --argjson style_locales "${style_locales}" \
   --arg build_time "$(timestamp_utc)" \
   --arg region "${REGION}" \
+  --arg build_profile "${build_profile}" \
+  --argjson build_profile_schema "${build_profile_schema}" \
   '{
     name: $name,
     format: "pbf",
@@ -85,7 +92,11 @@ jq -n \
     "huavd:build-time": $build_time,
     "huavd:region": $region,
     "huavd:data-license": "ODbL-1.0"
-  }' > "${metadata_path}"
+  }
+  + (if $build_profile == "" then {} else {
+      "huavd:build-profile": $build_profile,
+      "huavd:build-profile-schema": $build_profile_schema
+    } end)' > "${metadata_path}"
 
 log_info "pmtiles edit metadata -> ${PMTILES}"
 pmtiles edit "${PMTILES}" --metadata="${metadata_path}" \
