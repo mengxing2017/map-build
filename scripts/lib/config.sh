@@ -85,6 +85,10 @@ dem_json() {
   config_json_path dem
 }
 
+overviews_json() {
+  config_json_path overviews
+}
+
 region_json() {
   local region="$1"
   jq -e --arg id "${region}" '.regions[] | select(.id == $id)' "$(regions_json)"

@@ -1,0 +1,35 @@
+schema_version: 1
+description: "Explicit multi-region OSM PBF overview map definitions."
+
+defaults:
+  min_zoom: 0
+  max_zoom: 8
+  maximum_tile_bytes: 1048576
+  drop_densest_as_needed: true
+  extend_zooms_if_still_dropping: true
+  detect_shared_borders: true
+  coalesce_densest_as_needed: true
+  read_parallel: true
+  source_layers:
+    - road
+    - water
+    - waterway
+    - admin
+    - place_label
+    - natural_a
+
+overviews:
+  - id: south-china-overview
+    display_name: South China Overview
+    display_name_zh: "华南概览"
+    source_regions:
+      - china/guangdong
+      - china/guangxi
+      - china/yunnan
+    tippecanoe:
+      max_zoom: 8
+    huavd:
+      id: cn-south-overview
+      source_id: osm-dev-south-china
+      package_version_template: "{yyyymmdd}.overview"
+      style_id: osm-dev
