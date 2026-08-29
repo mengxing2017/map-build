@@ -13,9 +13,10 @@ FORMAT         ?= both
 IMPORT_FORMAT  ?= zip
 GLYPH          ?= 0
 FORCE_BUILDING ?= 0
+OVERVIEW       ?= south-china-overview
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem glyph sprite style verify verify-dem pack pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip lint diff-products
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem build-overview glyph sprite style verify verify-dem verify-overview pack pack-overview pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip lint diff-products
 
 init: init-workdir
 
@@ -66,6 +67,15 @@ build: init-workdir
 
 build-dem: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/build-dem.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(DEM_SOURCE),--source="$(DEM_SOURCE)",) $(if $(DEM_INPUT),--input="$(DEM_INPUT)",) $(if $(DEM_ENCODING),--encoding="$(DEM_ENCODING)",)
+
+build-overview: init-workdir
+	WORKDIR="$(WORKDIR)" ./scripts/build-overview.sh --overview="$(OVERVIEW)" --yyyymmdd="$(YYYYMMDD)" $(if $(filter 1,$(FORCE)),--force,)
+
+verify-overview:
+	WORKDIR="$(WORKDIR)" ./scripts/verify-overview.sh --overview="$(OVERVIEW)" --yyyymmdd="$(YYYYMMDD)"
+
+pack-overview:
+	WORKDIR="$(WORKDIR)" ./scripts/pack-overview.sh --overview="$(OVERVIEW)" --yyyymmdd="$(YYYYMMDD)" --format="$(FORMAT)"
 
 glyph: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/glyph.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --force
