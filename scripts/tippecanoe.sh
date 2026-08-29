@@ -26,7 +26,7 @@ normalize_session_vars
 [[ "${ROLE}" == "base" || "${ROLE}" == "building" ]] \
   || die "${HUAVD_EXIT_INPUT}" "tippecanoe role must be base or building"
 
-params="$(tippecanoe_resolve "${REGION}" "${ROLE}")"
+params="$(effective_tippecanoe_resolve "${REGION}" "${ROLE}")"
 min_zoom="$(jq -r '.min_zoom' <<< "${params}")"
 max_zoom="$(jq -r '.max_zoom' <<< "${params}")"
 tile_bytes="$(jq -r '.maximum_tile_bytes' <<< "${params}")"
@@ -53,12 +53,16 @@ args=(
 [[ "$(jq -r '.read_parallel' <<< "${params}")" == "true" ]] && args+=("--read-parallel")
 [[ "$(jq -r '.no_tile_size_limit' <<< "${params}")" == "true" ]] && args+=("--no-tile-size-limit")
 [[ "$(jq -r '.force_feature_limit' <<< "${params}")" == "true" ]] && args+=("--force-feature-limit")
+[[ "$(jq -r '.simplify_only_low_zooms // false' <<< "${params}")" == "true" ]] && args+=("--simplify-only-low-zooms")
+if simplification="$(jq -r '.simplification_at_maximum_zoom // empty' <<< "${params}")"; then
+  [[ -z "${simplification}" ]] || args+=("--simplification-at-maximum-zoom=${simplification}")
+fi
 
 while IFS= read -r layer; do
   layer_file="${stage_layers}/${layer}.geojsonseq"
   require_file "${layer_file}"
   args+=("-L" "${layer}:${layer_file}")
-done < <(role_layers "${ROLE}")
+done < <(effective_role_layers "${REGION}" "${ROLE}")
 
 require_cmd tippecanoe
 log_info "tippecanoe ${ROLE} -> ${pmtiles}"

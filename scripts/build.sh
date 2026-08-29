@@ -143,18 +143,30 @@ done < <(role_list "${ROLE}")
 
 ((${#roles_to_build[@]} > 0)) || die "${HUAVD_EXIT_INPUT}" "no buildable roles for region=${REGION} role=${ROLE}"
 
-preprocess_layers="all"
-if ((${#roles_to_build[@]} == 1)) && [[ "${roles_to_build[0]}" == "building" ]]; then
-  preprocess_layers="building"
-fi
+declare -A preprocess_seen=()
+preprocess_layers=()
+for role in "${roles_to_build[@]}"; do
+  while IFS= read -r layer; do
+    if [[ -z "${preprocess_seen[${layer}]:-}" ]]; then
+      preprocess_seen["${layer}"]=1
+      preprocess_layers+=("${layer}")
+    fi
+  done < <(effective_role_layers "${REGION}" "${role}")
+done
+preprocess_layers_csv="$(IFS=,; printf '%s' "${preprocess_layers[*]}")"
 
 source_link="$(staging_dir)/source.osm.pbf"
 ln -sf "${INPUT}" "${source_link}"
 log_info "source linked: ${source_link} -> ${INPUT}"
 
-"${SCRIPT_DIR}/tags-filter.sh" --input="${source_link}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers}"
-"${SCRIPT_DIR}/export.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers}"
-"${SCRIPT_DIR}/normalize.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers}"
+"${SCRIPT_DIR}/tags-filter.sh" --input="${source_link}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
+"${SCRIPT_DIR}/export.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
+"${SCRIPT_DIR}/normalize.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
+
+if [[ " ${roles_to_build[*]} " == *" base " ]] && [[ -n "$(effective_build_profile "${REGION}" base)" ]]; then
+  base_layers_csv="$(effective_role_layers "${REGION}" base | paste -sd, -)"
+  "${SCRIPT_DIR}/profile-transform.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${base_layers_csv}"
+fi
 
 for role in "${roles_to_build[@]}"; do
   "${SCRIPT_DIR}/tippecanoe.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
