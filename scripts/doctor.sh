@@ -194,6 +194,46 @@ check_regions_config() {
 
 check_regions_config
 
+check_tier_profiles_config() {
+  local profiles profile
+  if ! profiles="$(tier_profiles_json)"; then
+    printf 'FAIL %-12s %s\n' "tier-profiles" "failed to parse config/tier-profiles.yaml"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+
+  if ! jq -e --argjson region_ids "$(jq -c '[.regions[].id]' "$(regions_json)")" '
+    . as $root
+    | .schema_version == 1
+    and (.profiles | type == "object" and length > 0)
+    and (.regions | type == "object")
+    and all(.regions | to_entries[];
+      . as $entry
+      | ($region_ids | index($entry.key)) != null
+      and (($entry.value | type) == "object")
+      and (($entry.value.build_profile | type) == "string" and ($entry.value.build_profile | length) > 0)
+      and ($root.profiles[$entry.value.build_profile] != null)
+    )
+  ' "${profiles}" >/dev/null; then
+    printf 'FAIL %-12s %s\n' "tier-profiles" "schema, region mapping, or profile reference invalid"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+
+  while IFS= read -r profile; do
+    if ! (tier_profile_validate "${profile}") >/dev/null 2>&1; then
+      printf 'FAIL %-12s %s\n' "tier-profiles" "invalid profile: ${profile}"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done < <(jq -r '.profiles | keys[]' "${profiles}")
+
+  if ((FAILURES == 0)); then
+    printf 'OK   %-12s %s\n' "tier-profiles" "schema and profile rules"
+  fi
+}
+
+check_tier_profiles_config
+
 check_multilingual_config() {
   local glyphs styles icons
   if ! glyphs="$(glyphs_json)"; then

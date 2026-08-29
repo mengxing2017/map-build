@@ -62,6 +62,22 @@ check_eq() {
   fi
 }
 
+verify_style_source_layers() {
+  local style_file="$1"
+  local allowed_layers="$2"
+  local unknown
+  unknown="$(jq -r --argjson allowed "${allowed_layers}" '
+    [.layers[] | .["source-layer"]? | select(. != null) | select($allowed | index(.) | not)] | unique[]
+  ' "${style_file}")"
+  if [[ -z "${unknown}" ]]; then
+    ok "style.json source layers match artifact"
+  else
+    while IFS= read -r layer; do
+      [[ -n "${layer}" ]] && fail "style.json references absent source layer: ${layer}"
+    done <<< "${unknown}"
+  fi
+}
+
 check_metadata_layer_field() {
   local metadata="$1"
   local layer_id="$2"
@@ -653,7 +669,7 @@ verify_packaged_assets() {
 
 verify_role() {
   local role="$1"
-  local pmtiles manifest sha_file metadata header_bounds metadata_bounds expected_layers actual_layers actual_sha manifest_sha file_sha manifest_size stat_size
+  local pmtiles manifest sha_file metadata header_bounds metadata_bounds expected_layers actual_layers actual_sha manifest_sha file_sha manifest_size stat_size build_profile expected_vector expected_vector_layers params
   pmtiles="$(build_pmtiles_path "${role}")"
   manifest="$(build_manifest_path "${role}")"
   sha_file="$(build_sha512_path "${role}")"
@@ -682,14 +698,35 @@ verify_role() {
   stat_size="$(stat -c %s "${pmtiles}")"
   manifest_size="$(jq -r '.output.size_bytes' "${manifest}")"
   check_eq "manifest output.size_bytes" "${manifest_size}" "${stat_size}"
+  build_profile="$(effective_build_profile "${REGION}" "${role}")"
+  params="$(effective_tippecanoe_resolve "${REGION}" "${role}")"
+  expected_vector_layers="$(effective_role_layers_json "${REGION}" "${role}")"
+
+  if [[ -n "${build_profile}" ]]; then
+    check_eq "pmtiles min_zoom matches profile" "$(pmtiles_min_zoom "${pmtiles}")" "$(jq -r '.min_zoom' <<< "${params}")"
+    check_eq "pmtiles max_zoom matches profile" "$(pmtiles_max_zoom "${pmtiles}")" "$(jq -r '.max_zoom' <<< "${params}")"
+    if jq -e --arg profile "${build_profile}" --argjson schema "$(tier_profile_schema_version)" '
+      .build_profile.name == $profile and .build_profile.schema_version == $schema
+    ' "${manifest}" >/dev/null; then
+      ok "manifest build profile"
+    else
+      fail "manifest build profile mismatch"
+    fi
+  fi
+  check_eq "manifest vector_layers" "$(jq -cS '.vector_layers' "${manifest}")" "$(jq -cS . <<< "${expected_vector_layers}")"
 
   metadata="$(pmtiles_cli_metadata "${pmtiles}")" || fail "pmtiles metadata readable"
   if [[ -n "${metadata}" ]] && jq -e . >/dev/null 2>&1 <<< "${metadata}"; then
     ok "pmtiles metadata JSON"
-    expected_layers=16
-    [[ "${role}" == "building" ]] && expected_layers=1
+    expected_vector="$(effective_vector_layers_json "${REGION}" "${role}" "$(pmtiles_max_zoom "${pmtiles}")")"
+    expected_layers="$(jq -r 'length' <<< "${expected_vector}")"
     actual_layers="$(jq -r '.vector_layers | length' <<< "${metadata}")"
     check_eq "metadata vector_layers length" "${actual_layers}" "${expected_layers}"
+    check_eq "metadata vector_layers" "$(jq -cS '.vector_layers' <<< "${metadata}")" "$(jq -cS . <<< "${expected_vector}")"
+    if [[ -n "${build_profile}" ]]; then
+      check_eq "metadata build profile" "$(jq -r '."huavd:build-profile"' <<< "${metadata}")" "${build_profile}"
+      check_eq "metadata build profile schema" "$(jq -r '."huavd:build-profile-schema"' <<< "${metadata}")" "$(tier_profile_schema_version)"
+    fi
     if jq -e '.attribution | strings | contains("OpenStreetMap contributors")' >/dev/null <<< "${metadata}"; then
       ok "metadata attribution"
     else
@@ -703,7 +740,7 @@ verify_role() {
       jq -e '."huavd:style-locales" | type == "array" and length > 0' >/dev/null <<< "${metadata}" \
         && ok "metadata huavd:style-locales" \
         || fail "metadata huavd:style-locales missing or empty"
-      if [[ "${role}" == "base" ]]; then
+      if [[ "${role}" == "base" && -z "${build_profile}" ]]; then
         verify_config_final_fields_declared
         verify_name_locale_config_fields
         verify_label_config_fields
@@ -746,8 +783,12 @@ verify_role() {
       jq -e '.version == 8 and (.sources | type == "object") and (.glyphs | strings | contains("{fontstack}") and contains("{range}.pbf")) and (.sprite | strings | startswith("huavd-map://sprite/"))' "${style_file}" >/dev/null \
         && ok "style.json MapLibre glyph/sprite template" \
         || fail "style.json is missing MapLibre version/source/glyph/sprite template"
-      verify_style_text_layers "${style_file}"
-      verify_style_paint_layers "${style_file}"
+      if [[ -n "${build_profile}" ]]; then
+        verify_style_source_layers "${style_file}" "${expected_vector_layers}"
+      else
+        verify_style_text_layers "${style_file}"
+        verify_style_paint_layers "${style_file}"
+      fi
     fi
 
     sprite_dir="$(build_sprite_dir)"
