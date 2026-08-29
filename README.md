@@ -8,6 +8,7 @@
 - 按 `config/layers.yaml` 中的 OSM 标签规则过滤、导出和规范化 GeoJSONSeq，构建道路、铁路、水域、水系、土地利用、建筑、行政区、自然要素、山峰、休闲区和多类标注等 16 个矢量图层。
 - 使用 Tippecanoe 将矢量图层生成 gzip 压缩的 MVT PMTiles；缩放级别、密度控制和高密度区域覆盖均由 `config/tippecanoe.yaml` 配置。
 - 支持 `base` 基础矢量、可选 `building` 建筑矢量，以及来自已授权本地或内网输入的 `dem` 栅格地形三类资产。建筑角色仅在区域配置声明为派生建筑数据时启用；DEM 不会默认下载公开数据源。
+- 支持显式配置的多区域低缩放概览图：先验证所有源 PBF 来自同一 OSM replication snapshot，再用 `osmium merge` 合并并构建独立的 `overview-vector` PMTiles。
 - 统一处理多语言名称、数值和布尔属性；建筑缺失高度时可按楼层推导高度，用于 3D 建筑渲染。
 - 为每个资产写入 PMTiles 元数据、构建清单、OpenStreetMap 署名信息和 SHA-512 校验文件，并验证 PMTiles 格式、图层元数据、清单和哈希。
 - 将构建结果打包为 `tar.gz`、`zip` 或两者，并生成 `install.json`、`SHA256SUMS` 和可选的导入包，便于离线安装和传输。
@@ -53,6 +54,31 @@ make build REGION=china/guangxi YYYYMMDD=20260829 \
 
 默认工作目录为 `/tmp/huavd-map-build`。相对 `INPUT` 会在该目录中解析；可通过 `WORKDIR` 指向持久化构建目录。`make release` 会为每次发布隔离工作目录，并按构建、打包、校验的顺序执行。
 
+## 多区域概览图
+
+概览图配置位于 `config/overviews.yaml`，第一版只接受显式 `source_regions`。它是独立 artifact 类型，不改变 `make build`、`make verify` 或 `make pack` 的单区域行为。
+
+概览构建不会下载源数据。先将每个配置区域的 PBF 与同名 `.md5` sidecar 放入 `${WORKDIR}/mirror/`；所有输入必须具有完全相同的 OSM replication timestamp 和 sequence。预检还会校验 MD5、记录每个源文件的 SHA-512，并拒绝缺失或不同快照的输入。
+
+```bash
+make build-overview OVERVIEW=south-china-overview YYYYMMDD=20260829
+make verify-overview OVERVIEW=south-china-overview YYYYMMDD=20260829
+make pack-overview OVERVIEW=south-china-overview YYYYMMDD=20260829 FORMAT=both
+```
+
+合并 PBF 缓存按 overview id、配置 schema、源文件名、SHA-512 和 replication sequence 内容寻址，位于 `${WORKDIR}/cache/merge/<overview-id>/`。概览产物命名如下：
+
+```text
+<overview-id>-<yyyymmdd>.overview.pmtiles
+<overview-id>-<yyyymmdd>.overview.pmtiles.sha512
+<overview-id>-<yyyymmdd>.overview.manifest.json
+<overview-id>-<yyyymmdd>.overview.attribution.json
+<overview-id>-<yyyymmdd>.overview.bundle.tar.gz
+<overview-id>-<yyyymmdd>.overview.bundle.zip
+```
+
+概览 bundle 当前仅用于审核，包含 PMTiles、manifest、attribution、校验文件和 `SHA256SUMS`，不会生成 `install.json`。在客户端和安装描述符共同支持 `asset-role: overview-vector` 前，不应将其发布为可安装离线地图。
+
 ## 输出产物
 
 以 `china-guangxi-20260829` 会话为例，产物位于 `${WORKDIR}/outputs/`：
@@ -81,6 +107,9 @@ make catalog                                      # 输出区域资产清单
 make fetch REGION=china/guangxi                   # 下载并校验 OSM PBF
 make build REGION=china/guangxi ROLE=base         # 构建基础矢量
 make build-dem REGION=china/guangxi               # 从已授权输入构建 DEM
+make build-overview OVERVIEW=south-china-overview  # 构建多区域低缩放概览图
+make verify-overview OVERVIEW=south-china-overview # 验证概览图
+make pack-overview OVERVIEW=south-china-overview   # 生成概览审核包
 make glyph REGION=china/guangxi                   # 生成 MapLibre glyph
 make sprite REGION=china/guangxi                  # 生成样式精灵图
 make style REGION=china/guangxi                   # 生成 MapLibre 样式

@@ -57,6 +57,9 @@ make fetch REGION=china/guangxi
 make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=both
 make verify REGION=china/guangxi YYYYMMDD=20260818 ROLE=both
 make pack SESSION=china-guangxi-20260818 ROLE=both FORMAT=both
+make build-overview OVERVIEW=south-china-overview YYYYMMDD=20260818
+make verify-overview OVERVIEW=south-china-overview YYYYMMDD=20260818
+make pack-overview OVERVIEW=south-china-overview YYYYMMDD=20260818 FORMAT=both
 make clean SESSION=china-guangxi-20260818 ROLE=both
 ```
 
@@ -67,6 +70,9 @@ Direct script entry points are also supported:
 ./scripts/build.sh --input=mirror/guangxi-latest.osm.pbf --region=china/guangxi --yyyymmdd=20260818 --role=both
 ./scripts/verify.sh --region=china/guangxi --yyyymmdd=20260818 --role=both
 ./scripts/pack.sh --session=china-guangxi-20260818 --role=both --format=both
+./scripts/build-overview.sh --overview=south-china-overview --yyyymmdd=20260818
+./scripts/verify-overview.sh --overview=south-china-overview --yyyymmdd=20260818
+./scripts/pack-overview.sh --overview=south-china-overview --yyyymmdd=20260818 --format=both
 ```
 
 Avoid running `make fetch` or a full `make build` unless the task requires it.
@@ -84,6 +90,8 @@ Defaults are defined in `Makefile` and `scripts/lib/common.sh`.
 - `FORMAT`: `tar`, `zip`, or `both` for packaging.
 - `INPUT`: PBF input path for `make build`; relative paths are resolved under
   `WORKDIR` when appropriate.
+- `OVERVIEW`: explicit overview id from `config/overviews.yaml`, default
+  `south-china-overview`.
 
 Output naming uses:
 
@@ -94,7 +102,17 @@ ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.manifest.json
 ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.{role}.attribution.json
 ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.bundle.tar.gz
 ${WORKDIR}/outputs/{region-slug}-{yyyymmdd}.bundle.zip
+${WORKDIR}/outputs/{overview-id}-{yyyymmdd}.overview.pmtiles
+${WORKDIR}/outputs/{overview-id}-{yyyymmdd}.overview.manifest.json
+${WORKDIR}/outputs/{overview-id}-{yyyymmdd}.overview.bundle.{tar.gz,zip}
 ```
+
+Overview inputs are distinct from normal region builds. Every configured source
+PBF and matching `.md5` sidecar must already exist in `${WORKDIR}/mirror/` and
+must have identical OSM replication timestamp and sequence. `merge-pbf.sh`
+refuses mismatched snapshots, validates the merged ordering/no-multiple-version
+invariant, and writes content-addressed cache entries under
+`${WORKDIR}/cache/merge/<overview-id>/`.
 
 ## Pipeline
 
@@ -124,6 +142,12 @@ and export constraints are confirmed. DEM PMTiles metadata must include
 `install.json.offline_maps[]` as `asset-role=dem-raster` and link it through
 bundle assets, not through private top-level manifest fields.
 
+Overview is a separate `overview-vector` artifact, implemented by independent
+scripts. It reuses layer/export definitions but must not add `--overview` paths
+to the existing region/role scripts. `pack-overview.sh` produces an audit bundle
+without `install.json`; do not publish it as an installable offline map until the
+client and install schema accept `overview-vector` and its LOD semantics.
+
 ## Repository Map
 
 - `README.md`: user-facing environment and install instructions.
@@ -145,6 +169,13 @@ bundle assets, not through private top-level manifest fields.
 - `scripts/attribution.sh`: writes attribution JSON.
 - `scripts/verify.sh`: validates PMTiles headers, metadata, manifests, and hashes.
 - `scripts/pack.sh`: packages artifacts into tar/zip bundles.
+- `scripts/lib/overview.sh`: overview configuration, paths, and metadata helpers.
+- `scripts/merge-pbf.sh`: validates same-snapshot source PBFs and writes the merge cache.
+- `scripts/build-overview.sh`: orchestrates overview build stages.
+- `scripts/overview-*.sh`: overview-specific filter/export/normalize/tile/metadata/manifest helpers.
+- `scripts/verify-overview.sh`: validates overview PMTiles, metadata, manifest, hashes, and composition.
+- `scripts/pack-overview.sh`: writes overview audit tar/zip bundles without `install.json`.
+- `config/overviews.yaml`: explicit overview composition and low-zoom tile settings.
 - `config/regions.yaml`: region catalog and HUAVD source metadata.
 - `config/dem.yaml`: authorized DEM source, encoding, license, and vertical datum metadata.
 - `config/layers.yaml`: source layer definitions, tag filters, and final fields.
@@ -177,6 +208,10 @@ Tippecanoe changes usually belong in `config/tippecanoe.yaml` rather than hard
 coded shell logic. Keep `scripts/tippecanoe.sh` as a resolver/runner unless a new
 tippecanoe CLI feature cannot be expressed through config.
 
+Overview Tippecanoe settings belong in `config/overviews.yaml`. Only the overview
+defaults and allowed per-overview overrides apply; never call region-based
+`tippecanoe_resolve` for an overview build.
+
 ## Development Rules
 
 - Shell scripts use Bash with `set -euo pipefail`; keep new scripts consistent.
@@ -208,6 +243,8 @@ For config changes, also check YAML parsing through the project helpers:
 WORKDIR=/tmp/huavd-map-build ./scripts/doctor.sh
 WORKDIR=/tmp/huavd-map-build ./scripts/build.sh --help
 WORKDIR=/tmp/huavd-map-build ./scripts/verify.sh --help
+WORKDIR=/tmp/huavd-map-build ./scripts/build-overview.sh --help
+WORKDIR=/tmp/huavd-map-build ./scripts/verify-overview.sh --help
 ```
 
 For end-to-end behavior, use the smallest available region/input. A full build
@@ -224,7 +261,9 @@ requires a real `.osm.pbf` and may take significant time.
 - `devbox.lock` may mention store paths that are not installed locally until
   `devbox install` or `devbox run setup` fetches them.
 - The PMTiles verifier expects PMTiles v3, MVT tile type, gzip compression, and
-  metadata vector layer counts of 12 for `base` and 1 for `building`.
+  metadata vector layer counts of 16 for `base` and 1 for `building`.
+- A successful overview build requires locally supplied source PBFs from one
+  replication snapshot; never merge arbitrary `*-latest.osm.pbf` downloads.
 
 ## AI 行为规则
 
