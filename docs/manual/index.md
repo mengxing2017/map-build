@@ -161,10 +161,16 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `YYYYMMDD` | 当前 UTC 日 | 输出版本日，格式为 8 位数字，例如 `20260818` |
 | `SESSION` | `{region-slug}-{YYYYMMDD}` | 构建会话名，例如 `china-guangxi-20260818`；通常不需要手动设置 |
 | `INPUT` | 空 | `make build` 的输入 PBF；为空时自动使用 `mirror/{geofabrik.basename}` |
-| `ROLE` | `both` | 构建或处理的资产角色：`base`、`building`、`both` |
+| `ROLE` | `both` | 构建或处理的资产角色：`base`、`building`、`both`、`dem`、`all`；`build` 仅接受前三者，`pack`/`verify` 可处理 DEM |
 | `FORMAT` | `both` | `make pack` 的包格式：`tar`、`zip`、`both` |
 | `IMPORT_FORMAT` | `zip` | `make prepare-import` 的导入包格式：`zip` 或 `tar` |
 | `GLYPH` | `0` | `make build` 是否同时生成 glyph 和 style：`0` 或 `1` |
+| `FORCE_BUILDING` | `0` | 设为 `1` 时允许 `make build` 强制构建 building；只应在已确认 region 建筑数据契约后使用 |
+| `FORCE` | `0` | 设为 `1` 时让 `make build-overview` 忽略已有 overview 成品并重新构建 |
+| `OVERVIEW` | `south-china-overview` | `config/overviews.yaml` 中的 overview id，供 `*-overview` 命令使用 |
+| `DEM_SOURCE` | region 配置的默认源 | `config/dem.yaml` 中已授权的 DEM source id |
+| `DEM_INPUT` | 空 | 已授权 DEM 的 PMTiles、MBTiles 或瓦片目录；供 `fetch-dem`/`build-dem` 使用 |
+| `DEM_ENCODING` | source/default encoding | `mapbox-terrain-rgb`、`terrarium` 或 `heightmap-u16` |
 | `HUAVD_MAP_BUILD_MACHINE_HOME` | `/opt/huavd-map-build` | 构建机初始化目标目录，用于 `init-build-machine-workdir` |
 | `HUAVD_MAP_PACKAGE_VERSION` | 来自 `regions.yaml` 模板 | 全局覆盖 manifest / install.json 的 `package-version`；命中后跳过 region 模板（详见 `package-version 解析规则`） |
 | `HUAVD_MAP_PACKAGE_VERSION_BASE` | 同上 | 仅覆盖 base role |
@@ -215,13 +221,17 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `make fetch-dem` | 拉取或拷贝 `config/dem.yaml` 中授权的 DEM 源到 `WORKDIR/mirror/dem/` | `make fetch-dem REGION=china/guangxi DEM_SOURCE=srtm DEM_INPUT=/data/srtm.tif` |
 | `make build` | 从 PBF 构建 PMTiles、metadata、manifest、attribution 和 sha512 | `make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base` |
 | `make build-dem` | 从授权 DEM 源生成 DEM PMTiles、manifest、attribution 和 sha512 | `make build-dem REGION=china/guangxi YYYYMMDD=20260818 DEM_SOURCE=srtm` |
+| `make build-overview` | 合并同一 replication snapshot 的多个 region PBF，构建低缩放概览图 | `make build-overview OVERVIEW=south-china-overview YYYYMMDD=20260818` |
 | `make glyph` | 生成当前 session 的 glyphs 目录 | `make glyph REGION=china/guangxi YYYYMMDD=20260818` |
+| `make sprite` | 从 `config/icons/manifest.yaml` 生成当前 session 的 PNG sprite 和索引 JSON | `make sprite REGION=china/guangxi YYYYMMDD=20260818` |
 | `make style` | 生成当前 session 的 MapLibre style JSON | `make style REGION=china/guangxi YYYYMMDD=20260818` |
 | `make verify` | 验证 PMTiles header、metadata、manifest、SHA-512；`--strict` 还会校验 `package_version` 与 install.json `package-version` / `bundle-version` | `make verify REGION=china/guangxi YYYYMMDD=20260818 ROLE=both` |
 | `make verify-dem` | 严格模式验证 DEM PMTiles、metadata、manifest 与 SHA-512 | `make verify-dem REGION=china/guangxi YYYYMMDD=20260818` |
+| `make verify-overview` | 验证 overview 的 PMTiles 格式、图层、组成信息和哈希 | `make verify-overview OVERVIEW=south-china-overview YYYYMMDD=20260818` |
 | `make pack` | 生成 tar/zip 分发包 | `make pack SESSION=china-guangxi-20260818 ROLE=both FORMAT=both` |
 | `make pack-tar` | 只生成 `.bundle.tar.gz` | `make pack-tar SESSION=china-guangxi-20260818 ROLE=base` |
 | `make pack-zip` | 只生成 `.bundle.zip` | `make pack-zip SESSION=china-guangxi-20260818 ROLE=base` |
+| `make pack-overview` | 生成 overview 审核包；不包含 `install.json`，不可作为可安装离线地图发布 | `make pack-overview OVERVIEW=south-china-overview YYYYMMDD=20260818 FORMAT=zip` |
 | `make prepare-import` | 为单个 role 生成 `huavd-map` 导入包；`ROLE=both` 时会转为 `base` | `make prepare-import ROLE=base IMPORT_FORMAT=zip` |
 | `make prepare-import-all` | 将当前 session 中可用的 base/building 聚合为一个导入包 | `make prepare-import-all IMPORT_FORMAT=tar` |
 | `make clean` | 删除当前 session 的 staging、pack/import cache 和 outputs | `make clean SESSION=china-guangxi-20260818 ROLE=both` |
@@ -229,6 +239,8 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `make release` | 执行 `build`、`pack`、`verify` | `make release REGION=china/guangxi YYYYMMDD=20260818` |
 | `make release-tar` | 执行 `build`、`pack-tar`、`verify` | `make release-tar REGION=china/guangxi YYYYMMDD=20260818` |
 | `make release-zip` | 执行 `build`、`pack-zip`、`verify` | `make release-zip REGION=china/guangxi YYYYMMDD=20260818` |
+| `make lint` | 对已有 style 运行跨区域一致性和 viewport 检查 | `make lint WORKDIR=/data/huavd-map-build` |
+| `make diff-products` | 对比两个 region 在指定日期的基础矢量成品 | `make diff-products REGION_A=china/guangxi REGION_B=china/guangdong YYYYMMDD=20260818` |
 
 `make release`、`make release-tar`、`make release-zip` 不会自动下载 PBF。首次构建通常先执行 `make fetch`，或通过 `INPUT=/path/to/file.osm.pbf` 指向已有文件。
 
@@ -253,16 +265,42 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `./scripts/setup-tools.sh` | 安装工具链；通过 `TIPPECANOE_VERSION`、`TIPPECANOE_SOURCE_TARBALL`、`TIPPECANOE_BINARY_URL`、`PMTILES_VERSION`、`INSTALL_PREFIX` 等环境变量控制 |
 | `./scripts/doctor.sh` | 检查命令和配置是否可用 |
 | `./scripts/fetch.sh` | `--region=<id> [--workdir=<path>] [--limit-rate=10m]` |
-| `./scripts/build.sh` | `--input=<path-to.osm.pbf> --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base\|building\|both] [--workdir=<path>] [--glyph=0\|1] [--force]` |
+| `./scripts/fetch-dem.sh` | `--region=<id> --session=<session> [--source=<id>] [--input=<path>] [--workdir=<path>]`；只接收已授权本地或内网 DEM 输入 |
+| `./scripts/build.sh` | `--input=<path-to.osm.pbf> --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base\|building\|both] [--workdir=<path>] [--glyph=0\|1] [--force] [--force-building]` |
+| `./scripts/build-dem.sh` | `--region=<id> --session=<session> [--source=<id>] [--input=<pmtiles\|mbtiles\|tile-dir>] [--encoding=<encoding>] [--vertical-datum=<datum>] [--workdir=<path>]` |
 | `./scripts/glyph.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--locales=all\|tag[,tag...]] [--force]` |
+| `./scripts/sprite.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--workdir=<path>] [--force]` |
 | `./scripts/style.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--locale=<tag>] [--pmtiles-url=<url>]` |
-| `./scripts/verify.sh` | `--region=<id> --role=<base\|building\|both> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--strict]` |
-| `./scripts/pack.sh` | `--session=<session> [--role=base\|building\|both] [--format=tar\|zip\|both] [--workdir=<path>]` |
-| `./scripts/prepare-import.sh` | `--session=<session> [--role=base\|building\|both] [--format=tar\|zip] [--output=<archive-path>] [--transfer-id=<id>] [--workdir=<path>] [--region=<id>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/verify.sh` | `--region=<id> --role=<base\|building\|both\|dem\|all> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--strict]` |
+| `./scripts/pack.sh` | `--session=<session> [--role=base\|building\|both\|dem\|all] [--format=tar\|zip\|both] [--workdir=<path>]` |
+| `./scripts/prepare-import.sh` | `--session=<session> [--role=base\|building\|both] [--format=tar\|zip] [--output=<archive-path>] [--transfer-id=<id>] [--aggregate] [--workdir=<path>] [--region=<id>] [--yyyymmdd=YYYYMMDD]` |
 | `./scripts/region-pbf-basename.sh` | `[region]`，输出 region 配置中的 `geofabrik.basename` |
 | `./scripts/manifest-catalog.sh` | 生成 region catalog；默认读取 `config/regions.yaml`，写入 `config/derived/catalog.json`；可用 `CONFIG_PATH` 和 `OUTPUT` 覆盖 |
 | `./scripts/init-workdir.sh` | 初始化目录；通过 `HUAVD_MAP_BUILD_HOME`、`HUAVD_MAP_BUILD_SESSION`、`HUAVD_MAP_BUILD_COPY_CONFIG=1` 等环境变量控制 |
 | `./scripts/generate-region-skeletons.rb` | `--iso3166-2-csv=<path> [--existing-config=config/regions.yaml] [--output=config/regions.yaml]` |
+
+### Overview 直连入口
+
+概览图是独立产物，不要向单区域的 `build.sh`、`verify.sh` 或 `pack.sh` 传入 overview 参数。开始前，必须把 `config/overviews.yaml` 所列每个 region 的 PBF 和对应 `.md5` sidecar 放到 `${WORKDIR}/mirror/`，且所有 PBF 的 replication timestamp 与 sequence 完全相同。
+
+| 脚本 | 用法 |
+| :--- | :--- |
+| `./scripts/merge-pbf.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--force]`；验证 MD5 与同快照约束，并返回内容寻址的合并 PBF 路径 |
+| `./scripts/build-overview.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--force]` |
+| `./scripts/verify-overview.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>]` |
+| `./scripts/pack-overview.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--format=tar\|zip\|both] [--workdir=<path>]` |
+
+以下 overview 阶段脚本由 `build-overview.sh` 调用，仅用于定点排障：
+
+| 阶段脚本 | 用法 |
+| :--- | :--- |
+| `./scripts/overview-filter.sh` | `--overview=<id> --input=<pbf> [--yyyymmdd=YYYYMMDD] [--workdir=<path>]` |
+| `./scripts/overview-export.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>]` |
+| `./scripts/overview-normalize.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>]` |
+| `./scripts/overview-tippecanoe.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>]` |
+| `./scripts/overview-metadata.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>]` |
+| `./scripts/overview-manifest.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>]` |
+| `./scripts/overview-attribution.sh` | `--overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>]` |
 
 内部阶段脚本通常由 `build.sh` 调用。只有在排查某一层处理结果时才建议直接运行：
 
@@ -275,6 +313,18 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `./scripts/metadata.sh` | `--pmtiles=<path> --region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
 | `./scripts/manifest.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
 | `./scripts/attribution.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/profile-transform.sh` | `--region=<id> --layers=<layer[,layer...]> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]`；通常仅由 `build.sh` 在 profile region 中调用 |
+
+### 质量与成品对比工具
+
+这些脚本不构建地图数据。它们读取已有 `WORKDIR` 产物，适合在发布前或 CI 中执行。
+
+| 脚本 | 用法 |
+| :--- | :--- |
+| `./scripts/style-lint.sh` | 无参数；检查 `${WORKDIR}/outputs/*.style.json` 的跨区域非 source/metadata 内容是否一致 |
+| `./scripts/viewport-lint.sh` | 无参数；检查 style 中的默认 viewport 是否落在对应 base PMTiles bounds 内 |
+| `./scripts/density-lint.sh` | `<REGION_A> <REGION_B> [YYYYMMDD]`；比较两个基础矢量 PMTiles 的瓦片密度 |
+| `./scripts/diff-region-products.sh` | `<REGION_A> <REGION_B> [YYYYMMDD]`；比较两个基础矢量成品的 metadata 与统计信息 |
 
 ### 常用命令组合
 
