@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=lib/config.sh
 source "${SCRIPT_DIR}/lib/config.sh"
+# shellcheck source=lib/composite.sh
+source "${SCRIPT_DIR}/lib/composite.sh"
 
 REQUIRED=(
   bash
@@ -233,6 +235,39 @@ check_tier_profiles_config() {
 }
 
 check_tier_profiles_config
+
+check_composites_config() {
+  local composites composite failures_before
+  failures_before="${FAILURES}"
+  if ! composites="$(composites_json)"; then
+    printf 'FAIL %-12s %s\n' "composites" "failed to parse config/composites.yaml"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+
+  if ! jq -e '
+    .schema_version == 1
+    and (.composites | type == "array" and length > 0)
+    and ([.composites[].id] | length == (unique | length))
+  ' "${composites}" >/dev/null; then
+    printf 'FAIL %-12s %s\n' "composites" "schema or duplicate id invalid"
+    FAILURES=$((FAILURES + 1))
+    return
+  fi
+
+  while IFS= read -r composite; do
+    if ! (composite_validate "${composite}") >/dev/null 2>&1; then
+      printf 'FAIL %-12s %s\n' "composites" "invalid composite: ${composite}"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done < <(jq -r '.composites[].id' "${composites}")
+
+  if (( FAILURES == failures_before )); then
+    printf 'OK   %-12s %s\n' "composites" "schema, identity, and source resolution"
+  fi
+}
+
+check_composites_config
 
 check_multilingual_config() {
   local glyphs styles icons
