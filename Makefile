@@ -14,9 +14,10 @@ IMPORT_FORMAT  ?= zip
 GLYPH          ?= 0
 FORCE_BUILDING ?= 0
 OVERVIEW       ?= south-china-overview
+COMPOSITE      ?= china-base-from-provinces
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem build-overview glyph sprite style verify verify-dem verify-overview pack pack-overview pack-tar pack-zip prepare-import prepare-import-all clean all release release-tar release-zip lint diff-products
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem build-overview composite-inventory build-composite glyph sprite style verify verify-dem verify-overview verify-composite pack pack-overview pack-composite pack-tar pack-zip prepare-import prepare-import-all prepare-composite-import clean all release release-tar release-zip lint diff-products
 
 init: init-workdir
 
@@ -71,11 +72,23 @@ build-dem: init-workdir
 build-overview: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/build-overview.sh --overview="$(OVERVIEW)" --yyyymmdd="$(YYYYMMDD)" $(if $(filter 1,$(FORCE)),--force,)
 
+composite-inventory:
+	WORKDIR="$(WORKDIR)" ./scripts/composite-inventory.sh --composite="$(COMPOSITE)"
+
+build-composite: init-workdir
+	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" ./scripts/build-composite.sh --composite="$(COMPOSITE)" --yyyymmdd="$(YYYYMMDD)" --glyph="$(GLYPH)" $(if $(filter 1,$(FORCE)),--force,)
+
 verify-overview:
 	WORKDIR="$(WORKDIR)" ./scripts/verify-overview.sh --overview="$(OVERVIEW)" --yyyymmdd="$(YYYYMMDD)"
 
+verify-composite:
+	WORKDIR="$(WORKDIR)" ./scripts/verify-composite.sh --composite="$(COMPOSITE)" --yyyymmdd="$(YYYYMMDD)" --strict
+
 pack-overview:
 	WORKDIR="$(WORKDIR)" ./scripts/pack-overview.sh --overview="$(OVERVIEW)" --yyyymmdd="$(YYYYMMDD)" --format="$(FORMAT)"
+
+pack-composite:
+	WORKDIR="$(WORKDIR)" ./scripts/pack-composite.sh --composite="$(COMPOSITE)" --yyyymmdd="$(YYYYMMDD)" --format="$(FORMAT)"
 
 glyph: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/glyph.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --force
@@ -108,6 +121,9 @@ prepare-import:
 
 prepare-import-all:
 	WORKDIR="$(WORKDIR)" ./scripts/prepare-import.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role=both --format="$(IMPORT_FORMAT)"
+
+prepare-composite-import:
+	WORKDIR="$(WORKDIR)" ./scripts/prepare-composite-import.sh --composite="$(COMPOSITE)" --yyyymmdd="$(YYYYMMDD)" --format="$(IMPORT_FORMAT)"
 
 lint:
 	WORKDIR="$${WORKDIR:-/tmp/huavd-map-build}" ./scripts/style-lint.sh
