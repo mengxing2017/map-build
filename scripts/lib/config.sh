@@ -89,6 +89,10 @@ overviews_json() {
   config_json_path overviews
 }
 
+composites_json() {
+  config_json_path composites
+}
+
 tier_profiles_json() {
   config_json_path tier-profiles
 }

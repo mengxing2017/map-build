@@ -1,0 +1,16 @@
+schema_version: 1
+description: "Installable base-vector artifacts composed from verified local PBF inputs."
+
+composites:
+  - id: china-base-from-provinces
+    target_region: china
+    sources:
+      mode: direct-children
+      root_region: china
+      explicit: []
+      include: []
+      exclude: []
+    inputs:
+      provider: local-mirror
+      basename_template: "{region-basename}-latest.osm.pbf"
+      basename_overrides: {}
