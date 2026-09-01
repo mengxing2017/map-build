@@ -31,6 +31,19 @@ DEM 资产使用独立入口，不参与 OSM PBF 矢量构建：
 4. `scripts/verify.sh --role=dem --strict` 校验 raster tile type、metadata、bounds、manifest 和 SHA512。
 5. `scripts/pack.sh --role=all` 会把 DEM 作为 `install.json.offline_maps[]` 中的 `dem-raster` 单资产，并在 bundle assets 中关联；不得新增私有顶层 size 字段。
 
+## 分层子区域合成
+
+`scripts/build-composite.sh` 是独立于 overview 的通用层级入口。它从
+`config/composites.yaml` 按 `direct-children`、`descendants` 或 `explicit` 解析源 region，
+可用于地级市到省、省到国家、国家到洲和洲到世界。所有 PBF 与 `.md5` sidecar 必须预先位于
+`${WORKDIR}/mirror/` 且来自同一 replication snapshot，然后才会用 `osmium merge` 合并。
+
+合并产物继续交给标准 `build.sh --role=base`，因此会使用目标 region 的稳定地图 identity、
+metadata、manifest 和标准 `install.json` 打包路径。合并 lineage 包含 resolved source regions、
+region catalog / composite schema version、每个输入的 MD5、SHA-512 和 replication 信息，并写入
+最终 manifest 的 `source.composition`。这与 `overview-vector` 审核包不同：分层合成输出是
+可导入的 `base-vector`。
+
 ## 输入输出
 
 默认工作目录：

@@ -9,6 +9,7 @@
 - 使用 Tippecanoe 将矢量图层生成 gzip 压缩的 MVT PMTiles；缩放级别、密度控制和高密度区域覆盖均由 `config/tippecanoe.yaml` 配置。
 - 支持 `base` 基础矢量、可选 `building` 建筑矢量，以及来自已授权本地或内网输入的 `dem` 栅格地形三类资产。建筑角色仅在区域配置声明为派生建筑数据时启用；DEM 不会默认下载公开数据源。
 - 支持显式配置的多区域低缩放概览图：先验证所有源 PBF 来自同一 OSM replication snapshot，再用 `osmium merge` 合并并构建独立的 `overview-vector` PMTiles。
+- 支持从已验证、同快照的本地 PBF 合成分层 `base-vector` 资产；配置可表达地级市到省、省到国家、国家到洲和洲到世界。当前提供中国兼容入口，产物复用 `china` 的地图身份并可生成 `install.json`。
 - 统一处理多语言名称、数值和布尔属性；建筑缺失高度时可按楼层推导高度，用于 3D 建筑渲染。
 - 为每个资产写入 PMTiles 元数据、构建清单、OpenStreetMap 署名信息和 SHA-512 校验文件，并验证 PMTiles 格式、图层元数据、清单和哈希。
 - 将构建结果打包为 `tar.gz`、`zip` 或两者，并生成 `install.json`、`SHA256SUMS` 和可选的导入包，便于离线安装和传输。
@@ -64,6 +65,10 @@ make build REGION=china/guangxi YYYYMMDD=20260829 \
 make build-overview OVERVIEW=south-china-overview YYYYMMDD=20260829
 make verify-overview OVERVIEW=south-china-overview YYYYMMDD=20260829
 make pack-overview OVERVIEW=south-china-overview YYYYMMDD=20260829 FORMAT=both
+make composite-inventory COMPOSITE=china-base-from-provinces
+make build-composite COMPOSITE=china-base-from-provinces YYYYMMDD=20260829
+make verify-composite COMPOSITE=china-base-from-provinces YYYYMMDD=20260829
+make pack-composite COMPOSITE=china-base-from-provinces YYYYMMDD=20260829 FORMAT=both
 ```
 
 合并 PBF 缓存按 overview id、配置 schema、源文件名、SHA-512 和 replication sequence 内容寻址，位于 `${WORKDIR}/cache/merge/<overview-id>/`。概览产物命名如下：
@@ -112,6 +117,9 @@ make build-dem REGION=china/guangxi               # 从已授权输入构建 DEM
 make build-overview OVERVIEW=south-china-overview  # 构建多区域低缩放概览图
 make verify-overview OVERVIEW=south-china-overview # 验证概览图
 make pack-overview OVERVIEW=south-china-overview   # 生成概览审核包
+make composite-inventory COMPOSITE=china-base-from-provinces # 检查本地 PBF 库
+make build-composite COMPOSITE=china-base-from-provinces     # 合并并构建分层基础地图
+make pack-composite COMPOSITE=china-base-from-provinces      # 生成可安装的合成地图包
 make glyph REGION=china/guangxi                   # 生成 MapLibre glyph
 make sprite REGION=china/guangxi                  # 生成样式精灵图
 make style REGION=china/guangxi                   # 生成 MapLibre 样式

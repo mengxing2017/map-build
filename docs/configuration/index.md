@@ -40,6 +40,32 @@
 | `dem.sources[].data_license` | DEM 数据许可说明 |
 | `dem.sources[].uri` | 本地或内网 mirror 入口;公网 URL 只允许在完成合规确认后显式配置 |
 
+## composites.yaml
+
+`config/composites.yaml` 定义由本地 PBF 合成并作为标准 `base-vector` 安装的分层产品。它可表达
+地级市合成省、省合成国家、国家合成洲以及洲合成世界，目标 region 必须复用
+`regions.yaml` 中已登记的地图身份。它不同于 `overviews.yaml`：overview 只生成审核用的
+`overview-vector`，composite 会生成可安装的标准资产。
+
+关键字段：
+
+| 字段 | 说明 |
+| :--- | :--- |
+| `composites[].id` | 稳定 composite id，供命令的 `COMPOSITE` / `--composite` 使用 |
+| `target_region` | 目标 region，必须存在于 `regions.yaml` 并已有 `base-vector` 地图身份 |
+| `sources.mode` | `direct-children`、`descendants` 或 `explicit` |
+| `sources.root_region` | 层级解析根；`direct-children` 取直接子项，`descendants` 取全部后代 |
+| `sources.explicit` | `explicit` 模式下的源 region 清单 |
+| `sources.include` / `exclude` | 在模式解析结果上追加或移除的明确 region id |
+| `inputs.provider` | 当前只允许 `local-mirror`，不在构建中下载 PBF |
+| `inputs.basename_template` | mirror 文件名模板；当前固定为 `{region-basename}-latest.osm.pbf` |
+| `inputs.basename_overrides` | 以 region id 为 key 的文件名覆盖，供内网或预下载 PBF 使用 |
+
+`composite-inventory.sh` 和 `merge-composite-pbf.sh` 在合并前验证每个解析出的 PBF、`.md5`
+sidecar、MD5、replication timestamp 和 sequence。它们不会访问 Geofabrik；生产输入应由预下载、
+内网同步或受控介质写入 `${WORKDIR}/mirror/`。合并 lineage 包含输入 SHA-512、解析后的 region
+列表及 schema version，`build-composite.sh` 将其写入最终 manifest 的 `source.composition`。
+
 ## layers.yaml
 
 `config/layers.yaml` 定义 source layer、OSM tag 过滤规则和最终字段。
