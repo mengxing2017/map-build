@@ -24,7 +24,7 @@ for arg in "$@"; do
     --encoding=*) DEM_ENCODING="${arg#*=}" ;;
     --vertical-datum=*) VERTICAL_DATUM="${arg#*=}" ;;
     -h|--help)
-      printf 'usage: %s --region=<id> --session=<session> [--source=<id>] [--input=<pmtiles|mbtiles|tile-dir>] [--encoding=<encoding>] [--workdir=<path>]\n' "$0"
+      printf 'usage: %s --region=<id> --session=<session> [--source=<id>] [--input=<pmtiles|mbtiles|tile-dir>] [--encoding=<encoding>] [--vertical-datum=<datum>] [--workdir=<path>]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
