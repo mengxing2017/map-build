@@ -1,0 +1,20 @@
+schema_version: 1
+assets:
+  - id: china-regional-osm
+    provider: osm-pbf-set
+    inputs:
+      mode: direct-children
+      root_region: china
+      # Optional default only. Per-region paths below take precedence and may
+      # use any PBF filename, including dated or internally versioned names.
+      path_template: "mirror/{region-basename}-latest.osm.pbf"
+      path_overrides: {}
+      md5_sidecar: true
+    version: "regional-release"
+    coverage:
+      region: china
+    license_ref: odbl-1.0
+    adapter: osm-default
+    layer_profile: base-v1
+    priority: 100
+    lineage: {}

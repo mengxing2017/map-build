@@ -93,6 +93,18 @@ composites_json() {
   config_json_path composites
 }
 
+source_assets_json() {
+  config_json_path source-assets
+}
+
+adapters_json() {
+  config_json_path adapters
+}
+
+conflict_policies_json() {
+  config_json_path conflict-policies
+}
+
 tier_profiles_json() {
   config_json_path tier-profiles
 }

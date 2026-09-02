@@ -1,0 +1,7 @@
+schema_version: 1
+adapters:
+  - id: osm-default
+    provider: osm-pbf-set
+    executable: adapter-run.sh
+    layer_profile: base-v1
+    license_refs: [odbl-1.0]

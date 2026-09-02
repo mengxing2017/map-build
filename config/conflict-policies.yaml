@@ -1,0 +1,13 @@
+schema_version: 1
+policies:
+  - id: china-base-v1
+    layer_profile: base-v1
+    coverage:
+      allow_overlap: true
+      allow_gaps: false
+    dedupe:
+      mode: exact-feature
+    precedence:
+      mode: source-order
+    license:
+      allowed_refs: [odbl-1.0]

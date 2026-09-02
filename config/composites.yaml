@@ -1,16 +1,11 @@
-schema_version: 1
-description: "Installable base-vector artifacts composed from verified local PBF inputs."
+schema_version: 2
+description: "Derived maps assembled from declared source assets and per-layer conflict policies."
 
 composites:
-  - id: china-base-from-provinces
+  - id: china-base
     target_region: china
+    layer_profile: base-v1
+    conflict_policy: china-base-v1
     sources:
-      mode: direct-children
-      root_region: china
-      explicit: []
-      include: []
-      exclude: []
-    inputs:
-      provider: local-mirror
-      basename_template: "{region-basename}-latest.osm.pbf"
-      basename_overrides: {}
+      - asset: china-regional-osm
+        coverage_mode: union
