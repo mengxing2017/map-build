@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 source "${SCRIPT_DIR}/lib/config.sh"
+source "${SCRIPT_DIR}/lib/source-asset.sh"
 source "${SCRIPT_DIR}/lib/derived-map.sh"
 
 DERIVED_MAP="" FORMAT="${IMPORT_FORMAT:-zip}" passthrough=()
