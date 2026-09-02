@@ -222,23 +222,23 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `make build` | 从 PBF 构建 PMTiles、metadata、manifest、attribution 和 sha512 | `make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base` |
 | `make build-dem` | 从授权 DEM 源生成 DEM PMTiles、manifest、attribution 和 sha512 | `make build-dem REGION=china/guangxi YYYYMMDD=20260818 DEM_SOURCE=srtm` |
 | `make build-overview` | 合并同一 replication snapshot 的多个 region PBF，构建低缩放概览图 | `make build-overview OVERVIEW=south-china-overview YYYYMMDD=20260818` |
-| `make composite-inventory` | 检查分层合成所需的本地 PBF、MD5 与 OSM 快照 | `make composite-inventory COMPOSITE=china-base-from-provinces` |
-| `make build-composite` | 合并配置的子区域 PBF 并构建可安装的 `base-vector` | `make build-composite COMPOSITE=china-base-from-provinces YYYYMMDD=20260818` |
+| `make derived-inventory` | 检查派生地图的 source assets 与 checksum | `make derived-inventory DERIVED_MAP=china-base` |
+| `make build-derived-map` | 按图层合成并构建派生 `base-vector` | `make build-derived-map DERIVED_MAP=china-base YYYYMMDD=20260818` |
 | `make glyph` | 生成当前 session 的 glyphs 目录 | `make glyph REGION=china/guangxi YYYYMMDD=20260818` |
 | `make sprite` | 从 `config/icons/manifest.yaml` 生成当前 session 的 PNG sprite 和索引 JSON | `make sprite REGION=china/guangxi YYYYMMDD=20260818` |
 | `make style` | 生成当前 session 的 MapLibre style JSON | `make style REGION=china/guangxi YYYYMMDD=20260818` |
 | `make verify` | 验证 PMTiles header、metadata、manifest、SHA-512；`--strict` 还会校验 `package_version` 与 install.json `package-version` / `bundle-version` | `make verify REGION=china/guangxi YYYYMMDD=20260818 ROLE=both` |
 | `make verify-dem` | 严格模式验证 DEM PMTiles、metadata、manifest 与 SHA-512 | `make verify-dem REGION=china/guangxi YYYYMMDD=20260818` |
 | `make verify-overview` | 验证 overview 的 PMTiles 格式、图层、组成信息和哈希 | `make verify-overview OVERVIEW=south-china-overview YYYYMMDD=20260818` |
-| `make verify-composite` | 严格验证合成产物、目录身份和 PBF lineage | `make verify-composite COMPOSITE=china-base-from-provinces YYYYMMDD=20260818` |
+| `make verify-derived-map` | 严格验证派生产物、composition report 和地图身份 | `make verify-derived-map DERIVED_MAP=china-base YYYYMMDD=20260818` |
 | `make pack` | 生成 tar/zip 分发包 | `make pack SESSION=china-guangxi-20260818 ROLE=both FORMAT=both` |
 | `make pack-tar` | 只生成 `.bundle.tar.gz` | `make pack-tar SESSION=china-guangxi-20260818 ROLE=base` |
 | `make pack-zip` | 只生成 `.bundle.zip` | `make pack-zip SESSION=china-guangxi-20260818 ROLE=base` |
 | `make pack-overview` | 生成 overview 审核包；不包含 `install.json`，不可作为可安装离线地图发布 | `make pack-overview OVERVIEW=south-china-overview YYYYMMDD=20260818 FORMAT=zip` |
-| `make pack-composite` | 生成带 `install.json` 的分层基础地图包 | `make pack-composite COMPOSITE=china-base-from-provinces YYYYMMDD=20260818 FORMAT=zip` |
+| `make pack-derived-map` | 生成带 `install.json` 的派生基础地图包 | `make pack-derived-map DERIVED_MAP=china-base YYYYMMDD=20260818 FORMAT=zip` |
 | `make prepare-import` | 为单个 role 生成 `huavd-map` 导入包；`ROLE=both` 时会转为 `base` | `make prepare-import ROLE=base IMPORT_FORMAT=zip` |
 | `make prepare-import-all` | 将当前 session 中可用的 base/building 聚合为一个导入包 | `make prepare-import-all IMPORT_FORMAT=tar` |
-| `make prepare-composite-import` | 为分层合成的 `base-vector` 生成 `huavd-map` 导入包 | `make prepare-composite-import COMPOSITE=china-base-from-provinces YYYYMMDD=20260818` |
+| `make prepare-derived-import` | 为派生 `base-vector` 生成 `huavd-map` 导入包 | `make prepare-derived-import DERIVED_MAP=china-base YYYYMMDD=20260818` |
 | `make clean` | 删除当前 session 的 staging、pack/import cache 和 outputs | `make clean SESSION=china-guangxi-20260818 ROLE=both` |
 | `make all` | 执行 `build` 和 `pack` | `make all REGION=china/guangxi YYYYMMDD=20260818` |
 | `make release` | 执行 `build`、`pack`、`verify` | `make release REGION=china/guangxi YYYYMMDD=20260818` |
@@ -284,40 +284,44 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `./scripts/init-workdir.sh` | 初始化目录；通过 `HUAVD_MAP_BUILD_HOME`、`HUAVD_MAP_BUILD_SESSION`、`HUAVD_MAP_BUILD_COPY_CONFIG=1` 等环境变量控制 |
 | `./scripts/generate-region-skeletons.rb` | `--iso3166-2-csv=<path> [--existing-config=config/regions.yaml] [--output=config/regions.yaml]` |
 
-### 分层合成入口
+### 派生地图入口
 
-分层合成与 overview 不同：它会把 `config/composites.yaml` 中登记的 target region identity
-写入标准 `base-vector` artifact，并在打包时生成 `install.json`。`sources.mode` 支持
-`direct-children`、`descendants` 和 `explicit`，可用于地级市合成省、省合成国家、国家合成洲和
-洲合成世界；每个 target 都必须在 `config/regions.yaml` 有既有地图身份。
-
-开始前，需要将解析出的每个 region PBF 和对应 `.md5` sidecar 放入 `${WORKDIR}/mirror/`。
-文件名由 `inputs.basename_template` 或 `basename_overrides` 决定，不依赖源 region 是否配置
-Geofabrik 下载 URL。`local-mirror` 是当前唯一 provider，合成流程不联网；可先通过受控下载、
-内网同步或离线介质准备数据。所有输入必须来自完全相同的 OSM replication timestamp 和 sequence；
-缺少任何一个输入、MD5 不匹配或快照不一致都会在 merge 前失败。
+派生地图把 `composites.yaml` 中的 target region identity 写入标准 `base-vector` artifact，并生成
+`install.json`。输入由 `source-assets.yaml` 显式声明，可来自不同版本或 provider；adapter 先将其
+转换为 canonical layers，随后由 conflict policy 逐图层合成。构建不执行原始 PBF merge，也不比较
+OSM timestamp 或 sequence。
 
 | 脚本 | 用法 |
 | :--- | :--- |
-| `./scripts/composite-inventory.sh` | `--composite=<id> [--workdir=<path>]`；列出本地 PBF 库的缺失、MD5 与快照问题 |
-| `./scripts/merge-composite-pbf.sh` | `--composite=<id> [--workdir=<path>] [--force]` |
-| `./scripts/build-composite.sh` | `--composite=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--glyph=0\|1] [--force]` |
-| `./scripts/verify-composite.sh` | `--composite=<id> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--workdir=<path>] [--strict]` |
-| `./scripts/pack-composite.sh` | `--composite=<id> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--format=tar\|zip\|both] [--workdir=<path>]` |
-| `./scripts/prepare-composite-import.sh` | `--composite=<id> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--format=tar\|zip] [--output=<archive-path>] [--transfer-id=<id>] [--workdir=<path>]` |
+| `./scripts/source-inventory.sh` | `--asset=<id> [--workdir=<path>]` |
+| `./scripts/derived-inventory.sh` | `--derived-map=<id> [--workdir=<path>]` |
+| `./scripts/adapter-run.sh` | `--asset=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--force]` |
+| `./scripts/compose-layers.sh` | `--derived-map=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--force]` |
+| `./scripts/build-derived-map.sh` | `--derived-map=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--glyph=0\|1] [--force]` |
+| `./scripts/verify-derived-map.sh` | `--derived-map=<id> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--workdir=<path>] [--strict]` |
+| `./scripts/pack-derived-map.sh` | `--derived-map=<id> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--format=tar\|zip\|both] [--workdir=<path>]` |
+| `./scripts/prepare-derived-import.sh` | `--derived-map=<id> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--format=tar\|zip] [--output=<archive-path>] [--transfer-id=<id>] [--workdir=<path>]` |
 
 中国示例：
 
 ```bash
-make composite-inventory COMPOSITE=china-base-from-provinces
-make build-composite COMPOSITE=china-base-from-provinces YYYYMMDD=20260818
-make verify-composite COMPOSITE=china-base-from-provinces YYYYMMDD=20260818
-make pack-composite COMPOSITE=china-base-from-provinces YYYYMMDD=20260818 FORMAT=zip
+make derived-inventory DERIVED_MAP=china-base
+make build-derived-map DERIVED_MAP=china-base YYYYMMDD=20260818
+make verify-derived-map DERIVED_MAP=china-base YYYYMMDD=20260818
+make pack-derived-map DERIVED_MAP=china-base YYYYMMDD=20260818 FORMAT=zip
+```
+
+新国家示例使用 `inputs.mode: explicit` 列出相邻省份，并在 `path_overrides` 中为每个省指定实际 PBF
+路径。目标国家必须先在 `regions.yaml` 注册，随后执行：
+
+```bash
+make derived-inventory DERIVED_MAP=new-country-base
+make build-derived-map DERIVED_MAP=new-country-base YYYYMMDD=20260818
 ```
 
 ### Overview 直连入口
 
-概览图是独立产物，不要向单区域的 `build.sh`、`verify.sh` 或 `pack.sh` 传入 overview 参数。开始前，必须把 `config/overviews.yaml` 所列每个 region 的 PBF 和对应 `.md5` sidecar 放到 `${WORKDIR}/mirror/`，且所有 PBF 的 replication timestamp 与 sequence 完全相同。
+概览图是独立产物，不要向单区域的 `build.sh`、`verify.sh` 或 `pack.sh` 传入 overview 参数。开始前，必须把 `config/overviews.yaml` 所列每个 region 的 PBF 和对应 `.md5` sidecar 放到 `${WORKDIR}/mirror/`，且所有 PBF 的 replication timestamp 完全相同。sequence 会写入 lineage 供审计，但不要求跨 extract 相同。
 
 | 脚本 | 用法 |
 | :--- | :--- |

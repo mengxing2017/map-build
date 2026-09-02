@@ -42,7 +42,7 @@
 
 ## composites.yaml
 
-`config/composites.yaml` 定义由本地 PBF 合成并作为标准 `base-vector` 安装的分层产品。它可表达
+`config/composites.yaml` 定义由 source asset 合成并作为标准 `base-vector` 安装的派生产品。它可表达
 地级市合成省、省合成国家、国家合成洲以及洲合成世界，目标 region 必须复用
 `regions.yaml` 中已登记的地图身份。它不同于 `overviews.yaml`：overview 只生成审核用的
 `overview-vector`，composite 会生成可安装的标准资产。
@@ -51,20 +51,57 @@
 
 | 字段 | 说明 |
 | :--- | :--- |
-| `composites[].id` | 稳定 composite id，供命令的 `COMPOSITE` / `--composite` 使用 |
+| `composites[].id` | 稳定派生地图 id，供 `DERIVED_MAP` / `--derived-map` 使用 |
 | `target_region` | 目标 region，必须存在于 `regions.yaml` 并已有 `base-vector` 地图身份 |
-| `sources.mode` | `direct-children`、`descendants` 或 `explicit` |
-| `sources.root_region` | 层级解析根；`direct-children` 取直接子项，`descendants` 取全部后代 |
-| `sources.explicit` | `explicit` 模式下的源 region 清单 |
-| `sources.include` / `exclude` | 在模式解析结果上追加或移除的明确 region id |
-| `inputs.provider` | 当前只允许 `local-mirror`，不在构建中下载 PBF |
-| `inputs.basename_template` | mirror 文件名模板；当前固定为 `{region-basename}-latest.osm.pbf` |
-| `inputs.basename_overrides` | 以 region id 为 key 的文件名覆盖，供内网或预下载 PBF 使用 |
+| `sources[].asset` | `source-assets.yaml` 中登记的输入资产 |
+| `sources[].coverage_mode` | 当前为 `union` |
+| `layer_profile` | canonical layer contract；当前为 `base-v1` |
+| `conflict_policy` | `conflict-policies.yaml` 中的合成规则 |
 
-`composite-inventory.sh` 和 `merge-composite-pbf.sh` 在合并前验证每个解析出的 PBF、`.md5`
-sidecar、MD5、replication timestamp 和 sequence。它们不会访问 Geofabrik；生产输入应由预下载、
-内网同步或受控介质写入 `${WORKDIR}/mirror/`。合并 lineage 包含输入 SHA-512、解析后的 region
-列表及 schema version，`build-composite.sh` 将其写入最终 manifest 的 `source.composition`。
+`source-assets.yaml` 定义 provider、输入、coverage、许可证和 adapter。`inputs.path_template` 只是可选
+默认路径；`inputs.path_overrides` 可按 region 指定任意 `.osm.pbf` 文件名，例如
+`mirror/taiwan-20200803.osm.pbf`。因此 PBF 命名不依赖 `-latest` 约定。`source-inventory.sh` 校验本地输入
+checksum，`adapter-run.sh` 生成 canonical layers，`compose-layers.sh` 写出 conflict policy 的
+composition report。timestamp 和 sequence 只用于 lineage，不是合成准入条件。
+
+新国家可由相邻省份的现有地图构成。先在 `regions.yaml` 注册目标，并为它分配稳定的
+`huavd.region_id`、`huavd.source_id` 和 `base-vector` 身份；随后使用显式 source asset，而不是要求
+目标国家已有 PBF：
+
+```yaml
+# source-assets.yaml
+assets:
+  - id: new-country-neighboring-provinces
+    provider: osm-pbf-set
+    inputs:
+      mode: explicit
+      regions: [country-a/province-one, country-b/province-two]
+      path_template: null
+      path_overrides:
+        country-a/province-one: "mirror/province-one-20200803.osm.pbf"
+        country-b/province-two: "mirror/province-two-20200815.osm.pbf"
+      md5_sidecar: true
+    version: "2020-boundary-release"
+    coverage: {region: new-country}
+    license_ref: odbl-1.0
+    adapter: osm-default
+    layer_profile: base-v1
+    priority: 100
+```
+
+```yaml
+# composites.yaml
+composites:
+  - id: new-country-base
+    target_region: new-country
+    layer_profile: base-v1
+    conflict_policy: new-country-base-v1
+    sources:
+      - asset: new-country-neighboring-provinces
+        coverage_mode: union
+```
+
+两个文件的日期或版本可以不同。对应的 conflict policy 必须明确重叠边界、重复要素和来源优先级。
 
 ## layers.yaml
 
