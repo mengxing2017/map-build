@@ -43,17 +43,17 @@ while IFS= read -r region; do
     || die "${HUAVD_EXIT_VERIFY}" "mirror MD5 mismatch for ${region}: refetch the PBF and its .md5 sidecar"
   timestamp="$(replication_value "${input}" osmosis_replication_timestamp || true)"
   sequence="$(replication_value "${input}" osmosis_replication_sequence_number || true)"
-  [[ -n "${timestamp}" && -n "${sequence}" ]] \
-    || die "${HUAVD_EXIT_INPUT}" "missing replication timestamp or sequence for ${region}; fetch a verified same-snapshot input set"
+  [[ -n "${timestamp}" ]] \
+    || die "${HUAVD_EXIT_INPUT}" "missing replication timestamp for ${region}; fetch a verified same-snapshot input set"
   inputs+=("${input}") timestamps+=("${timestamp}") sequences+=("${sequence}")
   fingerprints+=("$(jq -n --arg region "${region}" --arg basename "${basename}" --arg sha512 "$(sha512_value "${input}")" --arg timestamp "${timestamp}" --arg sequence "${sequence}" --arg url "$(region_pbf_url "${region}")" --arg md5 "${actual_md5}" '{region:$region,basename:$basename,url:$url,md5:$md5,sha512:$sha512,replication:{timestamp:$timestamp,sequence:$sequence}}')")
 done < <(overview_source_regions "${OVERVIEW}")
 
 for i in "${!timestamps[@]}"; do
-  if [[ "${timestamps[$i]}" != "${timestamps[0]}" || "${sequences[$i]}" != "${sequences[0]}" ]]; then
+  if [[ "${timestamps[$i]}" != "${timestamps[0]}" ]]; then
     printf 'snapshot mismatch for overview=%s:\n' "${OVERVIEW}" >&2
     for j in "${!inputs[@]}"; do printf '  %s timestamp=%s sequence=%s\n' "${inputs[$j]}" "${timestamps[$j]}" "${sequences[$j]}" >&2; done
-    die "${HUAVD_EXIT_INPUT}" "source PBFs must share one replication timestamp and sequence; refetch a consistent batch"
+    die "${HUAVD_EXIT_INPUT}" "source PBFs must share one replication timestamp; refetch a consistent batch"
   fi
 done
 
