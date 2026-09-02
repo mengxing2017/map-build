@@ -109,9 +109,10 @@ ${WORKDIR}/outputs/{overview-id}-{yyyymmdd}.overview.bundle.{tar.gz,zip}
 
 Overview inputs are distinct from normal region builds. Every configured source
 PBF and matching `.md5` sidecar must already exist in `${WORKDIR}/mirror/` and
-must have identical OSM replication timestamp and sequence. `merge-pbf.sh`
-refuses mismatched snapshots, validates the merged ordering/no-multiple-version
-invariant, and writes content-addressed cache entries under
+must have identical OSM replication timestamp. Per-extract replication sequence
+is recorded for lineage audit but is not required to match. `merge-pbf.sh` refuses
+mismatched timestamps, validates the merged ordering/no-multiple-version invariant,
+and writes content-addressed cache entries under
 `${WORKDIR}/cache/merge/<overview-id>/`.
 
 ## Pipeline
@@ -176,12 +177,25 @@ client and install schema accept `overview-vector` and its LOD semantics.
 - `scripts/verify-overview.sh`: validates overview PMTiles, metadata, manifest, hashes, and composition.
 - `scripts/pack-overview.sh`: writes overview audit tar/zip bundles without `install.json`.
 - `config/overviews.yaml`: explicit overview composition and low-zoom tile settings.
+- `config/source-assets.yaml`: local source asset catalog, paths, coverage, licenses, and adapters.
+- `config/adapters.yaml`: provider adapter declarations and canonical layer profile bindings.
+- `config/conflict-policies.yaml`: coverage, deduplication, precedence, and license rules for derived maps.
+- `config/composites.yaml`: derived-map targets, source asset references, and conflict policies.
 - `config/regions.yaml`: region catalog and HUAVD source metadata.
 - `config/dem.yaml`: authorized DEM source, encoding, license, and vertical datum metadata.
 - `config/layers.yaml`: source layer definitions, tag filters, and final fields.
 - `config/tippecanoe.yaml`: tippecanoe defaults, high-density overrides, and building role settings.
 - `config/export-config/*.json`: osmium export config per layer.
 - `config/regions/`: optional `.poly` files for derived regional extracts.
+
+Derived-map scripts are independent from the single-region PBF pipeline:
+
+- `scripts/source-inventory.sh`: validates locally supplied source assets and checksums.
+- `scripts/adapter-run.sh`: runs a provider adapter into isolated canonical layer caches.
+- `scripts/derived-inventory.sh`: validates every asset referenced by a derived map.
+- `scripts/compose-layers.sh`: applies the conflict policy to canonical layers and writes a composition report.
+- `scripts/build-derived-map.sh`, `verify-derived-map.sh`, `pack-derived-map.sh`, and
+  `prepare-derived-import.sh`: build and distribute a derived `base-vector` map.
 
 ## Configuration Coupling
 
