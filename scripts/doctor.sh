@@ -6,8 +6,10 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck source=lib/config.sh
 source "${SCRIPT_DIR}/lib/config.sh"
-# shellcheck source=lib/composite.sh
-source "${SCRIPT_DIR}/lib/composite.sh"
+# shellcheck source=lib/source-asset.sh
+source "${SCRIPT_DIR}/lib/source-asset.sh"
+# shellcheck source=lib/derived-map.sh
+source "${SCRIPT_DIR}/lib/derived-map.sh"
 
 REQUIRED=(
   bash
@@ -236,38 +238,38 @@ check_tier_profiles_config() {
 
 check_tier_profiles_config
 
-check_composites_config() {
+check_derived_map_config() {
   local composites composite failures_before
   failures_before="${FAILURES}"
   if ! composites="$(composites_json)"; then
-    printf 'FAIL %-12s %s\n' "composites" "failed to parse config/composites.yaml"
+    printf 'FAIL %-12s %s\n' "derived-maps" "failed to parse config/composites.yaml"
     FAILURES=$((FAILURES + 1))
     return
   fi
 
   if ! jq -e '
-    .schema_version == 1
+    .schema_version == 2
     and (.composites | type == "array" and length > 0)
     and ([.composites[].id] | length == (unique | length))
   ' "${composites}" >/dev/null; then
-    printf 'FAIL %-12s %s\n' "composites" "schema or duplicate id invalid"
+    printf 'FAIL %-12s %s\n' "derived-maps" "schema or duplicate id invalid"
     FAILURES=$((FAILURES + 1))
     return
   fi
 
   while IFS= read -r composite; do
-    if ! (composite_validate "${composite}") >/dev/null 2>&1; then
-      printf 'FAIL %-12s %s\n' "composites" "invalid composite: ${composite}"
+    if ! (derived_map_validate "${composite}") >/dev/null 2>&1; then
+      printf 'FAIL %-12s %s\n' "derived-maps" "invalid derived map: ${composite}"
       FAILURES=$((FAILURES + 1))
     fi
   done < <(jq -r '.composites[].id' "${composites}")
 
   if (( FAILURES == failures_before )); then
-    printf 'OK   %-12s %s\n' "composites" "schema, identity, and source resolution"
+    printf 'OK   %-12s %s\n' "derived-maps" "schema, source assets, and conflict policy"
   fi
 }
 
-check_composites_config
+check_derived_map_config
 
 check_multilingual_config() {
   local glyphs styles icons
