@@ -15,6 +15,7 @@ GLYPH          ?= 0
 FORCE_BUILDING ?= 0
 OVERVIEW       ?= south-china-overview
 DERIVED_MAP    ?= china-base
+ASSET          ?= china-regional-osm
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
 .PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem build-overview source-inventory derived-inventory adapter-run compose-layers build-derived-map glyph sprite style verify verify-dem verify-overview verify-derived-map pack pack-overview pack-derived-map pack-tar pack-zip prepare-import prepare-import-all prepare-derived-import clean all release release-tar release-zip lint diff-products
