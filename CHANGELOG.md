@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.3.0 - 2026-09-04
+
+当前版本为 `0.3.0`。本版本在保留 0.2.0 全部能力的基础上，新增多区域概览图、低缩放构建配置和派生地图（分层合成）三条独立流水线，并补充对应的配置、校验、文档与构建入口。
+
+### 概览图（Overview）
+
+- 新增 `config/overviews.yaml`，显式声明多区域 OSM PBF 概览图组合，包括默认低缩放参数、`source_regions` 列表、tippecanoe 覆盖和 LOD 边界。
+- 新增 `scripts/lib/overview.sh` 提供概览配置解析、路径与元数据辅助函数。
+- 新增概览专用脚本：`overview-filter.sh`、`overview-export.sh`、`overview-normalize.sh`、`overview-tippecanoe.sh`、`overview-metadata.sh`、`overview-manifest.sh`、`overview-attribution.sh`，复用 region 图层定义但走独立流程。
+- 新增 `scripts/merge-pbf.sh`，按同一 OSM replication 快照校验多份本地源 PBF，写入 `${WORKDIR}/cache/merge/<overview-id>/` 的内容寻址缓存，记录每份提取的 replication sequence 用于溯源。
+- 新增 `scripts/build-overview.sh`、`scripts/verify-overview.sh`、`scripts/pack-overview.sh`，分别负责构建、校验和打包 audit bundle（不带 `install.json`）。
+- 新增 Makefile 入口 `build-overview`、`verify-overview`、`pack-overview`，支持 `OVERVIEW` 变量切换概览 id。
+- 概览产物为独立的 `overview-vector` 资产，输出形如 `{overview-id}-{yyyymmdd}.overview.pmtiles`、`.overview.manifest.json` 与 `.overview.bundle.{tar.gz,zip}`。
+
+### 低缩放构建（Tier profiles）
+
+- 新增 `config/tier-profiles.yaml` 与 `scripts/lib/config.sh` 中的 tier profile 解析，集中维护低缩放 `country-low` 等构建轮廓，包含 `min_zoom`、`max_zoom`、`maximum_tile_bytes`、`extend_zooms_if_still_dropping` 与 `source_layers` 过滤。
+- 新增 `scripts/profile-transform.sh`，把 tier profile 翻译为 tippecanoe CLI 参数和图层过滤选项，避免在区域脚本里硬编码低缩放参数。
+- 在 `scripts/build.sh`、`scripts/tippecanoe.sh` 中集成 tier profile，支持单 region base-vector 按 profile 输出低缩放 PMTiles。
+- 在 `scripts/manifest.sh`、`scripts/metadata.sh`、`scripts/style.sh` 中适配 build profile，确保 manifest/style/profile 字段随构建 profile 正确写入。
+- 在 `scripts/verify.sh` 与 `scripts/doctor.sh` 中校验 tier profile 配置和低缩放构建产物完整性。
+
+### 派生地图（Derived map）/ 分层合成（Composite）
+
+- 新增 `config/source-assets.yaml`，声明本地源资产目录、路径、覆盖范围、许可证信息与适配器绑定。
+- 新增 `config/adapters.yaml`，声明 provider adapter 与规范图层（canonical layer）profile 的绑定关系。
+- 新增 `config/conflict-policies.yaml`，声明覆盖、去重、优先级和许可证冲突策略。
+- 新增 `config/composites.yaml`，声明派生地图目标（`base-vector`）的源资产引用、冲突策略和合并规则。
+- 新增 `scripts/lib/source-asset.sh`、`scripts/lib/derived-map.sh`，提供 source asset 校验、canonical layer 缓存寻址与派生合成辅助函数。
+- 新增图层合成脚本：`source-inventory.sh`、`derived-inventory.sh`、`adapter-run.sh`、`compose-layers.sh`，分别负责源资产清点、引用校验、provider adapter 执行到隔离 canonical 缓存、按冲突策略合成图层。
+- 新增派生地图入口：`build-derived-map.sh`、`verify-derived-map.sh`、`pack-derived-map.sh`、`prepare-derived-import.sh`，输出可安装 `base-vector`。
+- Makefile 以 `source-inventory`、`derived-inventory`、`adapter-run`、`compose-layers`、`build-derived-map`、`verify-derived-map`、`pack-derived-map`、`prepare-derived-import` 取代早期 `composite-*` 命令入口，并提供 `ASSET` 变量（默认 `china-regional-osm`）。
+- 在 `scripts/doctor.sh` 中校验派生地图 schema、source asset 与 conflict policy 完整性。
+
+### 配置扩展
+
+- 新增 `config/overviews.yaml`、`config/tier-profiles.yaml`、`config/source-assets.yaml`、`config/adapters.yaml`、`config/conflict-policies.yaml`、`config/composites.yaml` 等多份带 `schema_version` 的独立配置文件。
+- `scripts/lib/config.sh` 新增对上述配置的解析、默认值、schema 校验与跨配置身份一致性检查。
+
+### 校验与诊断
+
+- `scripts/doctor.sh` 新增对 composites、derived-map schema、source asset、conflict policy、tier profiles 的校验。
+- `scripts/verify.sh` 新增对 tier profile 构建产物的校验，覆盖元数据、图层集合和哈希一致性。
+- `scripts/merge-pbf.sh` 在同快照校验中改为仅比较 replication timestamp，避免不同提取的 sequence 数值差异误判。
+- `scripts/build-dem.sh` 补齐 `--vertical-datum` 参数的 usage 说明。
+
+### 文档与法律
+
+- 新增 MIT 许可证文件 `LICENSE` 与中文版 `LICENSE.zh-CN`。
+- `README.md` 完善功能概览、构建流程与使用说明，并补充 tier profiles 与概览图入口说明。
+- `AGENTS.md` 补充派生地图配置与脚本清单，修正 overview 同快照规则，明确 `tier-profiles`、`overview`、`derived-map` 的协作边界。
+- 新增概览图与分层合成（derived map）专题文档，位于 `docs/configuration/index.md`、`docs/pipeline/index.md`、`docs/manual/index.md`。
+- `docs/manual/index.md` 补充 DEM、overview、sprite 与质量工具（density-lint、viewport-lint 等）的变量和脚本用法说明。
+
 ## 0.2.0 - 2026-08-24
 
 当前版本为 `0.2.0`。本版本内容均为新增能力。
