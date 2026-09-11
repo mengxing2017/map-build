@@ -291,6 +291,8 @@ verify_style_text_layers() {
   check_style_layer_filter_contains "${style_file}" "road-shield" "highway"
   check_style_layer_filter_excludes "${style_file}" "road-shield" "network"
   check_style_layer_filter_excludes "${style_file}" "road-shield" "int_ref"
+  check_style_layer_icon_image_contains "${style_file}" "highway-point-symbol" "services"
+  check_style_layer_icon_image_contains "${style_file}" "highway-point-symbol" "rest-area"
   check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "hospital"
   check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "school"
   check_style_layer_layout_bool "${style_file}" "highway-point-symbol" "icon-allow-overlap" "true"
