@@ -134,6 +134,8 @@ paint_layers:
           cases:
             "motorway_junction": "road-junction"
             "bus_stop": "bus"
+            "services": "services"
+            "rest_area": "rest-area"
           default: "road-junction"
       icon-size: 0.8
       icon-allow-overlap: true
