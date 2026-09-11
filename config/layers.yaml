@@ -499,6 +499,10 @@ source_layers:
       - "n/highway=bus_stop"
       - "n/highway=services"
       - "n/highway=rest_area"
+      - "w/highway=services"
+      - "w/highway=rest_area"
+      - "a/highway=services"
+      - "a/highway=rest_area"
     include_tags:
       - "name"
       - "name:zh-Hans"

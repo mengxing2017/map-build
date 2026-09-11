@@ -120,12 +120,25 @@ while IFS= read -r layer; do
         else
           .
         end;
+      def service_area_highway_point($props):
+        ($props.highway // "") | IN("services", "rest_area");
+      def normalize_highway_point_service_geometry:
+        if $layer == "highway_point"
+          and (.geometry.type != "Point")
+          and service_area_highway_point(.properties)
+        then
+          (.geometry.coordinates | bbox_center) as $center
+          | if $center == null then empty else .geometry = {type: "Point", coordinates: $center} end
+        else
+          .
+        end;
 
       if .properties then
         if excluded_by_post_filter(.properties) then
           empty
         else
           normalize_poi_label_geometry
+          | normalize_highway_point_service_geometry
           | .properties as $props
           | .properties.name = (coalesced_name($props) // $props.name)
           | .properties.name = clean_bilingual_name($props; .properties.name)
