@@ -196,6 +196,30 @@ def draw_icon(canvas, width, height, x, y, size, shape, color):
         draw_triangle(canvas, width, height, ((cx, y + 5), (x + 5, y + 11), (x + size - 5, y + 11)), color)
         draw_rect(canvas, width, height, x + 6, y + 12, x + size - 6, y + size - 6, color)
         draw_rect(canvas, width, height, x + 10, y + 15, x + 14, y + size - 6, (255, 255, 255, 220))
+    elif shape == "service-area":
+        draw_rect(canvas, width, height, x + round(size * 0.16), y + round(size * 0.16), x + round(size * 0.84), y + round(size * 0.84), color)
+        white = (255, 255, 255, 235)
+        body_x0 = x + round(size * 0.28)
+        body_y0 = y + round(size * 0.24)
+        body_x1 = x + round(size * 0.55)
+        body_y1 = y + round(size * 0.74)
+        draw_rect(canvas, width, height, body_x0, body_y0, body_x1, body_y1, white)
+        draw_rect(canvas, width, height, x + round(size * 0.34), y + round(size * 0.31), x + round(size * 0.49), y + round(size * 0.43), color)
+        draw_line(canvas, width, height, body_x1, y + round(size * 0.34), x + round(size * 0.71), y + round(size * 0.44), white, stroke)
+        draw_line(canvas, width, height, x + round(size * 0.71), y + round(size * 0.44), x + round(size * 0.71), y + round(size * 0.69), white, stroke)
+        draw_line(canvas, width, height, x + round(size * 0.65), y + round(size * 0.25), x + round(size * 0.78), y + round(size * 0.35), white, max(1, stroke - 1))
+    elif shape == "parking":
+        draw_rect(canvas, width, height, x + round(size * 0.16), y + round(size * 0.16), x + round(size * 0.84), y + round(size * 0.84), color)
+        white = (255, 255, 255, 235)
+        stem_x0 = x + round(size * 0.34)
+        stem_x1 = stem_x0 + stroke
+        top_y = y + round(size * 0.27)
+        mid_y = y + round(size * 0.50)
+        cap_x1 = x + round(size * 0.65)
+        draw_rect(canvas, width, height, stem_x0, top_y, stem_x1, y + round(size * 0.73), white)
+        draw_rect(canvas, width, height, stem_x0, top_y, cap_x1, top_y + stroke, white)
+        draw_rect(canvas, width, height, cap_x1 - stroke, top_y, cap_x1, mid_y, white)
+        draw_rect(canvas, width, height, stem_x0, mid_y, cap_x1, mid_y + stroke, white)
     else:
         draw_circle(canvas, width, height, cx, cy, size // 2 - 3, color)
 
