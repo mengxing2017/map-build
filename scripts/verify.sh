@@ -291,6 +291,13 @@ verify_style_text_layers() {
   check_style_layer_filter_contains "${style_file}" "road-shield" "highway"
   check_style_layer_filter_excludes "${style_file}" "road-shield" "network"
   check_style_layer_filter_excludes "${style_file}" "road-shield" "int_ref"
+  check_style_layer_filter_contains "${style_file}" "transport-station-symbol" '"station"'
+  check_style_layer_filter_contains "${style_file}" "transport-station-symbol" '"halt"'
+  check_style_layer_filter_excludes "${style_file}" "transport-station-symbol" '"stop"'
+  check_style_layer_icon_image_contains "${style_file}" "transport-station-symbol" "rail-metro"
+  check_style_layer_icon_image_contains "${style_file}" "transport-station-symbol" "rail-light"
+  check_style_layer_filter_contains "${style_file}" "transport-label" '"stop"'
+  check_style_layer_filter_excludes "${style_file}" "highway-point-symbol" "motorway_junction"
   check_style_layer_icon_image_contains "${style_file}" "highway-point-symbol" "services"
   check_style_layer_icon_image_contains "${style_file}" "highway-point-symbol" "rest-area"
   check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "hospital"
