@@ -123,29 +123,30 @@ jq -n \
         + $paint_layers
         + ($c.text_layers
           | map(select(.source_layer as $layer | $effective_base_layers | index($layer)))
-          | map({
-          id: .id,
-          type: "symbol",
-          source: $source_id,
-          "source-layer": .source_layer,
-          minzoom: (.minzoom // 0),
-          layout: ({
-            "text-field": text_field($name_fields),
-            "text-font": (.font_stack_by_locale[$locale] // $locale_font_stack // .font_stack // ["NotoSans-Regular"]),
-            "text-size": (.text_size // 12),
-            "text-anchor": "center",
-            "text-allow-overlap": (.text_allow_overlap // false),
-            "text-ignore-placement": (.text_ignore_placement // false),
-            "text-optional": (.text_optional // false)
-          }
-          + (if .placement then {"symbol-placement": .placement} else {"symbol-placement": "point"} end)
-          + (if .symbol_spacing then {"symbol-spacing": .symbol_spacing} else {} end)),
-          paint: {
-            "text-color": "#1f2933",
-            "text-halo-color": "#ffffff",
-            "text-halo-width": 1
-          }
-        }))
+          | map(({
+              id: .id,
+              type: "symbol",
+              source: $source_id,
+              "source-layer": .source_layer,
+              minzoom: (.minzoom // 0),
+              layout: ({
+                "text-field": text_field($name_fields),
+                "text-font": (.font_stack_by_locale[$locale] // $locale_font_stack // .font_stack // ["NotoSans-Regular"]),
+                "text-size": (.text_size // 12),
+                "text-anchor": "center",
+                "text-allow-overlap": (.text_allow_overlap // false),
+                "text-ignore-placement": (.text_ignore_placement // false),
+                "text-optional": (.text_optional // false)
+              }
+              + (if .placement then {"symbol-placement": .placement} else {"symbol-placement": "point"} end)
+              + (if .symbol_spacing then {"symbol-spacing": .symbol_spacing} else {} end)),
+              paint: {
+                "text-color": "#1f2933",
+                "text-halo-color": "#ffffff",
+                "text-halo-width": 1
+              }
+            }
+            + (if (.filter // null) != null then {filter: .filter} else {} end))))
       ),
       metadata: {
         "huavd:style-locale": $locale,

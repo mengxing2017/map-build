@@ -34,6 +34,7 @@ text_layers:
   - id: "transport-label"
     source_layer: "transport_label"
     minzoom: 13
+    filter: ["match", ["get", "railway"], ["stop"], false, true]
     font_stack: ["NotoSans-Regular"]
     text_size: 11
   - id: "road-labels"
@@ -102,7 +103,7 @@ paint_layers:
     source_layer: "transport_label"
     type: "symbol"
     minzoom: 12
-    filter: ["match", ["get", "railway"], ["station", "halt", "tram_stop", "subway_entrance", "stop"], true, false]
+    filter: ["match", ["get", "railway"], ["station", "halt", "tram_stop", "subway_entrance"], true, false]
     layout:
       icon-image:
         match:
@@ -127,16 +128,16 @@ paint_layers:
     source_layer: "highway_point"
     type: "symbol"
     minzoom: 12
+    filter: ["match", ["get", "highway"], ["bus_stop", "services", "rest_area"], true, false]
     layout:
       icon-image:
         match:
           field: "highway"
           cases:
-            "motorway_junction": "road-junction"
             "bus_stop": "bus"
             "services": "services"
             "rest_area": "rest-area"
-          default: "road-junction"
+          default: "services"
       icon-size: 0.8
       icon-allow-overlap: true
       icon-ignore-placement: true
