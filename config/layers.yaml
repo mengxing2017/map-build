@@ -489,13 +489,11 @@ source_layers:
     order: 15
     geometry: "point"
     osm_tags:
-      - "highway=motorway_junction"
       - "highway=bus_stop"
       - "highway=services"
       - "highway=rest_area"
     geofabrik_shapefile: null
     tags_filter:
-      - "n/highway=motorway_junction"
       - "n/highway=bus_stop"
       - "n/highway=services"
       - "n/highway=rest_area"
