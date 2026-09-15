@@ -199,8 +199,12 @@ def draw_icon(canvas, width, height, x, y, size, shape, color):
         draw_line(canvas, width, height, x + 4, y + size - 8, x + 4, y + size - 4, color, 2)
         draw_line(canvas, width, height, x + size - 4, y + size - 8, x + size - 4, y + size - 4, color, 2)
     elif shape == "cross":
-        draw_rect(canvas, width, height, x + 10, y + 4, x + 14, y + size - 4, color)
-        draw_rect(canvas, width, height, x + 4, y + 10, x + size - 4, y + 14, color)
+        disc = round(size * 0.42)
+        arm = max(1, round(size * 0.09))
+        span = round(size * 0.28)
+        draw_circle(canvas, width, height, cx, cy, disc, color)
+        draw_rect(canvas, width, height, cx - arm, cy - span, cx + arm, cy + span, (255, 255, 255, 255))
+        draw_rect(canvas, width, height, cx - span, cy - arm, cx + span, cy + arm, (255, 255, 255, 255))
     elif shape == "school":
         draw_triangle(canvas, width, height, ((cx, y + 5), (x + 5, y + 11), (x + size - 5, y + 11)), color)
         draw_rect(canvas, width, height, x + 6, y + 12, x + size - 6, y + size - 6, color)
