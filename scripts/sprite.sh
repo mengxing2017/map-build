@@ -154,6 +154,19 @@ def draw_icon(canvas, width, height, x, y, size, shape, color):
         draw_line(canvas, width, height, x + size - 7, y + 4, x + size - 7, y + size - 4, color, stroke)
         for yy in range(y + 7, y + size - 4, 5):
             draw_line(canvas, width, height, x + 5, yy, x + size - 5, yy, color, 1)
+    elif shape == "station":
+        body_top = y + round(size * 0.14)
+        body_bottom = y + round(size * 0.76)
+        body_left = x + round(size * 0.22)
+        body_right = x + round(size * 0.78)
+        window_bottom = y + round(size * 0.46)
+        lower_top = y + round(size * 0.52)
+        rail_y = y + round(size * 0.86)
+        white = (255, 255, 255, 235)
+        draw_rect(canvas, width, height, body_left, body_top, body_right, body_bottom, color)
+        draw_rect(canvas, width, height, body_left + stroke, body_top + stroke, body_right - stroke, window_bottom, white)
+        draw_rect(canvas, width, height, cx - stroke, lower_top, cx, body_bottom - stroke, white)
+        draw_line(canvas, width, height, x + round(size * 0.10), rail_y, x + round(size * 0.90), rail_y, color, stroke)
     elif shape == "metro":
         draw_circle(canvas, width, height, cx, cy, size // 2 - 3, color)
         draw_rect(canvas, width, height, x + 8, y + 8, x + size - 8, y + size - 6, (255, 255, 255, 230))
@@ -168,10 +181,6 @@ def draw_icon(canvas, width, height, x, y, size, shape, color):
         draw_rect(canvas, width, height, x + 7, y + 9, x + size - 7, y + 14, (255, 255, 255, 230))
         draw_circle(canvas, width, height, x + 8, y + size - 5, 2, (30, 41, 59, 255))
         draw_circle(canvas, width, height, x + size - 8, y + size - 5, 2, (30, 41, 59, 255))
-    elif shape == "junction":
-        draw_circle(canvas, width, height, cx, cy, size // 2 - 3, color)
-        draw_line(canvas, width, height, x + 7, cy, x + size - 7, cy, (255, 255, 255, 235), stroke)
-        draw_line(canvas, width, height, cx, y + 7, cx, y + size - 7, (255, 255, 255, 235), stroke)
     elif shape == "museum":
         draw_triangle(canvas, width, height, ((cx, y + 4), (x + 5, y + 10), (x + size - 5, y + 10)), color)
         draw_rect(canvas, width, height, x + 6, y + 11, x + size - 6, y + 13, color)
