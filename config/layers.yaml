@@ -421,6 +421,8 @@ source_layers:
       - "a/amenity=kindergarten"
       - "n/shop"
       - "n/tourism"
+      - "w/tourism"
+      - "a/tourism"
     include_tags:
       - "name"
       - "name:zh-Hans"

@@ -110,10 +110,12 @@ while IFS= read -r layer; do
           end;
       def key_amenity_area_label($props):
         ["hospital", "clinic", "doctors", "school", "university", "college", "kindergarten"] | index($props.amenity // "");
+      def key_tourism_area_label($props):
+        ($props.tourism // "") != "";
       def normalize_poi_label_geometry:
         if $layer == "poi_label"
-          and (.geometry.type == "Polygon" or .geometry.type == "MultiPolygon")
-          and key_amenity_area_label(.properties)
+          and (.geometry.type != "Point")
+          and (key_amenity_area_label(.properties) or key_tourism_area_label(.properties))
         then
           (.geometry.coordinates | bbox_center) as $center
           | if $center == null then empty else .geometry = {type: "Point", coordinates: $center} end
