@@ -155,7 +155,7 @@ paint_layers:
     source_layer: "poi_label"
     type: "symbol"
     minzoom: 14
-    filter: ["match", ["get", "tourism"], ["museum", "attraction", "viewpoint", "hotel", "information"], true, false]
+    filter: ["match", ["get", "tourism"], ["museum", "attraction", "viewpoint", "hotel"], true, false]
     layout:
       icon-image:
         match:
