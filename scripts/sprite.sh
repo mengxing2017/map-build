@@ -187,8 +187,36 @@ def draw_icon(canvas, width, height, x, y, size, shape, color):
         for xx in (x + 8, x + 12, x + 16):
             draw_rect(canvas, width, height, xx, y + 14, xx + 1, y + size - 6, color)
         draw_rect(canvas, width, height, x + 5, y + size - 5, x + size - 5, y + size - 4, color)
+    # Keep star available for future capital/rating symbols even if no manifest icon uses it.
     elif shape == "star":
         draw_star(canvas, width, height, cx, cy, size // 2 - 3, size // 5, color)
+    elif shape == "tree":
+        # Solid color disc with a white tree, matching the other flat disc
+        # badges (viewpoint/cross) instead of a multi-tone organic tree.
+        radius = size // 2 - 3
+        white = (255, 255, 255, 255)
+        trunk_half = max(1, round(radius * 0.11))
+        canopy_base = cy + round(radius * 0.22)
+        draw_circle(canvas, width, height, cx, cy, radius, color)
+        draw_rect(canvas, width, height, cx - trunk_half, canopy_base - 1, cx + trunk_half, cy + round(radius * 0.55), white)
+        draw_triangle(
+            canvas, width, height,
+            (
+                (cx, cy - round(radius * 0.33)),
+                (cx - round(radius * 0.58), canopy_base),
+                (cx + round(radius * 0.58), canopy_base),
+            ),
+            white,
+        )
+        draw_triangle(
+            canvas, width, height,
+            (
+                (cx, cy - round(radius * 0.66)),
+                (cx - round(radius * 0.44), cy - round(radius * 0.10)),
+                (cx + round(radius * 0.44), cy - round(radius * 0.10)),
+            ),
+            white,
+        )
     elif shape == "viewpoint":
         draw_circle(canvas, width, height, cx, cy, size // 2 - 4, color)
         draw_circle(canvas, width, height, cx, cy, size // 4, (255, 255, 255, 230))
@@ -233,8 +261,10 @@ def draw_icon(canvas, width, height, x, y, size, shape, color):
         draw_rect(canvas, width, height, stem_x0, top_y, cap_x1, top_y + stroke, white)
         draw_rect(canvas, width, height, cap_x1 - stroke, top_y, cap_x1, mid_y, white)
         draw_rect(canvas, width, height, stem_x0, mid_y, cap_x1, mid_y + stroke, white)
-    else:
+    elif shape == "circle":
         draw_circle(canvas, width, height, cx, cy, size // 2 - 3, color)
+    else:
+        raise ValueError(f"unknown icon shape: {shape}")
 
 
 def write_png(path, width, height, pixels):
