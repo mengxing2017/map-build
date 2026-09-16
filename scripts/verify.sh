@@ -201,6 +201,8 @@ verify_label_config_fields() {
   check_config_final_field_in_include_tags "poi_label" "tourism"
   check_config_layer_tags_filter "poi_label" "a/amenity=hospital"
   check_config_layer_tags_filter "poi_label" "a/amenity=school"
+  check_config_layer_tags_filter "poi_label" "w/tourism"
+  check_config_layer_tags_filter "poi_label" "a/tourism"
   check_config_final_field_in_include_tags "transport_label" "public_transport"
   check_config_final_field_in_include_tags "transport_label" "railway"
   check_config_final_field_in_include_tags "transport_label" "ref"
@@ -300,6 +302,7 @@ verify_style_text_layers() {
   check_style_layer_filter_excludes "${style_file}" "highway-point-symbol" "motorway_junction"
   check_style_layer_icon_image_contains "${style_file}" "highway-point-symbol" "services"
   check_style_layer_icon_image_contains "${style_file}" "highway-point-symbol" "rest-area"
+  check_style_layer_filter_excludes "${style_file}" "poi-tourism-symbol" '"information"'
   check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "hospital"
   check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "school"
   check_style_layer_layout_bool "${style_file}" "highway-point-symbol" "icon-allow-overlap" "true"
