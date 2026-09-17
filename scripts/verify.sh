@@ -191,6 +191,25 @@ verify_config_final_fields_declared() {
   fi
 }
 
+verify_export_config_include_tags() {
+  local layer_id export_config expected actual missing extra
+  while IFS= read -r layer_id; do
+    export_config="${CONFIG_DIR}/export-config/${layer_id}.json"
+    require_file "${export_config}"
+    expected="$(jq -c --arg layer "${layer_id}" '
+      (.source_layers[$layer].include_tags // []) | unique | sort
+    ' "$(layers_json)")"
+    actual="$(jq -c '(.include_tags // []) | unique | sort' "${export_config}")"
+    if [[ "${actual}" == "${expected}" ]]; then
+      ok "export-config layer=${layer_id} include_tags match config"
+    else
+      missing="$(jq -cn --argjson expected "${expected}" --argjson actual "${actual}" '$expected - $actual')"
+      extra="$(jq -cn --argjson expected "${expected}" --argjson actual "${actual}" '$actual - $expected')"
+      fail "export-config layer=${layer_id} include_tags mismatch: missing=${missing} extra=${extra}"
+    fi
+  done < <(layers_list)
+}
+
 verify_name_locale_config_fields() {
   local layer_id
   if jq -e '
@@ -447,11 +466,7 @@ verify_layer_config_fields() {
   shift
   local field
   for field in "$@"; do
-    if jq -e --arg field "${field}" '
-      (.include_tags // []) | index($field)
-    ' "$(config_dir_export "${layer_id}")" >/dev/null 2>&1; then
-      check_export_config_include_tag "${layer_id}" "${field}"
-    fi
+    check_export_config_include_tag "${layer_id}" "${field}"
     check_config_final_field_in_include_tags "${layer_id}" "${field}"
     check_config_final_field "${layer_id}" "${field}"
   done
@@ -954,6 +969,10 @@ verify_dem_role() {
     fi
   fi
 }
+
+if ((STRICT)); then
+  verify_export_config_include_tags
+fi
 
 verified_any=0
 while IFS= read -r role; do
