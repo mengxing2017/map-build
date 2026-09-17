@@ -134,6 +134,8 @@ while IFS= read -r layer; do
         else
           .
         end;
+      def water_polygon_geometry:
+        (.geometry.type // "") | IN("Polygon", "MultiPolygon");
 
       if .properties then
         if excluded_by_post_filter(.properties) then
@@ -141,19 +143,23 @@ while IFS= read -r layer; do
         else
           normalize_poi_label_geometry
           | normalize_highway_point_service_geometry
-          | .properties as $props
-          | .properties.name = (coalesced_name($props) // $props.name)
-          | .properties.name = clean_bilingual_name($props; .properties.name)
-          | if $layer == "building" then
-              .properties.type = (.properties.type // .properties.building)
-              | .properties.levels = (.properties.levels // .properties["building:levels"])
-              | .properties.roof_height = (.properties.roof_height // .properties["roof:height"])
-            elif $layer == "waterway" then
-              .properties.width = (.properties.width | if . == null then null else (try tonumber catch null) end)
-            elif $layer == "peak" then
-              .properties.ele = (.properties.ele | if . == null then null else (try tonumber catch null) end)
-            else . end
-          | .properties |= with_entries(select((.key as $key | $allowed | index($key)) and (.value != null)))
+          | if $layer == "water" and (water_polygon_geometry | not) then
+              empty
+            else
+              .properties as $props
+              | .properties.name = (coalesced_name($props) // $props.name)
+              | .properties.name = clean_bilingual_name($props; .properties.name)
+              | if $layer == "building" then
+                  .properties.type = (.properties.type // .properties.building)
+                  | .properties.levels = (.properties.levels // .properties["building:levels"])
+                  | .properties.roof_height = (.properties.roof_height // .properties["roof:height"])
+                elif $layer == "waterway" then
+                  .properties.width = (.properties.width | if . == null then null else (try tonumber catch null) end)
+                elif $layer == "peak" then
+                  .properties.ele = (.properties.ele | if . == null then null else (try tonumber catch null) end)
+                else . end
+              | .properties |= with_entries(select((.key as $key | $allowed | index($key)) and (.value != null)))
+            end
         end
       else
         .
