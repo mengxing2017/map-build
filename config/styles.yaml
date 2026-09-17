@@ -76,6 +76,7 @@ text_layers:
   - id: "island-labels"
     source_layer: "island"
     minzoom: 8
+    filter: ["!=", ["geometry-type"], "Point"]
     font_stack: ["NotoSans-Regular"]
     text_size: 11
     text_optional: true
@@ -230,6 +231,15 @@ paint_layers:
     paint:
       fill-color: "#f2efe9"
       fill-opacity: 1
+  - id: "island-points"
+    source_layer: "island"
+    type: "circle"
+    minzoom: 8
+    paint:
+      circle-radius: 4
+      circle-color: "#f2efe9"
+      circle-stroke-color: "#a8a29e"
+      circle-stroke-width: 1
   - id: "railway"
     source_layer: "railway"
     type: "line"
