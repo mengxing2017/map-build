@@ -116,6 +116,7 @@ source_layers:
       - "intermittent"
       - "seasonal"
       - "place"
+      - "natural"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
