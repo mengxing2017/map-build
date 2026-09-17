@@ -536,6 +536,8 @@ source_layers:
     tags_filter:
       - "a/place=island"
       - "a/place=islet"
+      - "n/place=island"
+      - "n/place=islet"
     include_tags:
       - "name"
       - "name:zh-Hans"
