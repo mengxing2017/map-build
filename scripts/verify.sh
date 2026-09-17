@@ -133,6 +133,18 @@ check_config_final_field_in_include_tags() {
   fi
 }
 
+check_config_include_tag() {
+  local layer_id="$1"
+  local field="$2"
+  if jq -e --arg layer "${layer_id}" --arg field "${field}" '
+    (.source_layers[$layer].include_tags // []) | index($field)
+  ' "$(layers_json)" >/dev/null; then
+    ok "config layer=${layer_id} include_tags has ${field}"
+  else
+    fail "config layer=${layer_id} include_tags missing ${field}"
+  fi
+}
+
 check_config_final_field() {
   local layer_id="$1"
   local field="$2"
@@ -457,6 +469,8 @@ verify_layer_metadata_fields() {
 
 verify_water_config_fields() {
   verify_layer_config_fields water water intermittent place
+  check_config_include_tag water natural
+  check_export_config_include_tag water natural
 }
 
 verify_water_metadata_fields() {
@@ -515,6 +529,21 @@ except Exception:
 print(json.dumps(tile, ensure_ascii=False))
 " > "${cache}" 2>/dev/null || printf '{}' > "${cache}"
   cat "${cache}"
+}
+
+verify_staged_water_geometry_types() {
+  local actual unexpected
+  actual="$(layers_dir)/water.geojsonseq"
+  require_file "${actual}"
+  unexpected="$(jq --seq -r '
+    select((.geometry.type // "") | IN("Polygon", "MultiPolygon") | not)
+    | (.geometry.type // "<missing>")
+  ' "${actual}" | sort -u)"
+  if [[ -z "${unexpected}" ]]; then
+    ok "staged water geometry types are polygonal"
+  else
+    fail "staged water has non-polygon geometry types: $(tr '\n' ',' <<< "${unexpected}" | sed 's/,$//')"
+  fi
 }
 
 count_layer_features_with_place() {
@@ -773,6 +802,7 @@ verify_role() {
         verify_water_layer_excludes_island_polygons "${pmtiles}"
         verify_island_layer_contains_island_polygons "${pmtiles}"
         verify_waterway_value_distribution "${pmtiles}"
+        verify_staged_water_geometry_types
       fi
     fi
     header_bounds="$(pmtiles_bounds "${pmtiles}")"
