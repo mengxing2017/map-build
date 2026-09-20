@@ -385,6 +385,12 @@ source_layers:
       - "name:ko"
       - "place"
       - "population"
+      - "official_name"
+    enrich_fields:
+      - "admin_id"
+      - "boundary_admin_level"
+      - "label_tier"
+      - "label_rank"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
@@ -392,7 +398,12 @@ source_layers:
       "name:en": "String"
       "name:ja": "String"
       "name:ko": "String"
+      official_name: "String"
       population: "Number"
+      admin_id: "Number"
+      boundary_admin_level: "Number"
+      label_tier: "String"
+      label_rank: "Number"
       place: "String"
     renderer: "MapLibre symbol"
 
