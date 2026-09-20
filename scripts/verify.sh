@@ -105,6 +105,10 @@ check_metadata_layer_minzoom() {
 verify_label_metadata_fields() {
   local metadata="$1"
   check_metadata_layer_field "${metadata}" "place_label" "place"
+  check_metadata_layer_field "${metadata}" "place_label" "admin_id"
+  check_metadata_layer_field "${metadata}" "place_label" "boundary_admin_level"
+  check_metadata_layer_field "${metadata}" "place_label" "label_tier"
+  check_metadata_layer_field "${metadata}" "place_label" "label_rank"
   check_metadata_layer_field "${metadata}" "poi_label" "amenity"
   check_metadata_layer_field "${metadata}" "poi_label" "shop"
   check_metadata_layer_field "${metadata}" "poi_label" "tourism"
@@ -176,14 +180,14 @@ verify_config_final_fields_declared() {
     .source_layers
     | to_entries[]
     | .key as $layer
-    | ((.value.include_tags // []) + ((.value.normalize // {}) | keys)) as $allowed
+    | ((.value.include_tags // []) + ((.value.normalize // {}) | keys) + (.value.enrich_fields // [])) as $allowed
     | (.value.final_fields // {})
     | keys[]
     | select($allowed | index(.) | not)
-    | "\($layer).\(.): final_fields must be declared by include_tags or normalize"
+    | "\($layer).\(.): final_fields must be declared by include_tags, normalize, or enrichment"
   ' "$(layers_json)")"
   if [[ -z "${mismatch}" ]]; then
-    ok "config final_fields declared by include_tags or normalize"
+    ok "config final_fields declared by include_tags, normalize, or enrichment"
   else
     while IFS= read -r line; do
       [[ -n "${line}" ]] && fail "${line}"
@@ -227,6 +231,10 @@ verify_name_locale_config_fields() {
 
 verify_label_config_fields() {
   check_config_final_field_in_include_tags "place_label" "place"
+  check_config_final_field "place_label" "admin_id"
+  check_config_final_field "place_label" "boundary_admin_level"
+  check_config_final_field "place_label" "label_tier"
+  check_config_final_field "place_label" "label_rank"
   check_config_final_field_in_include_tags "poi_label" "amenity"
   check_config_final_field_in_include_tags "poi_label" "shop"
   check_config_final_field_in_include_tags "poi_label" "tourism"
@@ -546,6 +554,105 @@ print(json.dumps(tile, ensure_ascii=False))
   cat "${cache}"
 }
 
+verify_staged_place_admin_enrichment() {
+  local staged report tier_zoom dedupe_tiers admin_display_name
+  staged="$(layers_dir)/place_label.geojsonseq"
+  report="$(place_admin_report_path)"
+  tier_zoom="$(place_label_tier_zoom_json)"
+  dedupe_tiers="$(place_label_dedupe_name_tiers_json)"
+  admin_display_name="$(place_label_admin_display_name_json)"
+
+  [[ -f "${staged}" ]] || { fail "staged place_label GeoJSONSeq missing"; return; }
+  [[ -f "${report}" ]] || { fail "place_label administrative enrichment report missing"; return; }
+
+  if jq --seq -n -e '
+    [inputs] as $features
+    | ($features | length) > 0
+      and all($features[];
+        (.properties | has("@id") | not)
+        and (.properties.label_tier | type == "string" and length > 0)
+        and (.properties.label_rank | type == "number"))
+      and ([ $features[] | .properties.admin_id? | select(. != null) ] as $admin_ids
+           | ($admin_ids | length) == ($admin_ids | unique | length))
+      and ([ $features[] | {name: .properties.name, place: .properties.place, coordinates: .geometry.coordinates} ]
+           | group_by(.) | all(length == 1))
+  ' "${staged}" >/dev/null; then
+    ok "staged place_label administrative enrichment"
+  else
+    fail "staged place_label administrative enrichment is invalid"
+  fi
+
+  # 逐要素根级 tippecanoe.minzoom/maxzoom 必须按 label_tier 写入：
+  # 否则低 zoom 会丢失市/县，或放大后高等级地名不会逐级让位。
+  if jq --seq -n -e --argjson tz "${tier_zoom}" '
+    [inputs] as $features
+    | ($features | length) > 0
+      and all($features[];
+        ($tz[.properties.label_tier] // $tz.default) as $z
+        | (.tippecanoe.minzoom | type == "number")
+          and (.tippecanoe.minzoom == $z.minzoom)
+          and ((.tippecanoe.maxzoom // null) == ($z.maxzoom // null)))
+  ' "${staged}" >/dev/null; then
+    ok "staged place_label per-feature tippecanoe zoom"
+  else
+    fail "staged place_label per-feature tippecanoe zoom is invalid"
+  fi
+
+  # 同名同层去重后不应再出现“无 admin_id 的同名冗余点与带 admin_id 的同名点共存”。
+  if jq --seq -n -e --argjson tiers "${dedupe_tiers}" '
+    [inputs] as $features
+    | ($features | length) > 0
+      and ([ $features[]
+              | select((.properties.label_tier as $t | ($tiers | index($t)) != null))
+              | {name: .properties.name, tier: .properties.label_tier, id: (.properties.admin_id != null)} ]
+           | group_by([.name, .tier])
+           | all(.[]; ((map(select(.id)) | length) == 0)
+                    or ((map(select(.id)) | length) == length)))
+  ' "${staged}" >/dev/null; then
+    ok "staged place_label same-name-tier dedup"
+  else
+    fail "staged place_label same-name-tier dedup is invalid"
+  fi
+
+  # 行政地名显示名覆盖一致性：对带 official_name 的要素，其 target_fields 要么全部等于
+  # official_name（已覆盖），要么全都不等于（未覆盖）——不允许只改一部分导致渲染不确定。
+  if jq --seq -n -e --argjson adn "${admin_display_name}" '
+    [inputs] as $features
+    | ($features | length) > 0
+      and (if ($adn.enabled // false) then
+             all($features[];
+               (.properties.official_name // null) as $on
+               | if $on == null then true
+                 else
+                   ([ ($adn.target_fields // [])[] as $k | .properties[$k] | select(. != null) ]) as $vals
+                   | (([ $vals[] | select(. == $on) ] | length) == 0)
+                     or (([ $vals[] | select(. == $on) ] | length) == ($vals | length))
+                 end)
+           else true end)
+  ' "${staged}" >/dev/null; then
+    ok "staged place_label admin display name override"
+  else
+    fail "staged place_label admin display name override is inconsistent"
+  fi
+
+  if jq -e '
+    .schema_version == 1
+    and (.summary.output_feature_count | type == "number" and . > 0)
+    and (.summary.exact_duplicate_dropped_count | type == "number" and . >= 0)
+    and (.summary.same_name_tier_dropped_count | type == "number" and . >= 0)
+    and (.summary.redundant_role_member_dropped_count | type == "number" and . >= 0)
+    and (.summary.admin_display_name_override_count | type == "number" and . >= 0)
+    and (.relations | type == "array")
+    and (.shared_member_choices | type == "array")
+    and (.same_name_tier_duplicates | type == "array")
+    and (.redundant_role_members | type == "array")
+  ' "${report}" >/dev/null; then
+    ok "place_label administrative enrichment report"
+  else
+    fail "place_label administrative enrichment report is invalid"
+  fi
+}
+
 verify_staged_water_geometry_types() {
   local actual unexpected
   actual="$(layers_dir)/water.geojsonseq"
@@ -814,6 +921,7 @@ verify_role() {
         verify_post_filter_rules "water"
         verify_island_config_fields
         verify_island_metadata_fields "${metadata}"
+        verify_staged_place_admin_enrichment
         verify_water_layer_excludes_island_polygons "${pmtiles}"
         verify_island_layer_contains_island_polygons "${pmtiles}"
         verify_waterway_value_distribution "${pmtiles}"
