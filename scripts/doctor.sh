@@ -238,6 +238,17 @@ check_tier_profiles_config() {
 
 check_tier_profiles_config
 
+check_place_label_hierarchy_config() {
+  if place_label_hierarchy_validate >/dev/null 2>&1; then
+    printf 'OK   %-12s %s\n' "place-labels" "administrative hierarchy"
+  else
+    printf 'FAIL %-12s %s\n' "place-labels" "invalid administrative hierarchy"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+
+check_place_label_hierarchy_config
+
 check_derived_map_config() {
   local composites composite failures_before
   failures_before="${FAILURES}"
