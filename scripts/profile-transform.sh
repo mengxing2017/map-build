@@ -53,12 +53,17 @@ while IFS= read -r layer; do
   [[ -s "${input}" ]] || continue
 
   log_info "profile transform ${profile} ${layer}"
-  jq --seq -c --argjson rules "${rules}" --argjson min_zoom "${min_zoom}" --argjson max_zoom "${max_zoom}" '
+  jq --seq -c --arg layer "${layer}" --argjson rules "${rules}" --argjson min_zoom "${min_zoom}" --argjson max_zoom "${max_zoom}" '
     def rule_matches($properties; $rule):
       ($rule.when | to_entries
         | all(.[]; . as $entry | ($properties[$entry.key] // null) as $value | ($entry.value | index($value)) != null));
     def selected_rule($properties):
       first($rules.rules[] | select(rule_matches($properties; .)));
+    def intersect_zoom($existing; $profile_min; $profile_max):
+      ($existing.minzoom // $profile_min) as $existing_min
+      | ($existing.maxzoom // $profile_max) as $existing_max
+      | {minzoom: [$existing_min, $profile_min] | max,
+         maxzoom: [$existing_max, $profile_max] | min};
 
     if (.type == "Feature" and (.properties | type == "object")) then
       if $rules == null then
@@ -68,7 +73,15 @@ while IFS= read -r layer; do
       | if $rule == null then
           empty
         else
-          .tippecanoe = ((.tippecanoe // {}) + {minzoom: $rule.min_zoom, maxzoom: $rule.max_zoom})
+          # place_label may already carry a tier-specific zoom range from
+          # place-admin-enrich. Keep the profile selection/range while
+          # preserving the hierarchy by intersecting the two ranges.
+          if $layer == "place_label" and (.tippecanoe | type == "object") then
+            (.tippecanoe | intersect_zoom(.; $rule.min_zoom; $rule.max_zoom)) as $zoom
+            | if $zoom.minzoom <= $zoom.maxzoom then .tippecanoe = $zoom else empty end
+          else
+            .tippecanoe = ((.tippecanoe // {}) + {minzoom: $rule.min_zoom, maxzoom: $rule.max_zoom})
+          end
         end
       end
     else
