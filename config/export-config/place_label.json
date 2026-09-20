@@ -1,7 +1,7 @@
 {
   "attributes": {
     "type": false,
-    "id": false,
+    "id": true,
     "version": false,
     "changeset": false,
     "timestamp": false,
@@ -16,6 +16,7 @@
     "name:ja",
     "name:ko",
     "place",
-    "population"
+    "population",
+    "official_name"
   ]
 }
