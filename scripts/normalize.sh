@@ -35,6 +35,10 @@ while IFS= read -r layer; do
   input="${stage_layers}/${layer}.geojsonseq"
   require_file "${input}"
   allowed="$(layer_final_field_names_json "${layer}")"
+  if [[ "${layer}" == "place_label" ]]; then
+    # Enrichment joins administrative relation members by the original OSM node id.
+    allowed="$(jq -c '. + ["@id"] | unique' <<< "${allowed}")"
+  fi
   post_filter="$(layer_post_filter_json "${layer}")"
   tmp="${input}.tmp"
   bak="${input}.bak"
@@ -157,6 +161,8 @@ while IFS= read -r layer; do
                   .properties.width = (.properties.width | if . == null then null else (try tonumber catch null) end)
                 elif $layer == "peak" then
                   .properties.ele = (.properties.ele | if . == null then null else (try tonumber catch null) end)
+                elif $layer == "place_label" then
+                  .properties.population = (.properties.population | if . == null then null else (try tonumber catch null) end)
                 else . end
               | .properties |= with_entries(select((.key as $key | $allowed | index($key)) and (.value != null)))
             end
