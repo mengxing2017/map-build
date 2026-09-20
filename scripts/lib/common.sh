@@ -171,6 +171,16 @@ tags_filter_cache_dir() {
   printf '%s/cache/tags-filter\n' "${WORKDIR}"
 }
 
+place_admin_cache_dir() {
+  normalize_session_vars
+  printf '%s/cache/place-admin/%s\n' "${WORKDIR}" "${SESSION}"
+}
+
+place_admin_report_path() {
+  normalize_session_vars
+  printf '%s/staging/%s/place_label_dedup_report.json\n' "${WORKDIR}" "${SESSION}"
+}
+
 configs_cache_dir() {
   printf '%s/cache/configs\n' "${WORKDIR}"
 }
