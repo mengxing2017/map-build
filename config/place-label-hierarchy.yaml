@@ -1,0 +1,80 @@
+schema_version: 1
+description: "Administrative relation role-member hierarchy for place_label enrichment."
+
+boundary_tier:
+  "2": country
+  "4": province
+  "5": prefecture
+  "6": county
+  "7": county
+  "8": township
+  "9": locality
+  "10": locality
+
+tier_expected_place:
+  country: [country]
+  province: [state, region]
+  prefecture: [city, region]
+  county: [county, district]
+  township: [town, village]
+
+place_fallback_tier:
+  country: country
+  state: province
+  region: prefecture
+  city: county
+  county: county
+  district: county
+  town: township
+  default: locality
+
+rank:
+  country: 500
+  province: 450
+  prefecture: 400
+  county: 300
+  township: 200
+  locality: 100
+
+# tippecanoe 逐要素 zoom 控制，写入要素根级对象 {"tippecanoe":{"minzoom":N,"maxzoom":M}}。
+# minzoom：低 zoom 只投放高等级地名，避免数量庞大的 village/hamlet 挤占 tippecanoe
+#   默认点密度抽稀配额，导致地级市/县区在低 zoom 被整体丢弃。
+# maxzoom：放大后隐藏高等级地名（国家级最早隐藏，逐级让位给县、乡镇、村庄）；
+#   未设 maxzoom 的级别保留到最大 zoom。maxzoom 为包含上界（maxzoom=11 表示 z12 起消失）。
+tier_zoom:
+  country: {minzoom: 0, maxzoom: 4}
+  province: {minzoom: 3, maxzoom: 7}
+  prefecture: {minzoom: 5, maxzoom: 11}
+  county: {minzoom: 6, maxzoom: 13}
+  township: {minzoom: 9}
+  locality: {minzoom: 11}
+  default: {minzoom: 11}
+
+# 同名同层去重：当某层级下同名候选恰好只有一个带 admin_id 时，丢弃其余无 admin_id
+# 的同名冗余点（place 回退会产生这类重复，例如 柳州市 的 place=city 与 place=region）。
+# 仅限行政层级；0 个或 ≥2 个 admin_id 的同名点视为合法重名，不去重。
+dedupe_name_tiers: [prefecture, county]
+
+# 行政地名显示名：用 place 节点的 official_name（官方全称）覆盖显示字段，使自治州/自治县/
+# 民族乡以及各国“官方全称”统一显示。
+# 结构：default（所有未命中区域使用的通用 profile）+ profiles（按区域前缀命中，覆盖 default）。
+# 每个 profile 的字段：
+# - enabled：是否启用本规则（缺省 true）。
+# - regions：适用区域前缀列表（仅 profiles 项需要）；region 等于某项或以 "项/" 开头即命中。
+# - tiers：参与覆盖的行政层级。
+# - locality_keywords：locality 例外——official_name 含这些词时也覆盖（语言相关，通用 profile 置空）。
+# - target_fields：覆盖哪些字段；应取渲染 coalesce 里的“本地文字字段”，勿含 name:en/ja 等外语字段。
+#   通用默认只覆盖 name（渲染 coalesce 的本地首选），避免把外语标签改成本地文字。
+admin_display_name:
+  default:
+    # 未命中 profiles 的区域不启用官方全称覆盖；中国由 profiles 单独开启。
+    enabled: false
+    tiers: ["province", "prefecture", "county", "township"]
+    locality_keywords: []
+    target_fields: ["name"]
+  profiles:
+    - regions: ["china"]
+      enabled: true
+      tiers: ["province", "prefecture", "county", "township"]
+      locality_keywords: ["族", "自治"]
+      target_fields: ["name:zh-Hans", "name:zh", "name"]

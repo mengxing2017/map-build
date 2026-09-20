@@ -109,6 +109,78 @@ tier_profiles_json() {
   config_json_path tier-profiles
 }
 
+place_label_hierarchy_json() {
+  config_json_path place-label-hierarchy
+}
+
+place_label_tier_zoom_json() {
+  jq -c '.tier_zoom // {}' "$(place_label_hierarchy_json)"
+}
+
+place_label_dedupe_name_tiers_json() {
+  jq -c '.dedupe_name_tiers // []' "$(place_label_hierarchy_json)"
+}
+
+place_label_admin_display_name_json() {
+  local region="${1:-${REGION:-}}"
+  jq -c --arg region "${region}" '
+    (.admin_display_name // {}) as $a
+    | ($a.default // {}) as $def
+    | ( first( ($a.profiles // [])[] as $p
+               | select(any(($p.regions // [])[];
+                   . as $r | ($region == $r) or ($region | startswith($r + "/"))))
+               | $p ) // null ) as $hit
+    | ($hit // $def) as $p
+    | ($p + {enabled: (if ($p | has("enabled")) then $p.enabled else true end)})
+  ' "$(place_label_hierarchy_json)"
+}
+
+place_label_hierarchy_validate() {
+  local hierarchy
+  hierarchy="$(place_label_hierarchy_json)"
+  jq -e '
+    . as $root
+    | .boundary_tier as $boundary
+    | .tier_expected_place as $expected
+    | .place_fallback_tier as $fallback
+    | .rank as $rank
+    | .tier_zoom as $zoom
+    | ($root.schema_version == 1)
+      and ($boundary | type == "object" and length > 0)
+      and ($expected | type == "object")
+      and ($fallback | type == "object" and has("default"))
+      and ($rank | type == "object" and length > 0)
+      and ($zoom | type == "object" and has("default"))
+      and (all($boundary[]; type == "string" and length > 0))
+      and (all($expected[]; type == "array" and all(.[]; type == "string")))
+      and (all($fallback[]; type == "string" and length > 0))
+      and (all($rank[]; type == "number" and . >= 0))
+      and (all(($boundary[]), ($fallback[]); $rank[.] != null))
+      and (all($zoom[];
+             (.minzoom | type == "number" and . >= 0)
+             and (if .maxzoom == null then true
+                  else ((.maxzoom | type == "number") and (.maxzoom > .minzoom)) end)))
+      and (all(($boundary[]), ($fallback[]); $zoom[.] != null))
+      and (((.dedupe_name_tiers // []) | type == "array" and all(.[]; $zoom[.] != null)))
+      and ((($root.admin_display_name // {})) as $adn
+           | ($adn | type == "object")
+             and ((($adn.default // {})) as $d
+                  | ($d | type == "object")
+                    and (($d.tiers // []) | type == "array" and length > 0 and all(.[]; $rank[.] != null))
+                    and (($d.locality_keywords // []) | type == "array" and all(.[]; type == "string" and length > 0))
+                    and (($d.target_fields // []) | type == "array" and length > 0
+                      and all(.[]; type == "string" and length > 0)))
+             and ((($adn.profiles // [])) | type == "array" and all(.[];
+                    (. as $p
+                     | (($p.regions // []) | type == "array" and length > 0 and all(.[]; type == "string" and length > 0))
+                     and (($p.tiers // []) | type == "array" and length > 0 and all(.[]; $rank[.] != null))
+                     and (($p.locality_keywords // []) | type == "array" and all(.[]; type == "string" and length > 0))
+                     and (($p.target_fields // []) | type == "array" and length > 0
+                       and all(.[]; type == "string" and length > 0))))))
+  ' "${hierarchy}" >/dev/null \
+    || die "${HUAVD_EXIT_INPUT}" "invalid place-label hierarchy configuration"
+}
+
 region_json() {
   local region="$1"
   jq -e --arg id "${region}" '.regions[] | select(.id == $id)' "$(regions_json)"
