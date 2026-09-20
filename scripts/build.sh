@@ -163,7 +163,12 @@ log_info "source linked: ${source_link} -> ${INPUT}"
 "${SCRIPT_DIR}/export.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
 "${SCRIPT_DIR}/normalize.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
 
-if [[ " ${roles_to_build[*]} " == *" base " ]] && [[ -n "$(effective_build_profile "${REGION}" base)" ]]; then
+# 注意: 模式两侧都要有 *,否则 *" x " 只匹配“以 x 结尾”的字符串。
+if [[ " ${roles_to_build[*]} " == *" base "* ]] && [[ " ${preprocess_layers[*]} " == *" place_label "* ]]; then
+  "${SCRIPT_DIR}/place-admin-enrich.sh" --input="${source_link}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
+fi
+
+if [[ " ${roles_to_build[*]} " == *" base "* ]] && [[ -n "$(effective_build_profile "${REGION}" base)" ]]; then
   base_layers_csv="$(effective_role_layers "${REGION}" base | paste -sd, -)"
   "${SCRIPT_DIR}/profile-transform.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${base_layers_csv}"
 fi
