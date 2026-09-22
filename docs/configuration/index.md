@@ -141,7 +141,13 @@ base role 的 `building` metadata minzoom 当前为 12,用于 HMI 在常用 zoom
 
 底色和铁路相关 layer 必须保留分类字段:`landuse.final_fields.landuse`、`natural_a.final_fields.natural`、`natural_a.final_fields.place`、`leisure_a.final_fields.leisure`、`building.final_fields.building`、`railway.final_fields.railway`、`water.final_fields.water`、`water.final_fields.intermittent`、`water.final_fields.place`、`island.final_fields.place`。HMI style-loader 直接使用这些字段做 MapLibre `match` 表达式；铁路桥梁 / 隧道样式使用 `railway.final_fields.bridge` 和 `railway.final_fields.tunnel`。
 
-`place=island` / `place=islet` 的 polygon 由 `island` source-layer 持有,`water` layer 在 `post_filter.exclude.place` 阶段把同名 polygon 排除,避免岛被填成蓝色。`scripts/normalize.sh` 通过读取每层 `post_filter` 配置通用地应用 exclude 规则,新增 layer 直接在 `config/layers.yaml` 声明即可,无需在 normalize.sh 里写特例。
+`place=island` / `place=islet` 的 polygon 由 `island` source-layer 持有,`water` layer 在 `post_filter.exclude.place` 阶段把同名 polygon 排除,避免岛被填成蓝色。`scripts/normalize.sh` 和 `scripts/overview-normalize.sh` 会通用地应用每层 `post_filter.exclude` 与 `post_filter.geometry`：前者按属性排除，后者只保留声明的 GeoJSON geometry 类型。`island` 必须同时允许 `Polygon`、`MultiPolygon` 和 `Point`，以保留节点式岛屿；其它面层只允许 polygonal geometry。
+
+`config/export-config/water.json` 必须声明 `area_tags: ["natural=water"]`。河心岛等要素在 OSM 中常作为 `natural=water` multipolygon relation 的**内环（hole）**存在,但内环 way若自带 tag(`leisure=park`、`natural=wetland`、`name` 等),`osmium export` 会把它们当作独立 area 一并导出;这些 polygon 不带 `place` 字段,会绕过上面的 `post_filter.exclude.place`,被当作水面填成水色从而盖住岛屿。限定 `area_tags` 后,只有 `natural=water` 的闭合 way生成 area,带 tag 的内环退化为 LineString,再由 `post_filter.geometry` 丢弃。`scripts/verify.sh` 的 `verify_area_layer_geometry_contracts` 会在 strict 模式下断言该配置和 geometry 白名单存在。
+
+`building`、`landuse`、`natural_a`、`leisure_a` 和 `island` 的 export config 也必须分别声明 `area_tags: ["building"]`、`["landuse"]`、`["natural"]`、`["leisure"]`、`["place"]`。这避免闭合 way 同时以线和面导出。`scripts/verify.sh` 在 strict base 验证中检查这些精确配置及 staging 几何白名单；`admin` 不属于该契约，因为它仍需单独评估其边界线渲染语义。
+
+`poi_label` 与 `highway_point` 是点图层，不能采用 `area_tags` 去重：不闭合或异常闭合的 way 可能只能导出为 LineString，仍需在 normalize 阶段转成 Point。两层通过 export config 的 `linear_tags` 从源头抑制闭合 way 的线/面双几何：`poi_label` 必须为 `["amenity", "tourism"]`，覆盖其全部 way 级筛选条件；`highway_point` 必须为 `["highway=services", "highway=rest_area"]`。新增或修改这两个 layer 的 way 级 `tags_filter` 时，必须同步更新 `linear_tags`；严格 base 验证会检查该契约。
 
 水系线(`waterway` source-layer)必须保留 OSM `waterway` 子类型字段(`river` / `canal` / `stream` / `drain` / `ditch` 等)与 `width` 字段(数值类型)。`scripts/normalize.sh` 会对 `waterway` layer 的 `width` 做 `tonumber` 归一化,无效字符串 fallback 为 `null`。OSM 中 `width=*` 字段覆盖率仅约 5-10%(国内地区更低),客户端不能把 `width` 作为唯一线宽依据,必须按 `waterway` 子类型做阶梯默认宽度,`width` 仅在存在且为 number 时作为覆盖值。HMI style-loader 的 `line-width` 推荐按 zoom 做 `interpolate`,子类型 fallback:`river=1.0→6.0`、`canal=0.8→4.0`、`stream=0.4→2.5`、`drain=0.3→1.5`、`ditch=0.3→1.5`;`width` 字段存在且 ≥ 1 时可按 `max(0.3, width/8)` / `min(12, width*0.5)` 缩放覆盖。
 
