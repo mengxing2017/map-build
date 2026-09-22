@@ -18,5 +18,9 @@
     "highway",
     "ref",
     "network"
+  ],
+  "linear_tags": [
+    "highway=services",
+    "highway=rest_area"
   ]
 }

@@ -23,5 +23,8 @@
     "levels",
     "roof:height",
     "roof_height"
+  ],
+  "area_tags": [
+    "building"
   ]
 }

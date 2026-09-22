@@ -16,5 +16,8 @@
     "name:ja",
     "name:ko",
     "leisure"
+  ],
+  "area_tags": [
+    "leisure"
   ]
 }

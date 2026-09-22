@@ -18,5 +18,9 @@
     "amenity",
     "shop",
     "tourism"
+  ],
+  "linear_tags": [
+    "amenity",
+    "tourism"
   ]
 }

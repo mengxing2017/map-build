@@ -16,5 +16,8 @@
     "name:ja",
     "name:ko",
     "landuse"
+  ],
+  "area_tags": [
+    "landuse"
   ]
 }
