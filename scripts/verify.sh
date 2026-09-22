@@ -496,6 +496,62 @@ verify_water_config_fields() {
   check_export_config_include_tag water natural
 }
 
+verify_area_layer_geometry_contracts() {
+  local layer expected_tag expected_geometry export_config
+  for layer in water building landuse natural_a leisure_a island; do
+    case "${layer}" in
+      water) expected_tag="natural=water" ;;
+      building) expected_tag="building" ;;
+      landuse) expected_tag="landuse" ;;
+      natural_a) expected_tag="natural" ;;
+      leisure_a) expected_tag="leisure" ;;
+      island) expected_tag="place" ;;
+    esac
+    if [[ "${layer}" == "island" ]]; then
+      expected_geometry='["Polygon","MultiPolygon","Point"]'
+    else
+      expected_geometry='["Polygon","MultiPolygon"]'
+    fi
+
+    export_config="${CONFIG_DIR}/export-config/${layer}.json"
+    require_file "${export_config}"
+    if jq -e --arg tag "${expected_tag}" '(.area_tags // []) == [$tag]' "${export_config}" >/dev/null; then
+      ok "export-config ${layer} area_tags=${expected_tag}"
+    else
+      fail "export-config ${layer} area_tags must equal [${expected_tag}]"
+    fi
+    if jq -e --arg layer "${layer}" --argjson expected "${expected_geometry}" '
+      (.source_layers[$layer].post_filter.geometry // []) == $expected
+    ' "$(layers_json)" >/dev/null; then
+      ok "config ${layer} geometry post_filter"
+    else
+      fail "config ${layer} post_filter.geometry must equal ${expected_geometry}"
+    fi
+  done
+}
+
+verify_point_label_linear_tag_contracts() {
+  local layer expected_linear_tags export_config
+  for layer in poi_label highway_point; do
+    case "${layer}" in
+      poi_label) expected_linear_tags='["amenity","tourism"]' ;;
+      highway_point) expected_linear_tags='["highway=services","highway=rest_area"]' ;;
+    esac
+    export_config="${CONFIG_DIR}/export-config/${layer}.json"
+    require_file "${export_config}"
+    if jq -e --argjson expected "${expected_linear_tags}" '
+      .attributes.type == false
+      and .attributes.id == false
+      and ((.area_tags // []) | length == 0)
+      and (.linear_tags == $expected)
+    ' "${export_config}" >/dev/null; then
+      ok "export-config ${layer} linear_tags contract"
+    else
+      fail "export-config ${layer} must disable type/id, omit area_tags, and define linear_tags=${expected_linear_tags}"
+    fi
+  done
+}
+
 verify_water_metadata_fields() {
   local metadata="$1"
   verify_layer_metadata_fields "${metadata}" water water intermittent place
@@ -653,19 +709,27 @@ verify_staged_place_admin_enrichment() {
   fi
 }
 
-verify_staged_water_geometry_types() {
-  local actual unexpected
-  actual="$(layers_dir)/water.geojsonseq"
-  require_file "${actual}"
-  unexpected="$(jq --seq -r '
-    select((.geometry.type // "") | IN("Polygon", "MultiPolygon") | not)
-    | (.geometry.type // "<missing>")
-  ' "${actual}" | sort -u)"
-  if [[ -z "${unexpected}" ]]; then
-    ok "staged water geometry types are polygonal"
-  else
-    fail "staged water has non-polygon geometry types: $(tr '\n' ',' <<< "${unexpected}" | sed 's/,$//')"
-  fi
+verify_staged_area_layer_geometry_types() {
+  local layer expected_geometry actual unexpected
+  for layer in water building landuse natural_a leisure_a island; do
+    if [[ "${layer}" == "island" ]]; then
+      expected_geometry='["Polygon","MultiPolygon","Point"]'
+    else
+      expected_geometry='["Polygon","MultiPolygon"]'
+    fi
+    actual="$(layers_dir)/${layer}.geojsonseq"
+    require_file "${actual}"
+    unexpected="$(jq --seq -r --argjson allowed "${expected_geometry}" '
+      (.geometry.type // "") as $type
+      | select(($allowed | index($type)) == null)
+      | if $type == "" then "<missing>" else $type end
+    ' "${actual}" | sort -u)"
+    if [[ -z "${unexpected}" ]]; then
+      ok "staged ${layer} geometry types match post_filter"
+    else
+      fail "staged ${layer} has disallowed geometry types: $(tr '\n' ',' <<< "${unexpected}" | sed 's/,$//')"
+    fi
+  done
 }
 
 count_layer_features_with_place() {
@@ -915,6 +979,8 @@ verify_role() {
         verify_railway_config_fields
         verify_railway_metadata_fields "${metadata}"
         verify_water_config_fields
+        verify_area_layer_geometry_contracts
+        verify_point_label_linear_tag_contracts
         verify_water_metadata_fields "${metadata}"
         verify_waterway_config_fields
         verify_waterway_metadata_fields "${metadata}"
@@ -925,7 +991,7 @@ verify_role() {
         verify_water_layer_excludes_island_polygons "${pmtiles}"
         verify_island_layer_contains_island_polygons "${pmtiles}"
         verify_waterway_value_distribution "${pmtiles}"
-        verify_staged_water_geometry_types
+        verify_staged_area_layer_geometry_types
       fi
     fi
     header_bounds="$(pmtiles_bounds "${pmtiles}")"
