@@ -100,6 +100,10 @@ while IFS= read -r layer; do
         ($post_filter.exclude // {}) as $rules
         | ($rules | keys) as $fields
         | any($fields[]; . as $f | ($props[$f] // null) as $v | $v != null and ($rules[$f] | index($v)));
+      def geometry_allowed_by_post_filter:
+        (.geometry.type // "") as $type
+        | ($post_filter.geometry // []) as $allowed_types
+        | (($allowed_types | length) == 0 or ($allowed_types | index($type)) != null);
       def bbox_points:
         [.. | arrays | select(length == 2 and (.[0] | type) == "number" and (.[1] | type) == "number")];
       def bbox_center:
@@ -138,16 +142,13 @@ while IFS= read -r layer; do
         else
           .
         end;
-      def water_polygon_geometry:
-        (.geometry.type // "") | IN("Polygon", "MultiPolygon");
-
       if .properties then
         if excluded_by_post_filter(.properties) then
           empty
         else
           normalize_poi_label_geometry
           | normalize_highway_point_service_geometry
-          | if $layer == "water" and (water_polygon_geometry | not) then
+          | if geometry_allowed_by_post_filter | not then
               empty
             else
               .properties as $props
