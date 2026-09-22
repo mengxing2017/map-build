@@ -104,6 +104,9 @@ source_layers:
         place:
           - "island"
           - "islet"
+      geometry:
+        - "Polygon"
+        - "MultiPolygon"
     include_tags:
       - "name"
       - "name:zh-Hans"
@@ -167,6 +170,10 @@ source_layers:
     geofabrik_shapefile: "gis_osm_landuse_a_free_1.shp"
     tags_filter:
       - "a/landuse"
+    post_filter:
+      geometry:
+        - "Polygon"
+        - "MultiPolygon"
     include_tags:
       - "name"
       - "name:zh-Hans"
@@ -193,6 +200,10 @@ source_layers:
     geofabrik_shapefile: "gis_osm_buildings_a_free_1.shp"
     tags_filter:
       - "a/building"
+    post_filter:
+      geometry:
+        - "Polygon"
+        - "MultiPolygon"
     include_tags:
       - "name"
       - "name:zh-Hans"
@@ -266,6 +277,9 @@ source_layers:
       exclude:
         natural:
           - "water"
+      geometry:
+        - "Polygon"
+        - "MultiPolygon"
     include_tags:
       - "name"
       - "name:zh-Hans"
@@ -350,6 +364,10 @@ source_layers:
     geofabrik_shapefile: null
     tags_filter:
       - "a/leisure"
+    post_filter:
+      geometry:
+        - "Polygon"
+        - "MultiPolygon"
     include_tags:
       - "name"
       - "name:zh-Hans"
@@ -549,6 +567,11 @@ source_layers:
       - "a/place=islet"
       - "n/place=island"
       - "n/place=islet"
+    post_filter:
+      geometry:
+        - "Polygon"
+        - "MultiPolygon"
+        - "Point"
     include_tags:
       - "name"
       - "name:zh-Hans"
