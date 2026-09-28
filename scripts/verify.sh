@@ -575,6 +575,108 @@ verify_island_metadata_fields() {
   verify_layer_metadata_fields "${metadata}" island place
 }
 
+verify_island_water_flag() {
+  local report json layer count poly_count flagged_in_layer max_area
+  report="$(island_water_report_path)"
+  if [[ ! -f "${report}" ]]; then
+    fail "island in_water report missing: ${report}"
+    return
+  fi
+  json="$(cat "${report}")"
+  if ! jq -e '
+      .schema_version == 1 and .layer == "island"
+      and (.thresholds.sample_points | type == "number")
+      and (.thresholds.min_inside_ratio | type == "number")
+      and (.thresholds.max_in_water_area_km2 | type == "number")
+      and (.inputs.island_polygon_count | type == "number")
+      and (.summary.in_water_count | type == "number")
+    ' >/dev/null <<< "${json}"; then
+    fail "island in_water report schema invalid: ${report}"
+    return
+  fi
+  ok "island in_water report schema"
+
+  if jq -e '.checks.max_in_water_area_within_limit == true' >/dev/null <<< "${json}"; then
+    ok "island in_water max area within limit: $(jq -r '.summary.max_in_water_area_km2' <<< "${json}") km2"
+  else
+    max_area="$(jq -r '[.flagged[].area_km2] | max // 0' <<< "${json}")"
+    fail "island in_water max area ${max_area} km2 exceeds $(jq -r '.thresholds.max_in_water_area_km2' <<< "${json}") km2"
+  fi
+
+  if [[ "$(sha512_value "$(layers_dir)/water.geojsonseq")" == "$(jq -r '.summary.water_geojsonseq_sha512' <<< "${json}")" ]]; then
+    ok "island-water-flag left water layer untouched"
+  else
+    fail "water layer changed after island-water-flag; report hash mismatch"
+  fi
+
+  layer="$(layers_dir)/island.geojsonseq"
+  flagged_in_layer="$(tr '\036' '\n' < "${layer}" | sed '/^$/d' | jq -r 'select(.properties.in_water == true) | 1' | wc -l | tr -d ' ')"
+  count="$(jq -r '.summary.in_water_count' <<< "${json}")"
+  if [[ "${flagged_in_layer}" == "${count}" ]]; then
+    ok "island in_water flag count matches report (${count})"
+  else
+    fail "island in_water flag count mismatch: layer=${flagged_in_layer} report=${count}"
+  fi
+  poly_count="$(jq -r '.inputs.island_polygon_count' <<< "${json}")"
+  if (( poly_count > 0 && count * 10 <= poly_count )); then
+    ok "island in_water ratio within guard (${count}/${poly_count})"
+  else
+    fail "island in_water ratio out of guard: ${count}/${poly_count}"
+  fi
+}
+
+verify_island_anchor() {
+  local report json layer anchors poly_count
+  report="$(island_anchor_report_path)"
+  if [[ ! -f "${report}" ]]; then
+    fail "island anchor report missing: ${report}"
+    return
+  fi
+  json="$(cat "${report}")"
+  if ! jq -e '
+      .schema_version == 1 and .layer == "island"
+      and (.thresholds.grid_divisions | type == "number")
+      and (.summary.polygon_count | type == "number")
+      and (.summary.anchor_count | type == "number")
+      and (.summary.tier.centroid | type == "number")
+      and (.summary.tier.grid | type == "number")
+      and (.summary.tier.vertex | type == "number")
+    ' >/dev/null <<< "${json}"; then
+    fail "island anchor report schema invalid: ${report}"
+    return
+  fi
+  ok "island anchor report schema"
+
+  layer="$(layers_dir)/island.geojsonseq"
+  poly_count="$(jq -r '.summary.polygon_count' <<< "${json}")"
+  anchors="$(tr '\036' '\n' < "${layer}" | sed '/^$/d' | jq -r 'select(.properties.island_anchor == true) | 1' | wc -l | tr -d ' ')"
+  if [[ "${anchors}" == "${poly_count}" \
+        && "$(jq -r '.summary.anchor_count' <<< "${json}")" == "${poly_count}" ]]; then
+    ok "island anchor count equals polygon count (${anchors})"
+  else
+    fail "island anchor count mismatch: layer=${anchors} report=$(jq -r '.summary.anchor_count' <<< "${json}") polygons=${poly_count}"
+  fi
+
+  if (( poly_count > 0 )); then
+    if tr '\036' '\n' < "${layer}" | sed '/^$/d' | jq -e '
+        select(.properties.island_anchor == true)
+          | (.geometry.type == "Point")
+            and (.geometry.coordinates | length == 2)
+            and (.properties.island_area_km2 | type == "number")
+      ' >/dev/null; then
+      ok "island anchors are points with numeric island_area_km2"
+    else
+      fail "island anchor geometry/field contract violated"
+    fi
+  fi
+
+  if [[ "$(jq -r '.summary.tier.vertex' <<< "${json}")" == "0" ]]; then
+    ok "no island anchor fell back to boundary vertex"
+  else
+    fail "island anchor boundary-vertex fallback used: $(jq -r '.summary.tier.vertex' <<< "${json}")"
+  fi
+}
+
 verify_post_filter_rules() {
   local layer_id="$1"
   jq -e --arg layer "${layer_id}" '
@@ -987,6 +1089,8 @@ verify_role() {
         verify_post_filter_rules "water"
         verify_island_config_fields
         verify_island_metadata_fields "${metadata}"
+        verify_island_water_flag
+        verify_island_anchor
         verify_staged_place_admin_enrichment
         verify_water_layer_excludes_island_polygons "${pmtiles}"
         verify_island_layer_contains_island_polygons "${pmtiles}"
