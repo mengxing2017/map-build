@@ -124,11 +124,15 @@ and writes content-addressed cache entries under
 3. Run `scripts/tags-filter.sh` to create per-layer filtered PBFs.
 4. Run `scripts/export.sh` to export per-layer GeoJSONSeq files.
 5. Run `scripts/normalize.sh` to normalize feature properties.
-6. Run `scripts/tippecanoe.sh` for each requested role.
-7. Run `scripts/metadata.sh` to edit PMTiles metadata.
-8. Run `scripts/manifest.sh` and `scripts/attribution.sh`.
-9. Run `scripts/verify.sh`.
-10. Write `.sha512` sidecars.
+6. Run `scripts/island-water-flag.sh` to mark `island` polygons enclosed by a
+   water polygon with `in_water: true`.
+7. Run `scripts/island-anchor.sh` to append one interior anchor `Point` per
+   `island` polygon.
+8. Run `scripts/tippecanoe.sh` for each requested role.
+9. Run `scripts/metadata.sh` to edit PMTiles metadata.
+10. Run `scripts/manifest.sh` and `scripts/attribution.sh`.
+11. Run `scripts/verify.sh`.
+12. Write `.sha512` sidecars.
 
 The `building` role is optional. It only builds when the region has
 `huavd.asset_role: building-vector` and `huavd.source_type: derived-building` in
@@ -164,6 +168,15 @@ client and install schema accept `overview-vector` and its LOD semantics.
 - `scripts/tags-filter.sh`: runs `osmium tags-filter` per layer.
 - `scripts/export.sh`: stages export config and runs `osmium export`.
 - `scripts/normalize.sh`: trims and normalizes GeoJSONSeq properties.
+- `scripts/island-water-flag.sh`: marks `island` polygons enclosed by a water
+  polygon with `in_water: true` and writes a derivation report. Clients must draw
+  `in_water` island fills above the water layer and all other island fills below
+  the land-cover layers. The point-in-polygon inner loop is an inline `awk`
+  program (heredoc-assigned, like the jq programs in `place-admin-enrich.sh`);
+  no geometry library is required.
+- `scripts/island-anchor.sh`: appends one interior anchor `Point`
+  (`island_anchor`, `island_area_km2`) per `island` polygon so clients can label
+  points only; polygon features are passed through unchanged.
 - `scripts/tippecanoe.sh`: resolves tippecanoe settings and creates PMTiles.
 - `scripts/metadata.sh`: writes PMTiles metadata.
 - `scripts/manifest.sh`: writes build manifest JSON.
@@ -300,6 +313,12 @@ requires a real `.osm.pbf` and may take significant time.
 ### 验证要求
 - 修改 shell 脚本后，必须运行 `bash -n` 验证语法。
 - 修改配置文件后，必须验证格式正确（如 `jq .` 验证 JSON，`yq` 验证 YAML）。
+- 脚本里内嵌的 `jq` 程序必须用 `devbox.json` 锁定的 jq 版本验证（当前 1.7.1），
+  不能只用系统 `jq`：系统版本可能更高（1.8.x）而更宽松，会掩盖 1.7 的语法限制。
+  已知差异：对象值与函数体**不允许以裸二元运算符结尾**——`{a: x / 1000}` 在 1.8 合法，
+  在 1.7 报 `syntax error, unexpected '/', expecting '}'`；必须整体加括号
+  （`{a: ((x / 1000))}`）或先绑定成变量（`(x / 1000) as $v | {a: $v}`）。
+  验证方式：`PATH="$PWD/.devbox/nix/profile/default/bin:$PATH" <脚本或命令>`。
 - 不要在没有验证的情况下声称完成。
 - 验证失败时，必须修复后才能继续。
 
