@@ -181,6 +181,26 @@ place_admin_report_path() {
   printf '%s/staging/%s/place_label_dedup_report.json\n' "${WORKDIR}" "${SESSION}"
 }
 
+island_water_cache_dir() {
+  normalize_session_vars
+  printf '%s/cache/island-water/%s\n' "${WORKDIR}" "${SESSION}"
+}
+
+island_water_report_path() {
+  normalize_session_vars
+  printf '%s/staging/%s/island_water_report.json\n' "${WORKDIR}" "${SESSION}"
+}
+
+island_anchor_cache_dir() {
+  normalize_session_vars
+  printf '%s/cache/island-anchor/%s\n' "${WORKDIR}" "${SESSION}"
+}
+
+island_anchor_report_path() {
+  normalize_session_vars
+  printf '%s/staging/%s/island_anchor_report.json\n' "${WORKDIR}" "${SESSION}"
+}
+
 configs_cache_dir() {
   printf '%s/cache/configs\n' "${WORKDIR}"
 }
