@@ -172,6 +172,10 @@ if [[ " ${preprocess_layers[*]} " == *" island "* ]] && [[ " ${preprocess_layers
   "${SCRIPT_DIR}/island-water-flag.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 fi
 
+if [[ " ${preprocess_layers[*]} " == *" island "* ]]; then
+  "${SCRIPT_DIR}/island-anchor.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
+fi
+
 if [[ " ${roles_to_build[*]} " == *" base "* ]] && [[ -n "$(effective_build_profile "${REGION}" base)" ]]; then
   base_layers_csv="$(effective_role_layers "${REGION}" base | paste -sd, -)"
   "${SCRIPT_DIR}/profile-transform.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${base_layers_csv}"
