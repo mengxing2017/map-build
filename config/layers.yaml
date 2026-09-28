@@ -581,6 +581,10 @@ source_layers:
       - "name:ko"
       - "place"
       - "natural"
+    enrich_fields:
+      - "in_water"
+      - "island_anchor"
+      - "island_area_km2"
     final_fields:
       name: "String"
       "name:zh-Hans": "String"
@@ -590,4 +594,7 @@ source_layers:
       "name:ko": "String"
       place: "String"
       natural: "String"
+      in_water: "Boolean"
+      island_anchor: "Boolean"
+      island_area_km2: "Number"
     renderer: "MapLibre"
