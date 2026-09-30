@@ -23,6 +23,7 @@ defaults:
     - "landuse"
     - "building"
     - "admin"
+    - "admin_line"
     - "natural_a"
     - "natural_line"
     - "peak"

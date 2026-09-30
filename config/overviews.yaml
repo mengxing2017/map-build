@@ -15,6 +15,7 @@ defaults:
     - water
     - waterway
     - admin
+    - admin_line
     - place_label
     - natural_a
 
