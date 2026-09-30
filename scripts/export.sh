@@ -50,9 +50,13 @@ for layer in "${SELECTED_LAYERS[@]}"; do
   input="${cache_dir}/${slug}-${layer}.osm.pbf"
   output="${stage_layers}/${layer}.geojsonseq"
   cp "${source_config}" "${staged_config}"
+  export_args=()
+  if [[ "$(layer_export_keep_untagged "${layer}")" == "true" ]]; then
+    export_args+=("--keep-untagged")
+  fi
 
   log_info "osmium export ${layer} -> ${output}"
-  osmium export -c "${staged_config}" -f geojsonseq -O -o "${output}" "${input}" \
+  osmium export "${export_args[@]}" -c "${staged_config}" -f geojsonseq -O -o "${output}" "${input}" \
     || die "${HUAVD_EXIT_ERROR}" "osmium export failed for layer ${layer}"
 done
 

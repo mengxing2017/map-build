@@ -1,0 +1,23 @@
+{
+  "attributes": {
+    "type": false,
+    "id": true,
+    "version": false,
+    "changeset": false,
+    "timestamp": false,
+    "uid": false,
+    "user": false
+  },
+  "include_tags": [
+    "admin_level",
+    "boundary",
+    "maritime",
+    "disputed",
+    "name",
+    "name:zh-Hans",
+    "name:zh",
+    "name:en",
+    "name:ja",
+    "name:ko"
+  ]
+}
