@@ -125,6 +125,39 @@ verify_label_metadata_fields() {
   check_metadata_layer_minzoom "${metadata}" "highway_point" "10"
 }
 
+verify_admin_line_metadata_fields() {
+  local metadata="$1"
+  check_metadata_layer_field "${metadata}" "admin_line" "admin_level"
+  check_metadata_layer_field "${metadata}" "admin_line" "admin_tier"
+  check_metadata_layer_field "${metadata}" "admin_line" "level_source"
+}
+
+verify_staged_admin_line_tiering() {
+  local staged report
+  staged="$(layers_dir)/admin_line.geojsonseq"
+  report="${WORKDIR}/derived/${SESSION}/admin-line-tier-report.json"
+  [[ -f "${staged}" ]] || { fail "staged admin_line is missing"; return; }
+  [[ -f "${report}" ]] || { fail "admin_line tier report is missing"; return; }
+
+  if jq -e '
+    .schema_version == 1
+    and (.retained.count | type == "number" and . >= 0)
+    and (.retained.id_leak_count == 0)
+    and (.relation_sidecar.way_count | type == "number" and . >= 0)
+    and (.discarded.by_reason | type == "object")
+  ' "${report}" >/dev/null; then
+    ok "admin_line tier report"
+  else
+    fail "admin_line tier report is invalid"
+  fi
+
+  if jq --seq -e '[inputs | ((.properties | has("@id")) | not)] | all' "${staged}" >/dev/null; then
+    ok "staged admin_line has no @id"
+  else
+    fail "staged admin_line leaks @id"
+  fi
+}
+
 check_config_final_field_in_include_tags() {
   local layer_id="$1"
   local field="$2"
@@ -332,6 +365,12 @@ verify_style_text_layers() {
   check_style_layer_filter_contains "${style_file}" "road-shield" "highway"
   check_style_layer_filter_excludes "${style_file}" "road-shield" "network"
   check_style_layer_filter_excludes "${style_file}" "road-shield" "int_ref"
+  check_style_layer_before "${style_file}" "railway" "admin-0-boundary"
+  check_style_layer_before "${style_file}" "admin-2-boundary" "peak-symbol"
+  for layer_id in admin-0-boundary admin-1-boundary admin-2-boundary; do
+    check_style_layer_filter_contains "${style_file}" "${layer_id}" "maritime"
+    check_style_layer_filter_contains "${style_file}" "${layer_id}" "yes"
+  done
   check_style_layer_filter_contains "${style_file}" "transport-station-symbol" '"station"'
   check_style_layer_filter_contains "${style_file}" "transport-station-symbol" '"halt"'
   check_style_layer_filter_excludes "${style_file}" "transport-station-symbol" '"stop"'
@@ -348,6 +387,20 @@ verify_style_text_layers() {
   check_style_layer_layout_bool "${style_file}" "highway-point-symbol" "icon-ignore-placement" "true"
   check_style_layer_layout_bool "${style_file}" "poi-amenity-symbol" "icon-allow-overlap" "true"
   check_style_layer_layout_bool "${style_file}" "poi-amenity-symbol" "icon-ignore-placement" "true"
+}
+
+check_style_layer_before() {
+  local style_file="$1" before="$2" after="$3"
+  if jq -e --arg before "${before}" --arg after "${after}" '
+    (.layers | map(.id)) as $ids
+    | ($ids | index($before)) as $before_index
+    | ($ids | index($after)) as $after_index
+    | $before_index != null and $after_index != null and $before_index < $after_index
+  ' "${style_file}" >/dev/null; then
+    ok "style.json layer=${before} precedes ${after}"
+  else
+    fail "style.json layer order must place ${before} before ${after}"
+  fi
 }
 
 check_style_layer_present() {
@@ -1052,6 +1105,10 @@ verify_role() {
     actual_layers="$(jq -r '.vector_layers | length' <<< "${metadata}")"
     check_eq "metadata vector_layers length" "${actual_layers}" "${expected_layers}"
     check_eq "metadata vector_layers" "$(jq -cS '.vector_layers' <<< "${metadata}")" "$(jq -cS . <<< "${expected_vector}")"
+    if jq -e 'index("admin_line") != null' <<< "${expected_vector_layers}" >/dev/null; then
+      verify_admin_line_metadata_fields "${metadata}"
+      verify_staged_admin_line_tiering
+    fi
     if [[ -n "${build_profile}" ]]; then
       check_eq "metadata build profile" "$(jq -r '."huavd:build-profile"' <<< "${metadata}")" "${build_profile}"
       check_eq "metadata build profile schema" "$(jq -r '."huavd:build-profile-schema"' <<< "${metadata}")" "$(tier_profile_schema_version)"
