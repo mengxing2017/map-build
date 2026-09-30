@@ -264,6 +264,53 @@ source_layers:
       "name:ko": "String"
     renderer: "MapLibre"
 
+  admin_line:
+    order: 17
+    geometry: "line"
+    osm_tags:
+      - "boundary=administrative"
+    geofabrik_shapefile: "gis_osm_borders_arcs_free_1.shp"
+    tags_filter:
+      - "r/boundary=administrative"
+    post_filter:
+      geometry:
+        - "LineString"
+        - "MultiLineString"
+    # Relation member ways may have no tags of their own; retain them for the
+    # relation-level join performed by admin-line-tier.sh.
+    export_keep_untagged: true
+    enrich_fields:
+      # @id comes from osmium's enabled id attribute; the tier step consumes
+      # and removes it, while the remaining fields are derived by that step.
+      - "@id"
+      - "admin_tier"
+      - "level_source"
+    include_tags:
+      - "admin_level"
+      - "boundary"
+      - "maritime"
+      - "disputed"
+      - "name"
+      - "name:zh-Hans"
+      - "name:zh"
+      - "name:en"
+      - "name:ja"
+      - "name:ko"
+    final_fields:
+      admin_level: "Number"
+      admin_tier: "String"
+      level_source: "String"
+      maritime: "String"
+      disputed: "String"
+      "@id": "Number"
+      name: "String"
+      "name:zh-Hans": "String"
+      "name:zh": "String"
+      "name:en": "String"
+      "name:ja": "String"
+      "name:ko": "String"
+    renderer: "MapLibre"
+
   natural_a:
     order: 8
     geometry: "polygon"
