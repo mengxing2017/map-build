@@ -14,6 +14,7 @@ profiles:
       - waterway
       - landuse
       - admin
+      - admin_line
       - natural_a
       - natural_line
       - place_label
@@ -31,6 +32,13 @@ profiles:
         rules:
           - when:
               place: [country, state, city]
+            min_zoom: 0
+            max_zoom: 10
+      admin_line:
+        default: exclude
+        rules:
+          - when:
+              admin_tier: [country, region, province]
             min_zoom: 0
             max_zoom: 10
     tippecanoe:

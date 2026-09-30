@@ -73,10 +73,9 @@ while IFS= read -r layer; do
       | if $rule == null then
           empty
         else
-          # place_label may already carry a tier-specific zoom range from
-          # place-admin-enrich. Keep the profile selection/range while
-          # preserving the hierarchy by intersecting the two ranges.
-          if $layer == "place_label" and (.tippecanoe | type == "object") then
+          # These layers may already carry a hierarchy-specific zoom range.
+          # Keep the profile selection while preserving that narrower range.
+          if ($layer == "place_label" or $layer == "admin_line") and (.tippecanoe | type == "object") then
             (.tippecanoe | intersect_zoom(.; $rule.min_zoom; $rule.max_zoom)) as $zoom
             | if $zoom.minzoom <= $zoom.maxzoom then .tippecanoe = $zoom else empty end
           else
