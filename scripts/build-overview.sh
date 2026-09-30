@@ -10,6 +10,9 @@ merged="$("${SCRIPT_DIR}/merge-pbf.sh" --overview="${OVERVIEW}" --yyyymmdd="${YY
 "${SCRIPT_DIR}/overview-filter.sh" --overview="${OVERVIEW}" --input="${stage}/source.osm.pbf" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 "${SCRIPT_DIR}/overview-export.sh" --overview="${OVERVIEW}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 "${SCRIPT_DIR}/overview-normalize.sh" --overview="${OVERVIEW}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
+if overview_layers "${OVERVIEW}" | grep -qx 'admin_line'; then
+  "${SCRIPT_DIR}/admin-line-tier.sh" --overview="${OVERVIEW}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
+fi
 "${SCRIPT_DIR}/overview-tippecanoe.sh" --overview="${OVERVIEW}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 "${SCRIPT_DIR}/overview-metadata.sh" --overview="${OVERVIEW}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 "${SCRIPT_DIR}/overview-manifest.sh" --overview="${OVERVIEW}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
