@@ -106,6 +106,9 @@ jq -R -s '
   || die "${HUAVD_EXIT_ERROR}" "island bbox index failed"
 
 log_info "flag islands enclosed by water polygons"
+# awk opens flag_out lazily on its first match. Pre-create it so a valid
+# zero-match result can still be consumed by the write-back and report stages.
+: > "${flag_tsv}"
 awk_program=$(cat <<'AWK'
 BEGIN {
   FS = "\t"
