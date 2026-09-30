@@ -291,6 +291,41 @@ paint_layers:
           cases:
             "yes": 0.5
           default: 1
+  - id: "admin-0-boundary"
+    source_layer: "admin_line"
+    type: "line"
+    minzoom: 0
+    filter: ["all", ["==", ["get", "admin_tier"], "country"], ["!=", ["get", "maritime"], "yes"]]
+    layout:
+      line-cap: "round"
+      line-join: "round"
+    paint:
+      line-color: "#4b5563"
+      line-width: ["interpolate", ["exponential", 1.2], ["zoom"], 0, 0.9, 4, 1.4, 8, 2.3, 12, 3.2]
+      line-opacity: 0.95
+  - id: "admin-1-boundary"
+    source_layer: "admin_line"
+    type: "line"
+    minzoom: 3
+    filter: ["all", ["match", ["get", "admin_tier"], ["region", "province"], true, false], ["!=", ["get", "maritime"], "yes"]]
+    layout:
+      line-cap: "round"
+      line-join: "round"
+    paint:
+      line-color: "#6b7280"
+      line-width: ["interpolate", ["exponential", 1.2], ["zoom"], 3, 0.8, 7, 1.2, 12, 2]
+      line-dasharray: [6, 3]
+      line-opacity: 0.9
+  - id: "admin-2-boundary"
+    source_layer: "admin_line"
+    type: "line"
+    minzoom: 5
+    filter: ["all", ["==", ["get", "admin_tier"], "prefecture"], ["!=", ["get", "maritime"], "yes"]]
+    paint:
+      line-color: "#7c8594"
+      line-width: ["interpolate", ["linear"], ["zoom"], 5, 0.7, 10, 1.1, 14, 1.6]
+      line-dasharray: [4, 3]
+      line-opacity: 0.85
   - id: "road-shield"
     source_layer: "road"
     type: "symbol"

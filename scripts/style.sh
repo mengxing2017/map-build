@@ -120,7 +120,8 @@ jq -n \
             paint: {"background-color": "#f4f2ed"}
           }
         ]
-        + $paint_layers
+        + ($paint_layers | map(select(.type != "symbol")))
+        + ($paint_layers | map(select(.type == "symbol")))
         + ($c.text_layers
           | map(select(.source_layer as $layer | $effective_base_layers | index($layer)))
           | map(({
