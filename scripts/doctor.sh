@@ -249,6 +249,17 @@ check_place_label_hierarchy_config() {
 
 check_place_label_hierarchy_config
 
+check_admin_line_hierarchy_config() {
+  if admin_line_hierarchy_validate >/dev/null 2>&1; then
+    printf 'OK   %-12s %s\n' "admin-lines" "administrative boundary hierarchy"
+  else
+    printf 'FAIL %-12s %s\n' "admin-lines" "invalid administrative boundary hierarchy"
+    FAILURES=$((FAILURES + 1))
+  fi
+}
+
+check_admin_line_hierarchy_config
+
 check_derived_map_config() {
   local composites composite failures_before
   failures_before="${FAILURES}"

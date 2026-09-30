@@ -113,6 +113,54 @@ place_label_hierarchy_json() {
   config_json_path place-label-hierarchy
 }
 
+admin_line_hierarchy_json() {
+  config_json_path admin-line-hierarchy
+}
+
+admin_line_hierarchy_validate() {
+  local hierarchy
+  hierarchy="$(admin_line_hierarchy_json)"
+  jq -e '
+    . as $root
+    | (.schema_version == 1)
+      and (.tier_zoom | type == "object" and length > 0)
+      and (.default.level_tier | type == "object" and length > 0)
+      and ((.profiles // []) | type == "array")
+      and (all(.tier_zoom[];
+          . as $zoom
+          | ($zoom.minzoom | type == "number" and floor == . and . >= 0)
+          and ($zoom.maxzoom | type == "number" and floor == . and . >= $zoom.minzoom and . <= 15)))
+      and (all(.default.level_tier | to_entries[];
+          (.key | test("^[0-9]+$")) and (.value | type == "string" and $root.tier_zoom[.] != null)))
+      and (all((.profiles // [])[];
+          ((.regions // []) | type == "array" and length > 0 and all(.[]; type == "string" and length > 0))
+          and (.level_tier | type == "object" and length > 0)
+          and (all(.level_tier | to_entries[];
+              (.key | test("^[0-9]+$")) and (.value | type == "string" and $root.tier_zoom[.] != null)))))
+  ' "${hierarchy}" >/dev/null \
+    || die "${HUAVD_EXIT_INPUT}" "invalid admin-line hierarchy configuration"
+}
+
+admin_line_hierarchy_resolve() {
+  local region="${1:-}"
+  local use_default_only="${2:-0}"
+  local hierarchy
+  hierarchy="$(admin_line_hierarchy_json)"
+  admin_line_hierarchy_validate
+  jq -c --arg region "${region}" --argjson use_default_only "${use_default_only}" '
+    . as $root
+    | ($root.default // {}) as $default
+    | (if $use_default_only == 1 then null
+       else ([($root.profiles // [])[]
+              | select(any(.regions[];
+                  . as $prefix | ($region == $prefix) or ($region | startswith($prefix + "/"))) )]
+              | first // null)
+       end) as $profile
+    | ($profile // $default) as $mapping
+    | {level_tier: $mapping.level_tier, tier_zoom: $root.tier_zoom}
+  ' "${hierarchy}"
+}
+
 place_label_tier_zoom_json() {
   jq -c '.tier_zoom // {}' "$(place_label_hierarchy_json)"
 }
@@ -717,6 +765,11 @@ layer_final_field_names_json() {
 layer_post_filter_json() {
   local layer="$1"
   jq -c --arg layer "${layer}" '.source_layers[$layer].post_filter // {}' "$(layers_json)"
+}
+
+layer_export_keep_untagged() {
+  local layer="$1"
+  jq -r --arg layer "${layer}" '.source_layers[$layer].export_keep_untagged // false' "$(layers_json)"
 }
 
 layer_min_zoom() {

@@ -1,0 +1,19 @@
+schema_version: 1
+description: "Administrative boundary line tier-to-zoom mapping."
+
+tier_zoom:
+  country: {minzoom: 0, maxzoom: 15}
+  region: {minzoom: 3, maxzoom: 15}
+  province: {minzoom: 3, maxzoom: 15}
+  prefecture: {minzoom: 5, maxzoom: 15}
+
+default:
+  level_tier:
+    "2": country
+    "3": region
+    "4": province
+    "5": prefecture
+
+# The first matching region prefix replaces the complete default mapping. This
+# prevents omitted lower levels from being retained accidentally.
+profiles: []
