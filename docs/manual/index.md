@@ -382,9 +382,9 @@ export YYYYMMDD=20260818
 
 make fetch                      # 下载 Geofabrik PBF + MD5
 make release ROLE=both          # build + pack + verify（含 --strict 校验 package_version）
-make prepare-import-all         # 聚合 base/building 的 .import.zip
+make prepare-import-release-all # 聚合 base/building 的 .import.zip
 
-# ${WORKDIR}/outputs/ 产物：
+# ${WORKDIR}/${SESSION}/outputs/ 产物：
 #   china-guangxi-20260818.base.pmtiles          ← vector tiles
 #   china-guangxi-20260818.base.manifest.json    ← .huavd_record.package_version = "20260818.base"
 #   china-guangxi-20260818.building.pmtiles      ← building role (region 启用时)
@@ -539,10 +539,10 @@ mirror/{geofabrik.basename}
 export HUAVD_MAP_PACKAGE_VERSION="1.4.0-rc2"
 make fetch REGION=china/guangxi YYYYMMDD=20260818
 make release REGION=china/guangxi YYYYMMDD=20260818
-# ${WORKDIR}/outputs/china-guangxi-20260818.base.pmtiles  ✓
-# ${WORKDIR}/outputs/china-guangxi-20260818.base.manifest.json
+# ${WORKDIR}/china-guangxi-20260818/outputs/china-guangxi-20260818.base.pmtiles  ✓
+# ${WORKDIR}/china-guangxi-20260818/outputs/china-guangxi-20260818.base.manifest.json
 #   .huavd_record.package_version = "1.4.0-rc2"
-# ${WORKDIR}/outputs/china-guangxi-20260818.bundle.zip  (含 install.json)
+# ${WORKDIR}/china-guangxi-20260818/outputs/china-guangxi-20260818.bundle.zip  (含 install.json)
 #   .offline_maps[0]."package-version" = "1.4.0-rc2"
 #   .bundles[0]."bundle-version"     = "1.4.0-rc2"
 ```
@@ -770,6 +770,20 @@ ln -sf guangxi-260726.osm.pbf.md5 "${WORKDIR}/mirror/guangxi-latest.osm.pbf.md5"
 make release
 ```
 
+`make release` 会把本次会话隔离在 `${WORKDIR}/${SESSION}`；后续不应让根目录的 `make prepare-import` 去查找产物。使用 `make prepare-import-release`（单个默认 role）或 `make prepare-import-release-all`（聚合可用 role）会自动使用相同的 release 工作目录。也可以用 `make release-import` 或 `make release-import-all` 一次完成 build、pack、verify 和导入包准备。
+
+使用上述方案 A 或方案 B 的手动 PBF 做小范围图片验证时，保留相同的 `WORKDIR`、`REGION`、`YYYYMMDD`、`INPUT`（方案 A）或 mirror 软链（方案 B），只增加图片范围参数：
+
+```bash
+BAKE_BBOX=108.2,22.7,108.4,22.9 \
+BAKE_MIN_ZOOM=12 BAKE_MAX_ZOOM=14 \
+make release ROLE=base_raster FORMAT=zip GLYPH=1
+
+make prepare-import-release ROLE=base_raster IMPORT_FORMAT=zip
+```
+
+示例 bbox 仅适用于覆盖广西南宁附近的输入；其他地区应改为输入范围内、包含道路和水体的窗口。第二条命令生成的 `.import.zip` 与 bundle 都位于 `${WORKDIR}/${SESSION}/outputs/`，其中包含 `raster_bake`、同源 `base`、图片底图样式和 glyph/sprite 支撑资源。要验证已经存在的同会话 base 可被复用，可仅执行第一条命令并改为 `ROLE=raster_bake`；此时不重新读取 PBF，也不触发 `fetch`。
+
 如果下载源同时提供 `.md5`，先按 `.md5` 文件中的实际文件名校验：
 
 ```bash
@@ -780,10 +794,16 @@ make release
 
 ## 产物位置
 
-构建产物写入：
+直接执行 `make build`、`make verify`、`make pack` 或 `make prepare-import` 时，构建产物写入：
 
 ```text
 ${WORKDIR}/outputs/
+```
+
+`make release`、`make release-import` 及对应的 release 导入入口会将同一 session 隔离在：
+
+```text
+${WORKDIR}/${SESSION}/outputs/
 ```
 
 常见文件名：

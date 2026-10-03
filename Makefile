@@ -18,7 +18,7 @@ DERIVED_MAP    ?= china-base
 ASSET          ?= china-regional-osm
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem build-overview raster-estimate source-inventory derived-inventory adapter-run compose-layers build-derived-map glyph sprite style verify verify-dem verify-overview verify-derived-map pack pack-overview pack-derived-map pack-tar pack-zip prepare-import prepare-import-all prepare-derived-import clean all release release-tar release-zip lint diff-products
+.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem build-overview raster-estimate source-inventory derived-inventory adapter-run compose-layers build-derived-map glyph sprite style verify verify-dem verify-overview verify-derived-map pack pack-overview pack-derived-map pack-tar pack-zip prepare-import prepare-import-all prepare-import-release prepare-import-release-all prepare-derived-import clean all release release-tar release-zip release-import release-import-all lint diff-products
 
 init: init-workdir
 
@@ -189,10 +189,18 @@ clean:
 
 all: build pack
 
-release release-tar release-zip: override WORKDIR := $(RELEASE_WORKDIR)
+release release-tar release-zip prepare-import-release prepare-import-release-all release-import release-import-all: override WORKDIR := $(RELEASE_WORKDIR)
 
 release: build pack verify
 
 release-tar: build pack-tar verify
 
 release-zip: build pack-zip verify
+
+prepare-import-release: prepare-import
+
+prepare-import-release-all: prepare-import-all
+
+release-import: build pack verify prepare-import
+
+release-import-all: build pack verify prepare-import-all
