@@ -34,6 +34,35 @@ require_file "${INPUT}"
 
 place_labels="$(layers_dir)/place_label.geojsonseq"
 require_file "${place_labels}"
+if [[ ! -s "${place_labels}" ]]; then
+  report="$(place_admin_report_path)"
+  ensure_dir "$(dirname -- "${report}")"
+  jq -n '
+    {
+      schema_version: 1,
+      source: {place_feature_count: 0, administrative_relation_count: 0},
+      summary: {
+        role_member_relations_with_place_candidates: 0,
+        role_member_canonical_feature_count: 0,
+        fallback_canonical_feature_count: 0,
+        fallback_dropped_count: 0,
+        exact_duplicate_dropped_count: 0,
+        same_name_tier_dropped_count: 0,
+        redundant_role_member_dropped_count: 0,
+        admin_display_name_override_count: 0,
+        output_feature_count: 0
+      },
+      relations: [],
+      shared_member_choices: [],
+      fallback_dropped: [],
+      exact_duplicates: [],
+      same_name_tier_duplicates: [],
+      redundant_role_members: []
+    }
+  ' > "${report}"
+  log_info "place-label administrative enrichment: no place_label features; report=${report}"
+  exit 0
+fi
 
 cache_dir="$(place_admin_cache_dir)"
 ensure_dir "${cache_dir}"

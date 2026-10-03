@@ -45,6 +45,26 @@ island_feature_count="$(tr '\036' '\n' < "${islands}" | sed '/^$/d' | wc -l | tr
 water_feature_count="$(tr '\036' '\n' < "${waters}" | sed '/^$/d' | wc -l | tr -d ' ')"
 water_sha512="$(sha512sum "${waters}" | awk '{print $1}')"
 
+if [[ ! -s "${islands}" ]]; then
+  : > "${flag_tsv}"
+  jq -n \
+    --arg region "${REGION}" \
+    --argjson island_feature_count "${island_feature_count}" \
+    --argjson water_feature_count "${water_feature_count}" \
+    --arg water_sha512 "${water_sha512}" \
+    --argjson sample "${SAMPLE_POINTS}" \
+    --argjson ratio "${MIN_INSIDE_RATIO}" \
+    --argjson max_area "${MAX_IN_WATER_AREA_KM2}" \
+    '{schema_version:1,region:$region,layer:"island",
+      thresholds:{sample_points:$sample,min_inside_ratio:$ratio,max_in_water_area_km2:$max_area},
+      inputs:{island_feature_count:$island_feature_count,island_polygon_count:0,water_feature_count:$water_feature_count},
+      summary:{in_water_count:0,max_in_water_area_km2:0,water_geojsonseq_sha512:$water_sha512},
+      flagged:[],
+      checks:{max_in_water_area_within_limit:true}}' > "${report}"
+  log_info "island-water-flag: empty island layer; report=${report}"
+  exit 0
+fi
+
 log_info "index island geometries -> ${island_index}"
 jq --seq -n -r --argjson max "${SAMPLE_POINTS}" '
   def fabs: if . < 0 then -. else . end;

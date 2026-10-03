@@ -64,6 +64,17 @@ audit_json="$(mktemp)"
 retained_json="$(mktemp)"
 trap 'rm -f "${tmp_output}" "${tmp_audit}" "${audit_json}" "${retained_json}"' EXIT
 
+if [[ ! -s "${INPUT}" ]]; then
+  jq -n \
+    --arg region "${REGION:-${OVERVIEW}}" \
+    '{schema_version:1,region:$region,layer:"admin_line",
+      relation_sidecar:{way_count:0},
+      retained:{count:0,id_leak_count:0},
+      discarded:{count:0,by_reason:{}}}' > "${report}"
+  log_info "admin line tiers: empty layer; report=${report}"
+  exit 0
+fi
+
 log_info "index administrative relation member levels -> ${sidecar_json}"
 # osmium XML writes members before tags, so each relation's way references are
 # buffered until its admin_level is known at the closing element.

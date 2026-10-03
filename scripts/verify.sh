@@ -151,7 +151,9 @@ verify_staged_admin_line_tiering() {
     fail "admin_line tier report is invalid"
   fi
 
-  if jq --seq -e '[inputs | ((.properties | has("@id")) | not)] | all' "${staged}" >/dev/null; then
+  if [[ ! -s "${staged}" ]]; then
+    ok "staged admin_line is empty"
+  elif jq --seq -e '[inputs | ((.properties | has("@id")) | not)] | all' "${staged}" >/dev/null; then
     ok "staged admin_line has no @id"
   else
     fail "staged admin_line leaks @id"
@@ -671,7 +673,9 @@ verify_island_water_flag() {
     fail "island in_water flag count mismatch: layer=${flagged_in_layer} report=${count}"
   fi
   poly_count="$(jq -r '.inputs.island_polygon_count' <<< "${json}")"
-  if (( poly_count > 0 && count * 10 <= poly_count )); then
+  if (( poly_count == 0 )); then
+    ok "island in_water ratio not applicable: no island polygons"
+  elif (( count * 10 <= poly_count )); then
     ok "island in_water ratio within guard (${count}/${poly_count})"
   else
     fail "island in_water ratio out of guard: ${count}/${poly_count}"
@@ -775,6 +779,24 @@ verify_staged_place_admin_enrichment() {
 
   [[ -f "${staged}" ]] || { fail "staged place_label GeoJSONSeq missing"; return; }
   [[ -f "${report}" ]] || { fail "place_label administrative enrichment report missing"; return; }
+
+  if [[ ! -s "${staged}" ]]; then
+    if jq -e '
+      .schema_version == 1
+      and .source.place_feature_count == 0
+      and .summary.output_feature_count == 0
+      and (.relations | type == "array" and length == 0)
+      and (.shared_member_choices | type == "array" and length == 0)
+      and (.same_name_tier_duplicates | type == "array" and length == 0)
+      and (.redundant_role_members | type == "array" and length == 0)
+    ' "${report}" >/dev/null; then
+      ok "staged place_label administrative enrichment not applicable: no features"
+      ok "place_label administrative enrichment report (zero features)"
+    else
+      fail "place_label administrative enrichment zero-feature report is invalid"
+    fi
+    return
+  fi
 
   if jq --seq -n -e '
     [inputs] as $features
@@ -953,7 +975,12 @@ count_layer_features_with_place_or_subtype() {
 }
 
 verify_island_layer_contains_island_polygons() {
-  local pmtiles="$1"
+  local pmtiles="$1" polygon_count
+  polygon_count="$(jq -r '.inputs.island_polygon_count // 0' "$(island_water_report_path)" 2>/dev/null || printf 0)"
+  if (( polygon_count == 0 )); then
+    ok "island source-layer presence not applicable: no island polygons"
+    return
+  fi
   local features
   features="$(count_layer_features_with_place "${pmtiles}" "island" 10 855 397)"
   if [[ "${features}" -gt 0 ]]; then
