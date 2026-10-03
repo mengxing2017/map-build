@@ -1263,7 +1263,7 @@ verify_role() {
 }
 
 verify_raster_bake_role() {
-  local pmtiles manifest sha_file metadata actual_sha file_sha manifest_sha stat_size manifest_size expected_tile_type expected_tile_compression tile_count raster_style raster_style_sha glyphs_dir sprite_dir base_pmtiles
+  local pmtiles manifest sha_file metadata actual_sha file_sha manifest_sha stat_size manifest_size expected_tile_type expected_tile_compression tile_count raster_style raster_style_sha glyphs_dir sprite_dir base_pmtiles bake_plan bake_tiles bake_inputs
   pmtiles="$(build_pmtiles_path raster_bake)"
   manifest="$(build_manifest_path raster_bake)"
   sha_file="$(build_sha512_path raster_bake)"
@@ -1302,6 +1302,25 @@ verify_raster_bake_role() {
   check_eq "manifest raster_bake base file" "$(jq -r '.raster_bake.base_input.file' "${manifest}")" "$(basename -- "${base_pmtiles}")"
   check_eq "manifest raster_bake base sha512" "$(jq -r '.raster_bake.base_input.sha512' "${manifest}")" "$(sha512_value "${base_pmtiles}")"
   check_eq "manifest raster_bake base bounds" "$(jq -c '.raster_bake.base_input.bounds' "${manifest}")" "$(pmtiles_bounds "${base_pmtiles}" | jq -c .)"
+
+  bake_plan="$(bake_cache_dir)/plan.json"
+  bake_tiles="$(bake_cache_dir)/tiles.tsv"
+  bake_inputs="$(bake_cache_dir)/inputs.sha512"
+  require_file "${bake_plan}"
+  require_file "${bake_tiles}"
+  require_file "${bake_inputs}"
+  check_eq "manifest raster_bake plan sha512" "$(jq -r '.raster_bake.plan.plan_sha512' "${manifest}")" "$(sha512_value "${bake_plan}")"
+  check_eq "manifest raster_bake tiles sha512" "$(jq -r '.raster_bake.plan.tiles_sha512' "${manifest}")" "$(sha512_value "${bake_tiles}")"
+  check_eq "manifest raster_bake input fingerprint" "$(jq -r '.raster_bake.plan.input_fingerprint' "${manifest}")" "$(<"${bake_inputs}")"
+  check_eq "manifest raster_bake requested tile count" "$(jq -r '.raster_bake.plan.requested_tile_count' "${manifest}")" "${tile_count}"
+  if jq -e '
+    (.raster_bake.plan.tiles_by_zoom | type == "array" and length > 0)
+    and ((.raster_bake.plan.tiles_by_zoom | map(.tile_count) | add) == .raster_bake.plan.requested_tile_count)
+  ' "${manifest}" >/dev/null; then
+    ok "manifest raster_bake plan coverage"
+  else
+    fail "manifest raster_bake plan coverage"
+  fi
 
   metadata="$(pmtiles_cli_metadata "${pmtiles}")" || fail "pmtiles metadata readable"
   if [[ -n "${metadata}" ]] && jq -e . >/dev/null 2>&1 <<< "${metadata}"; then
@@ -1354,9 +1373,76 @@ verify_raster_bake_role() {
     fail "raster sprite missing: ${sprite_dir}"
   fi
 
+  verify_raster_bake_webp_samples "${pmtiles}" "${bake_plan}"
+
   if ((STRICT)); then
     verify_manifest_package_version "${manifest}" raster_bake
   fi
+}
+
+verify_raster_bake_webp_samples() {
+  local pmtiles="$1" plan="$2" sample_dir z x y tile_file expected_size=256 samples=0
+  require_cmd dwebp python3
+  sample_dir="$(mktemp -d)"
+  while IFS=$'\t' read -r z x y; do
+    [[ -n "${z}" ]] || continue
+    tile_file="${sample_dir}/${z}-${x}-${y}.webp"
+    if pmtiles tile "${pmtiles}" "${z}" "${x}" "${y}" > "${tile_file}" 2>/dev/null \
+      && validate_raster_bake_webp_file "${tile_file}" "${expected_size}"; then
+      ok "raster_bake decoded WebP sample z=${z} x=${x} y=${y}"
+    else
+      fail "raster_bake decoded WebP sample z=${z} x=${x} y=${y}"
+    fi
+    samples=$((samples + 1))
+  done < <(jq -r '
+    (.tiles_by_zoom | length) as $zoom_count
+    | [.tiles_by_zoom[0], .tiles_by_zoom[($zoom_count / 2 | floor)], .tiles_by_zoom[-1]]
+    | unique_by(.zoom)
+    | .[]
+    | [.zoom, (((.x_range[0] + .x_range[1]) / 2) | floor), (((.y_range[0] + .y_range[1]) / 2) | floor)]
+    | @tsv
+  ' "${plan}")
+  rm -rf "${sample_dir}"
+  (( samples > 0 )) || fail "raster_bake decoded WebP samples unavailable"
+}
+
+validate_raster_bake_webp_file() {
+  local file="$1" expected_size="$2"
+  dwebp "${file}" -o /dev/null >/dev/null 2>&1 || return 1
+  python3 - "${file}" "${expected_size}" <<'PY'
+import struct
+import sys
+
+path, expected_size = sys.argv[1], int(sys.argv[2])
+data = open(path, "rb").read()
+if len(data) < 16 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+    raise SystemExit(1)
+offset = 12
+while offset + 8 <= len(data):
+    kind = data[offset:offset + 4]
+    length = struct.unpack_from("<I", data, offset + 4)[0]
+    payload = data[offset + 8:offset + 8 + length]
+    if len(payload) != length:
+        raise SystemExit(1)
+    if kind == b"VP8 " and len(payload) >= 10 and payload[3:6] == b"\x9d\x01\x2a":
+        width = struct.unpack_from("<H", payload, 6)[0] & 0x3fff
+        height = struct.unpack_from("<H", payload, 8)[0] & 0x3fff
+        break
+    if kind == b"VP8L" and len(payload) >= 5 and payload[0] == 0x2f:
+        bits = struct.unpack_from("<I", payload, 1)[0]
+        width = (bits & 0x3fff) + 1
+        height = ((bits >> 14) & 0x3fff) + 1
+        break
+    if kind == b"VP8X" and len(payload) >= 10:
+        width = int.from_bytes(payload[4:7], "little") + 1
+        height = int.from_bytes(payload[7:10], "little") + 1
+        break
+    offset += 8 + length + (length & 1)
+else:
+    raise SystemExit(1)
+if width != expected_size or height != expected_size:
+    raise SystemExit(1)
+PY
 }
 
 verify_dem_role() {

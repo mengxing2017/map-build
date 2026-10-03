@@ -65,6 +65,7 @@ raster_tile_count="null"
 raster_tile_type="null"
 raster_tile_compression="null"
 raster_base_input="null"
+raster_plan="null"
 if [[ "${ROLE}" == "raster_bake" ]]; then
   base_pmtiles="$(build_pmtiles_path base)"
   base_manifest="$(build_manifest_path base)"
@@ -77,6 +78,21 @@ if [[ "${ROLE}" == "raster_bake" ]]; then
   raster_tile_count="$(pmtiles_addressed_tiles_count "${pmtiles}")"
   raster_tile_type="$(pmtiles_tile_type "${pmtiles}")"
   raster_tile_compression="$(pmtiles_tile_compression "${pmtiles}")"
+  bake_plan="$(bake_cache_dir)/plan.json"
+  bake_tiles="$(bake_cache_dir)/tiles.tsv"
+  bake_inputs="$(bake_cache_dir)/inputs.sha512"
+  require_file "${bake_plan}"
+  require_file "${bake_tiles}"
+  require_file "${bake_inputs}"
+  raster_plan="$(jq -cn \
+    --arg plan_sha512 "$(sha512_value "${bake_plan}")" \
+    --arg tiles_sha512 "$(sha512_value "${bake_tiles}")" \
+    --arg input_fingerprint "$(<"${bake_inputs}")" \
+    --argjson requested_tile_count "$(jq -r '.tile_count' "${bake_plan}")" \
+    --argjson tiles_by_zoom "$(jq -c '.tiles_by_zoom' "${bake_plan}")" \
+    --argjson bounds "$(jq -c '.bounds' "${bake_plan}")" \
+    --argjson bbox_padding_tiles "$(jq -r '.bbox_padding_tiles' "${bake_plan}")" \
+    '{plan_sha512: $plan_sha512, tiles_sha512: $tiles_sha512, input_fingerprint: $input_fingerprint, requested_tile_count: $requested_tile_count, tiles_by_zoom: $tiles_by_zoom, bounds: $bounds, bbox_padding_tiles: $bbox_padding_tiles}')"
   raster_base_input="$(jq -cn \
     --arg file "$(basename -- "${base_pmtiles}")" \
     --arg sha512 "$(sha512_value "${base_pmtiles}")" \
@@ -151,6 +167,7 @@ jq -n \
   --argjson raster_tile_type "${raster_tile_type}" \
   --argjson raster_tile_compression "${raster_tile_compression}" \
   --argjson raster_base_input "${raster_base_input}" \
+  --argjson raster_plan "${raster_plan}" \
   '{
     schema: $schema,
     region: $region,
@@ -214,7 +231,8 @@ jq -n \
         tile_count: $raster_tile_count,
         tile_type: $raster_tile_type,
         tile_compression: $raster_tile_compression,
-        base_input: $raster_base_input
+        base_input: $raster_base_input,
+        plan: $raster_plan
       }
     } else {} end)' > "${manifest}"
 
