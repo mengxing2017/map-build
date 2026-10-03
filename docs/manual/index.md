@@ -426,7 +426,7 @@ make release REGION=china/guangxi YYYYMMDD=20260818 \
 make raster-estimate REGION=china/guangxi YYYYMMDD=20260818 BAKE_MAX_TILES=200000
 ```
 
-正常构建完成后，同一缓存目录的 `metrics.json` 会记录计划、缓存命中、预检、网格比对、worker 队列、渲染/组装/转换耗时以及中间文件大小，用于比较相同样本下的配置调整。最终 `verify` 会从 PMTiles 抽取低、中、高缩放样本并再次解码，同时核对 tile 计划、输入指纹和清单中的覆盖摘要。
+正常构建完成后，同一缓存目录的 `metrics.json` 会记录计划、初始缓存命中、结构损坏隔离、未验证缓存复验、渲染批次与重试次数、预检、网格比对、worker 队列、渲染/组装/转换耗时以及中间文件大小，用于比较相同样本下的配置调整。最终 `verify` 会从 PMTiles 抽取低、中、高缩放样本并再次解码，同时核对 tile 计划、输入指纹和清单中的覆盖摘要。
 
 `raster_bake` 会先在 `outputs/.staging/` 完成转换、metadata、manifest 和验证，再发布正式文件与 `${SESSION}.raster_bake.ready.json`。`pack` 和 `prepare-import` 只接受与 PMTiles、manifest、attribution 摘要一致的 ready marker，避免把中断构建的半成品纳入交付。
 
