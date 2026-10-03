@@ -418,7 +418,7 @@ make release REGION=china/guangxi YYYYMMDD=20260818 \
 
 交付 `ROLE=raster_bake` 时，`make pack` 和 `make prepare-import` 会自动将已验证的 `base` 一并纳入同一安装 bundle；图片底图不作为孤立的离线地图交付。安装描述会逐条解析 `styles-url`，校验对应样式、SHA-512 sidecar、glyph 和 sprite 引用都在归档内闭合。
 
-图片构建会在 `${WORKDIR}/cache/bake/${SESSION}/parameters.json` 写入 base 身份、渲染器身份、配置覆盖和最终生效参数，并在展开全量任务前强制渲染低、中、高缩放样本，校验生成 WebP 的容器、尺寸和实际解码。瓦片按其精确 Web Mercator geographic bounds 渲染，而不是假定相机 zoom 与 XYZ zoom 等价；随后以同一 geographic bounds 渲染相邻 2x2 合成图，和四张独立瓦片逐像素比较，发现明显的缩放错位或接缝会终止构建。每个新瓦片先写入临时文件，解码通过后原子发布；异常缓存会隔离到同一缓存目录的 `quarantine/`。同一输入指纹的任务互斥执行，单片渲染和编码默认 120 秒超时，可通过 `BAKE_TILE_TIMEOUT_SECONDS` 调整。
+图片构建会在 `${WORKDIR}/cache/bake/${SESSION}/parameters.json` 写入 base 身份、渲染器身份、配置覆盖和最终生效参数，并在展开全量任务前强制渲染低、中、高缩放样本，校验生成 WebP 的容器、尺寸和实际解码。瓦片按其精确 Web Mercator geographic bounds 渲染，而不是假定相机 zoom 与 XYZ zoom 等价；随后以同一 geographic bounds 渲染相邻 2x2 合成图，和四张独立瓦片逐像素比较，发现明显的缩放错位或接缝会终止构建。每个新瓦片先写入临时文件，解码通过后原子发布，并写入匹配其内容摘要的 `.webp.sha512` 验证标记；缓存复用要求容器、尺寸和该标记均有效。异常缓存会隔离到同一缓存目录的 `quarantine/`。同一输入指纹的任务互斥执行，单片渲染和编码默认 120 秒超时，可通过 `BAKE_TILE_TIMEOUT_SECONDS` 调整。
 
 在启动长任务前，先基于已验证的 `base` 估算矩形覆盖的瓦片数量。`BAKE_MAX_TILES` 是可选预算；当计划超过它时，命令会在启动渲染器前以输入错误退出。计划写入 `${WORKDIR}/cache/bake/${SESSION}/plan.json`，按缩放级别列出瓦片数量和坐标范围。
 
