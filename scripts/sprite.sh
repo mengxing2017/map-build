@@ -23,7 +23,12 @@ for arg in "$@"; do
   esac
 done
 
-require_cmd python3 sha512sum
+PYTHON_BIN="python3"
+if [[ -x "${REPO_ROOT}/.venv/bin/python" ]]; then
+  PYTHON_BIN="${REPO_ROOT}/.venv/bin/python"
+fi
+
+require_cmd "${PYTHON_BIN}" sha512sum
 require_region "${REGION}"
 normalize_session_vars
 
@@ -31,9 +36,9 @@ manifest="${CONFIG_DIR}/icons/manifest.yaml"
 require_file "${manifest}"
 sprite_dir="$(build_sprite_dir)"
 
-if ! python3 -c 'import yaml' >/dev/null 2>&1; then
+if ! "${PYTHON_BIN}" -c 'import yaml' >/dev/null 2>&1; then
   die "${HUAVD_EXIT_REMOTE_OR_TOOL}" \
-    "PyYAML is required to parse icon manifest but the active python3 cannot import yaml. Run 'devbox run setup' (which installs PyYAML into the project venv) or 'python3 -m pip install --break-system-packages --user PyYAML' before retrying."
+    "PyYAML is required to parse icon manifest but ${PYTHON_BIN} cannot import yaml. Run 'devbox run setup' to install it into the project virtualenv before retrying."
 fi
 
 if [[ -e "${sprite_dir}" && "${FORCE}" != "1" ]]; then
@@ -44,7 +49,7 @@ if [[ -e "${sprite_dir}" ]]; then
 fi
 ensure_dir "${sprite_dir}"
 
-python3 - "${manifest}" "${sprite_dir}" <<'PY'
+"${PYTHON_BIN}" - "${manifest}" "${sprite_dir}" <<'PY'
 import json
 import math
 import struct

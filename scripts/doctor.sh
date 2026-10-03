@@ -396,6 +396,31 @@ check_multilingual_config() {
     FAILURES=$((FAILURES + 1))
   fi
 
+  local configured_font missing_fonts=""
+  while IFS= read -r configured_font; do
+    [[ -n "${configured_font}" ]] || continue
+    if [[ -f "${configured_font}" || -f "${REPO_ROOT}/${configured_font}" ]]; then
+      continue
+    fi
+    case "$(basename -- "${configured_font}")" in
+      NotoSans-Regular.ttf)
+        [[ -f /usr/share/fonts/truetype/noto/NotoSans-Regular.ttf ]] && continue
+        ;;
+      NotoSansCJKsc-Regular.otf|NotoSansCJKjp-Regular.otf|NotoSansCJKkr-Regular.otf)
+        [[ -f /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc ]] && continue
+        [[ -f /usr/share/fonts/opentype/source-han-cjk/SourceHanSansSC-Regular.otf ]] && continue
+        ;;
+    esac
+    missing_fonts+="${configured_font} "
+  done < <(jq -r '.fonts[].file' "${glyphs}")
+  if [[ -z "${missing_fonts}" ]]; then
+    printf 'OK   %-12s %s\n' "glyph-fonts" "all configured fonts resolvable"
+  else
+    printf 'WARN %-12s missing: %s\n' "glyph-fonts" "${missing_fonts}"
+    printf 'hint %-12s provide the configured fonts under %s/fonts or install compatible system Noto fonts before ROLE=*_raster GLYPH=1\n' "glyph-fonts" "${REPO_ROOT}"
+    WARNINGS=$((WARNINGS + 1))
+  fi
+
   if jq -e '
     .schema_version == 1
     and (.source.id | type == "string")

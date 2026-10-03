@@ -43,8 +43,17 @@ glyphs_template="$(jq -r '.glyphs_url // "huavd-map://glyphs/{locale}/{fontstack
 glyphs_url="${glyphs_template//\{locale\}/${STYLE_LOCALE}}"
 sprite_template="$(sprite_url)"
 style_path="$(build_style_path)"
+bake_render_path="$(bake_render_style_path)"
+raster_style_path="$(build_raster_style_path)"
 ensure_dir "$(dirname -- "${style_path}")"
+ensure_dir "$(dirname -- "${bake_render_path}")"
 effective_base_layers="$(effective_role_layers_json "${REGION}" base)"
+raster_source_id="$(jq -r '.raster_source.id // "raster-bake"' "${styles_config}")"
+raster_source_type="$(jq -r '.raster_source.type // "raster"' "${styles_config}")"
+raster_source_url="$(jq -r '.raster_source.url // "pmtiles://{raster_pmtiles}"' "${styles_config}")"
+raster_tile_size="$(jq -r '.raster_source.tile_size // 256' "${styles_config}")"
+bake_layer_types="$(jq -c '.raster_overlays.bake_layer_types // ["background", "fill", "line"]' "${styles_config}")"
+overlay_layer_types="$(jq -c '.raster_overlays.vector_overlay_layer_types // ["symbol"]' "${styles_config}")"
 
 base_pmtiles="$(build_pmtiles_path base)"
 viewport_json="{}"
@@ -74,14 +83,22 @@ jq -n \
   --argjson effective_base_layers "${effective_base_layers}" \
   '
     def text_field($fields): ["coalesce"] + ($fields | map(["get", .]));
-    def convert_paint_value:
+    def literalize_paint_value($property):
+      if $property == "line-dasharray"
+        and type == "array"
+        and (length > 0)
+        and (.[0] | type) == "number"
+      then ["literal", .]
+      else .
+      end;
+    def convert_paint_value($property):
       if type == "object" and has("match") then
         .match as $m
         | ["match", ["get", $m.field]]
-          + (reduce ($m.cases | to_entries[]) as $pair ([]; . + [$pair.key, $pair.value]))
-          + [$m.default]
+          + (reduce ($m.cases | to_entries[]) as $pair ([]; . + [$pair.key, ($pair.value | literalize_paint_value($property))]))
+          + [($m.default | literalize_paint_value($property))]
       else
-        .
+        literalize_paint_value($property)
       end;
     def convert_paint_layer:
       . as $l
@@ -92,8 +109,8 @@ jq -n \
           "source-layer": $l.source_layer,
           minzoom: ($l.minzoom // 0)
         }
-        + (if ($l.layout // null) != null then {layout: ($l.layout | with_entries(.value |= convert_paint_value))} else {} end)
-        + (if ($l.paint // null) != null then {paint: ($l.paint | with_entries(.value |= convert_paint_value))} else {} end)
+        + (if ($l.layout // null) != null then {layout: ($l.layout | with_entries(.key as $key | .value |= convert_paint_value($key)))} else {} end)
+        + (if ($l.paint // null) != null then {paint: ($l.paint | with_entries(.key as $key | .value |= convert_paint_value($key)))} else {} end)
         + (if ($l.filter // null) != null then {filter: $l.filter} else {} end);
     ($config[0]) as $c
     | ($c.locales[] | select(.tag == $locale)) as $locale_config
@@ -158,4 +175,56 @@ jq -n \
   ' > "${style_path}"
 
 write_sha512_file "${style_path}"
+
+jq --argjson bake_layer_types "${bake_layer_types}" '
+  # The native raster renderer rejects data expressions for line-dasharray.
+  # Keep the normal vector style intact, but use a static default dash pattern
+  # in the bake-only style so all other railway property expressions render.
+  def bake_compatible_line_dasharray:
+    if type == "array" and .[0] == "match" then .[-1] else . end;
+  del(.glyphs, .sprite)
+  | .layers |= map(
+      select(.type as $type | $bake_layer_types | index($type))
+      | if .type == "line" and (.paint["line-dasharray"]? != null)
+        then .paint["line-dasharray"] |= bake_compatible_line_dasharray
+        else .
+        end
+    )
+' "${style_path}" > "${bake_render_path}"
+
+jq \
+  --arg raster_source_id "${raster_source_id}" \
+  --arg raster_source_type "${raster_source_type}" \
+  --arg raster_source_url "${raster_source_url}" \
+  --argjson raster_tile_size "${raster_tile_size}" \
+  --argjson overlay_layer_types "${overlay_layer_types}" \
+  '
+    . as $vector
+    | ($vector.layers | map(select(.type == "background"))) as $background
+    | ($vector.layers | map(select(.type as $type | $overlay_layer_types | index($type)))) as $overlays
+    | {
+        version: $vector.version,
+        name: "HUAVD offline raster and vector overlay style",
+        glyphs: $vector.glyphs,
+        sources: ($vector.sources + {
+          ($raster_source_id): {
+            type: $raster_source_type,
+            url: $raster_source_url,
+            tileSize: $raster_tile_size
+          }
+        }),
+        layers: ($background + [{
+          id: "raster-baked-base",
+          type: "raster",
+          source: $raster_source_id
+        }] + $overlays),
+        metadata: ($vector.metadata + {"huavd:asset-role": "raster-baked"})
+      }
+    + (if $vector.sprite == null then {} else {sprite: $vector.sprite} end)
+  ' "${style_path}" > "${raster_style_path}"
+
+write_sha512_file "${bake_render_path}"
+write_sha512_file "${raster_style_path}"
 log_info "style OK: ${style_path}"
+log_info "raster bake style OK: ${bake_render_path}"
+log_info "raster style OK: ${raster_style_path}"

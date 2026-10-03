@@ -68,6 +68,7 @@ render_one_tile() {
   local z="$1" x="$2" y="$3" lng="$4" lat="$5"
   local png="${BAKE_PNG_DIR}/${z}/${x}/${y}.png"
   local webp="${BAKE_WEBP_DIR}/${z}/${x}/${y}.webp"
+  local render_log="${png}.render.log"
   ensure_dir "$(dirname -- "${png}")"
   ensure_dir "$(dirname -- "${webp}")"
 
@@ -76,7 +77,7 @@ render_one_tile() {
   fi
 
   if [[ "${BAKE_SKIP_EXISTING}" != "1" || ! -s "${png}" ]]; then
-    rm -f "${png}"
+    rm -f "${png}" "${render_log}"
     if [[ -n "${MBGL_RENDER_TILE_COMMAND:-}" ]]; then
       local command="${MBGL_RENDER_TILE_COMMAND}"
       command="${command//\{style\}/${BAKE_STYLE}}"
@@ -87,24 +88,41 @@ render_one_tile() {
       command="${command//\{lat\}/${lat}}"
       command="${command//\{tile_size\}/${BAKE_TILE_SIZE}}"
       command="${command//\{png\}/${png}}"
-      bash -c "${command}"
+      if ! bash -c "${command}" >"${render_log}" 2>&1; then
+        tail -n 40 "${render_log}" >&2 || true
+        die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "renderer failed for PNG tile: ${png} (z=${z} x=${x} y=${y}; log=${render_log})"
+      fi
     elif [[ "${MBGL_RENDER_ENGINE}" == "maplibre-native" ]]; then
-      "${MBGL_RENDER_BIN}" \
+      if ! "${MBGL_RENDER_BIN}" \
         --style "${BAKE_STYLE}" \
         --zoom "${z}" \
         --center "${lng},${lat}" \
         --width "${BAKE_TILE_SIZE}" \
         --height "${BAKE_TILE_SIZE}" \
-        --output "${png}"
+        --output "${png}" >"${render_log}" 2>&1
+      then
+        tail -n 40 "${render_log}" >&2 || true
+        die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "renderer failed for PNG tile: ${png} (z=${z} x=${x} y=${y}; log=${render_log})"
+      fi
     else
-      "${MBGL_RENDER_BIN}" \
+      if ! "${MBGL_RENDER_BIN}" \
         "${BAKE_STYLE}" \
         "${png}" \
         "${BAKE_TILE_SIZE}" \
         "${BAKE_TILE_SIZE}" \
         -c "${lng},${lat}" \
-        -z "${z}"
+        -z "${z}" >"${render_log}" 2>&1
+      then
+        tail -n 40 "${render_log}" >&2 || true
+        die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "renderer failed for PNG tile: ${png} (z=${z} x=${x} y=${y}; log=${render_log})"
+      fi
     fi
+
+    if grep -Eqi 'Error parsing style|data expressions not supported' "${render_log}"; then
+      tail -n 40 "${render_log}" >&2 || true
+      die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "renderer rejected the bake style for PNG tile: ${png} (z=${z} x=${x} y=${y}; log=${render_log}); use a renderer compatible with MapLibre style-spec data expressions"
+    fi
+    rm -f "${render_log}"
   fi
 
   [[ -s "${png}" ]] \
@@ -146,6 +164,77 @@ render_tile_list() {
   xargs -P "${parallel_jobs}" -n 5 "${BASH}" "$0" --render-one < "${input_list}"
 }
 
+write_preflight_tiles() {
+  local input_list="$1" output_list="$2"
+  python3 - "${input_list}" "${output_list}" <<'PY'
+import sys
+
+input_list, output_list = sys.argv[1:]
+by_zoom = {}
+with open(input_list, "r", encoding="utf-8") as src:
+    for line in src:
+        parts = line.rstrip("\n").split("\t")
+        if len(parts) != 5:
+            continue
+        by_zoom.setdefault(int(parts[0]), []).append(line)
+
+zooms = sorted(by_zoom)
+if not zooms:
+    raise SystemExit("raster bake preflight has no candidate tiles")
+
+selected_zooms = []
+for zoom in (zooms[0], zooms[len(zooms) // 2], zooms[-1]):
+    if zoom not in selected_zooms:
+        selected_zooms.append(zoom)
+
+with open(output_list, "w", encoding="utf-8") as dst:
+    for zoom in selected_zooms:
+        tiles = by_zoom[zoom]
+        dst.write(tiles[len(tiles) // 2])
+PY
+}
+
+validate_webp_tile() {
+  local file="$1" expected_size="$2"
+  python3 - "${file}" "${expected_size}" <<'PY'
+import struct
+import sys
+
+path, expected_size = sys.argv[1], int(sys.argv[2])
+data = open(path, "rb").read()
+if len(data) < 16 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+    raise SystemExit(f"invalid WebP container: {path}")
+
+offset = 12
+width = height = None
+while offset + 8 <= len(data):
+    kind = data[offset:offset + 4]
+    length = struct.unpack_from("<I", data, offset + 4)[0]
+    payload = data[offset + 8:offset + 8 + length]
+    if len(payload) != length:
+        raise SystemExit(f"truncated WebP chunk: {path}")
+    if kind == b"VP8 " and len(payload) >= 10 and payload[3:6] == b"\x9d\x01\x2a":
+        width = struct.unpack_from("<H", payload, 6)[0] & 0x3fff
+        height = struct.unpack_from("<H", payload, 8)[0] & 0x3fff
+        break
+    if kind == b"VP8L" and len(payload) >= 5 and payload[0] == 0x2f:
+        bits = struct.unpack_from("<I", payload, 1)[0]
+        width = (bits & 0x3fff) + 1
+        height = ((bits >> 14) & 0x3fff) + 1
+        break
+    if kind == b"VP8X" and len(payload) >= 10:
+        width = int.from_bytes(payload[4:7], "little") + 1
+        height = int.from_bytes(payload[7:10], "little") + 1
+        break
+    offset += 8 + length + (length & 1)
+
+if width is None or height is None:
+    raise SystemExit(f"WebP dimensions are unreadable: {path}")
+if width != expected_size or height != expected_size:
+    raise SystemExit(f"unexpected WebP dimensions {width}x{height}, expected {expected_size}x{expected_size}: {path}")
+PY
+}
+
 for arg in "$@"; do
   if [[ "${arg}" == "--render-one" ]]; then
     RENDER_ONE=1
@@ -178,9 +267,10 @@ if (( RENDER_ONE )); then
 fi
 
 ROLE="raster_bake"
-require_cmd jq pmtiles cwebp python3 xargs
+require_cmd jq pmtiles cwebp python3 sha512sum xargs
 require_region "${REGION}"
 normalize_session_vars
+log_execution_context
 
 MBGL_RENDER_ENGINE="${MBGL_RENDER_ENGINE:-mbgl-renderer}"
 case "${MBGL_RENDER_ENGINE}" in
@@ -196,40 +286,66 @@ BASE_PMTILES="${BASE_PMTILES:-$(build_pmtiles_path base)}"
 BASE_PMTILES="$(resolve_workspace_path "${BASE_PMTILES}")"
 require_file "${BASE_PMTILES}"
 
+managed_base_pmtiles="$(build_pmtiles_path base)"
+[[ "${BASE_PMTILES}" == "${managed_base_pmtiles}" ]] \
+  || die "${HUAVD_EXIT_INPUT}" "raster_bake only accepts the verified session base PMTiles: ${managed_base_pmtiles}"
+require_file "$(build_manifest_path base)"
+require_file "$(build_attribution_path base)"
+require_file "$(build_sha512_path base)"
+"${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=base --workdir="${WORKDIR}"
+
 base_tile_type="$(pmtiles_tile_type "${BASE_PMTILES}")"
 [[ "${base_tile_type}" == "1" ]] \
   || die "${HUAVD_EXIT_VERIFY}" "base PMTiles must be MVT tile_type=1, got ${base_tile_type}"
 
-if [[ ! -f "$(bake_render_style_path)" || "${SCRIPT_DIR}/style.sh" -nt "$(bake_render_style_path)" || "${CONFIG_DIR}/styles.yaml" -nt "$(bake_render_style_path)" ]]; then
+if [[ ! -f "$(bake_render_style_path)" || "${SCRIPT_DIR}/style.sh" -nt "$(bake_render_style_path)" || "${CONFIG_DIR}/styles.yaml" -nt "$(bake_render_style_path)" || "$(bake_json)" -nt "$(bake_render_style_path)" ]]; then
   "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 fi
 require_file "$(bake_render_style_path)"
+[[ -d "$(build_glyphs_dir)" ]] \
+  || die "${HUAVD_EXIT_INPUT}" "raster_bake requires generated glyphs: $(build_glyphs_dir); run build with --glyph=1"
+[[ -d "$(build_sprite_dir)" ]] \
+  || die "${HUAVD_EXIT_INPUT}" "raster_bake requires generated sprite: $(build_sprite_dir); run build with --glyph=1"
 
 bake_config="$(bake_json)"
 bake_defaults="$(jq -c '.defaults.raster_bake' "${bake_config}")"
+bake_overrides=()
+while IFS=$'\t' read -r region_match override; do
+  [[ -n "${region_match}" ]] || continue
+  if [[ "${REGION}" == ${region_match} ]]; then
+    bake_defaults="$(jq -cn --argjson defaults "${bake_defaults}" --argjson override "${override}" '$defaults + $override')"
+    bake_overrides+=("${override}")
+  fi
+done < <(jq -r '.high_density[]? | [.region_match, (del(.region_match) | tojson)] | @tsv' "${bake_config}")
 tile_size="$(jq -r '.tile_size // 256' <<< "${bake_defaults}")"
+pixel_ratio="$(jq -r '.pixel_ratio // 1' <<< "${bake_defaults}")"
 min_zoom="${BAKE_MIN_ZOOM:-$(jq -r '.min_zoom // 0' <<< "${bake_defaults}")}"
 max_zoom="${BAKE_MAX_ZOOM:-$(jq -r '.max_zoom // 14' <<< "${bake_defaults}")}"
 parallel_jobs="${BAKE_JOBS:-$(jq -r '.parallel_jobs // 8' <<< "${bake_defaults}")}"
 bbox_padding_tiles="${BAKE_BBOX_PADDING_TILES:-$(jq -r '.bbox_padding_tiles // 0' <<< "${bake_defaults}")}"
 bake_retries="${BAKE_RETRIES:-$(jq -r '.retries // 2' <<< "${bake_defaults}")}"
 pmtiles_extract="${BAKE_PMTILES_EXTRACT:-$(jq -r '.pmtiles_extract // false' <<< "${bake_defaults}")}"
-skip_existing="$(jq -r '.skip_existing // true' <<< "${bake_defaults}")"
+skip_existing="${BAKE_SKIP_EXISTING:-$(jq -r 'if has("skip_existing") and .skip_existing != null then .skip_existing else true end' <<< "${bake_defaults}")}"
 png_retention="$(jq -r '.png_cache_retention // 0' <<< "${bake_defaults}")"
-webp_lossless="$(jq -r '.cwebp.lossless // true' <<< "${bake_defaults}")"
+webp_lossless="${BAKE_WEBP_LOSSLESS:-$(jq -r 'if (.cwebp | has("lossless")) and .cwebp.lossless != null then .cwebp.lossless else true end' <<< "${bake_defaults}")}"
 webp_method="$(jq -r '.cwebp.method // 6' <<< "${bake_defaults}")"
 webp_metadata="$(jq -r '.cwebp.metadata // "none"' <<< "${bake_defaults}")"
+encoding="$(jq -r '.encoding // "webp"' <<< "${bake_defaults}")"
 
 [[ "${min_zoom}" =~ ^[0-9]+$ && "${max_zoom}" =~ ^[0-9]+$ && "${tile_size}" =~ ^[0-9]+$ ]] \
   || die "${HUAVD_EXIT_INPUT}" "bake zooms and tile_size must be integers"
+[[ "${pixel_ratio}" == "1" ]] \
+  || die "${HUAVD_EXIT_INPUT}" "raster bake pixel_ratio=${pixel_ratio} is unsupported; only 1 is supported"
+[[ "${encoding}" == "webp" ]] \
+  || die "${HUAVD_EXIT_INPUT}" "raster bake encoding=${encoding} is unsupported; only webp is supported"
 [[ "${bbox_padding_tiles}" =~ ^[0-9]+$ && "${bake_retries}" =~ ^[0-9]+$ ]] \
   || die "${HUAVD_EXIT_INPUT}" "BAKE_BBOX_PADDING_TILES and BAKE_RETRIES must be non-negative integers"
 (( min_zoom <= max_zoom )) || die "${HUAVD_EXIT_INPUT}" "bake min_zoom must be <= max_zoom"
 (( parallel_jobs > 0 )) || die "${HUAVD_EXIT_INPUT}" "BAKE_JOBS must be > 0"
 
-case "${skip_existing}" in true) skip_existing=1 ;; false) skip_existing=0 ;; 1|0) ;; *) skip_existing=1 ;; esac
-case "${webp_lossless}" in true) webp_lossless=1 ;; false) webp_lossless=0 ;; 1|0) ;; *) webp_lossless=1 ;; esac
-case "${pmtiles_extract}" in true) pmtiles_extract=1 ;; false) pmtiles_extract=0 ;; 1|0) ;; *) pmtiles_extract=0 ;; esac
+case "${skip_existing}" in true) skip_existing=1 ;; false) skip_existing=0 ;; 1|0) ;; *) die "${HUAVD_EXIT_INPUT}" "skip_existing must be true, false, 1, or 0" ;; esac
+case "${webp_lossless}" in true) webp_lossless=1 ;; false) webp_lossless=0 ;; 1|0) ;; *) die "${HUAVD_EXIT_INPUT}" "cwebp.lossless must be true, false, 1, or 0" ;; esac
+case "${pmtiles_extract}" in true) pmtiles_extract=1 ;; false) pmtiles_extract=0 ;; 1|0) ;; *) die "${HUAVD_EXIT_INPUT}" "pmtiles_extract must be true, false, 1, or 0" ;; esac
 
 output="$(build_pmtiles_path raster_bake)"
 if [[ -e "${output}" && "${FORCE}" != "1" ]]; then
@@ -239,12 +355,74 @@ fi
 bake_dir="$(bake_cache_dir)"
 bake_runtime_style="${bake_dir}/style-render-runtime.json"
 tile_list="${bake_dir}/tiles.tsv"
+preflight_list="${bake_dir}/preflight.tsv"
 png_dir="${bake_dir}/png"
 webp_dir="${bake_dir}/webp"
 mbtiles="${bake_dir}/raster_bake.mbtiles"
 ensure_dir "${bake_dir}" "${png_dir}" "${webp_dir}" "$(outputs_dir)"
 
 bounds="${BAKE_BBOX:-$(pmtiles_bounds "${BASE_PMTILES}" | jq -r '@csv' | tr -d '"')}"
+bake_overrides_json="$(jq -cn --args "${bake_overrides[@]}" '$ARGS.positional | map(fromjson)')"
+jq -n \
+  --arg commit "$(execution_revision)" \
+  --arg worktree "$(execution_worktree_state)" \
+  --arg workdir "${WORKDIR}" \
+  --arg session "${SESSION}" \
+  --arg base_pmtiles "${BASE_PMTILES}" \
+  --arg bounds "${bounds}" \
+  --argjson declared "$(jq -c '.defaults.raster_bake' "${bake_config}")" \
+  --argjson high_density_overrides "${bake_overrides_json}" \
+  --argjson resolved "${bake_defaults}" \
+  --arg min_zoom "${min_zoom}" \
+  --arg max_zoom "${max_zoom}" \
+  --arg parallel_jobs "${parallel_jobs}" \
+  --arg skip_existing "${skip_existing}" \
+  --arg webp_lossless "${webp_lossless}" \
+  --arg pmtiles_extract "${pmtiles_extract}" \
+  '{
+    schema: 1,
+    execution: {commit: $commit, worktree: $worktree, workdir: $workdir, session: $session},
+    base_pmtiles: $base_pmtiles,
+    declared: $declared,
+    high_density_overrides: $high_density_overrides,
+    resolved_config: $resolved,
+    environment_overrides: {
+      BAKE_MIN_ZOOM: $ENV.BAKE_MIN_ZOOM,
+      BAKE_MAX_ZOOM: $ENV.BAKE_MAX_ZOOM,
+      BAKE_JOBS: $ENV.BAKE_JOBS,
+      BAKE_SKIP_EXISTING: $ENV.BAKE_SKIP_EXISTING,
+      BAKE_WEBP_LOSSLESS: $ENV.BAKE_WEBP_LOSSLESS
+    },
+    effective: {
+      bounds: $bounds,
+      min_zoom: ($min_zoom | tonumber),
+      max_zoom: ($max_zoom | tonumber),
+      parallel_jobs: ($parallel_jobs | tonumber),
+      skip_existing: ($skip_existing == "1"),
+      webp_lossless: ($webp_lossless == "1"),
+      pmtiles_extract: ($pmtiles_extract == "1")
+    }
+  }' > "${bake_dir}/parameters.json"
+write_sha512_file "${bake_dir}/parameters.json"
+log_info "raster bake parameters: ${bake_dir}/parameters.json"
+
+bake_inputs_file="${bake_dir}/inputs.sha512"
+bake_inputs="$(
+  sha512sum "${BASE_PMTILES}" "$(bake_render_style_path)" "${bake_config}"
+  printf '%s\n' "${bounds:-}" "${min_zoom}" "${max_zoom}" "${tile_size}" "${pixel_ratio}" "${bbox_padding_tiles}" "${webp_lossless}" "${webp_method}" "${webp_metadata}"
+  printf '%s\n' "${bake_defaults}"
+  printf '%s\n' "${BAKE_BBOX:-}"
+  printf '%s\n' "${MBGL_RENDER_ENGINE}" "${MBGL_RENDER_BIN}" "${MBGL_RENDER_TILE_COMMAND:-}"
+)"
+bake_inputs_digest="$(printf '%s' "${bake_inputs}" | sha512sum | awk '{print $1}')"
+if [[ ! -f "${bake_inputs_file}" || "$(<"${bake_inputs_file}")" != "${bake_inputs_digest}" ]]; then
+  rm -rf "${png_dir}" "${webp_dir}"
+  rm -f "${mbtiles}" "${tile_list}"
+  ensure_dir "${png_dir}" "${webp_dir}"
+  printf '%s\n' "${bake_inputs_digest}" > "${bake_inputs_file}"
+  log_info "raster bake cache invalidated: base, style, or bake configuration changed"
+fi
+
 runtime_source_url="pmtiles://${BASE_PMTILES}"
 runtime_tile_url=""
 if [[ -z "${MBGL_RENDER_TILE_COMMAND:-}" && "${MBGL_RENDER_ENGINE}" == "mbgl-renderer" ]]; then
@@ -348,9 +526,15 @@ export MBGL_RENDER_ENGINE
 export MBGL_RENDER_BIN
 export MBGL_RENDER_TILE_COMMAND="${MBGL_RENDER_TILE_COMMAND:-}"
 
-read -r preflight_z preflight_x preflight_y preflight_lng preflight_lat < "${tile_list}"
-log_info "raster bake renderer preflight z=${preflight_z} x=${preflight_x} y=${preflight_y}"
-render_one_tile "${preflight_z}" "${preflight_x}" "${preflight_y}" "${preflight_lng}" "${preflight_lat}"
+write_preflight_tiles "${tile_list}" "${preflight_list}"
+while IFS=$'\t' read -r preflight_z preflight_x preflight_y preflight_lng preflight_lat; do
+  log_info "raster bake renderer preflight z=${preflight_z} x=${preflight_x} y=${preflight_y}"
+  rm -f \
+    "${png_dir}/${preflight_z}/${preflight_x}/${preflight_y}.png" \
+    "${webp_dir}/${preflight_z}/${preflight_x}/${preflight_y}.webp"
+  render_one_tile "${preflight_z}" "${preflight_x}" "${preflight_y}" "${preflight_lng}" "${preflight_lat}"
+  validate_webp_tile "${webp_dir}/${preflight_z}/${preflight_x}/${preflight_y}.webp" "${tile_size}"
+done < "${preflight_list}"
 
 render_input="${tile_list}"
 missing_list="${bake_dir}/missing.tsv"
