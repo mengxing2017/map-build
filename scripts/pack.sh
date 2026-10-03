@@ -70,9 +70,10 @@ while IFS= read -r role; do
     require_file "${file}"
     cp "${file}" "${pack_dir}/"
   done
+  install_require_published_role "${role}" "${files[0]}" "${files[2]}" "${files[3]}"
   roles_in_pack+=("${role}")
   copied=$((copied + 1))
-done < <(role_list "${ROLE}")
+done < <(install_delivery_roles)
 
 (( copied > 0 )) || die "${HUAVD_EXIT_INPUT}" "no artifacts copied for session=${SESSION} role=${ROLE}"
 

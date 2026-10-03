@@ -259,6 +259,41 @@ install_offline_maps_json() {
   rm -f "${tmp}"
 }
 
+install_delivery_roles() {
+  local role has_base=0 has_raster=0
+  local -a roles=()
+  while IFS= read -r role; do
+    roles+=("${role}")
+    [[ "${role}" == "base" ]] && has_base=1
+    [[ "${role}" == "raster_bake" ]] && has_raster=1
+  done < <(role_list "${ROLE}")
+
+  if (( has_raster && ! has_base )); then
+    printf 'base\n'
+  fi
+  printf '%s\n' "${roles[@]}"
+}
+
+install_require_published_role() {
+  local role="$1" pmtiles="$2" manifest="$3" attribution="$4" ready
+  [[ "${role}" == "raster_bake" ]] || return 0
+  ready="$(build_ready_path "${role}")"
+  require_file "${ready}"
+  jq -e \
+    --arg file "$(basename -- "${pmtiles}")" \
+    --arg sha512 "$(sha512_value "${pmtiles}")" \
+    --arg manifest_sha512 "$(sha512_value "${manifest}")" \
+    --arg attribution_sha512 "$(sha512_value "${attribution}")" \
+    '.schema_version == 1
+      and .role == "raster_bake"
+      and .file == $file
+      and .sha512 == $sha512
+      and .manifest_sha512 == $manifest_sha512
+      and .attribution_sha512 == $attribution_sha512' \
+    "${ready}" >/dev/null \
+    || die "${HUAVD_EXIT_VERIFY}" "raster_bake ready marker does not match published artifacts: ${ready}"
+}
+
 install_offline_maps_require_glyphs() {
   local offline_maps_json="$1"
   jq -e '
@@ -279,37 +314,82 @@ install_package_has_glyphs() {
     && [[ -n "$(find "${package_dir}/glyphs" -type f -name '*.pbf' -print -quit)" ]]
 }
 
-install_package_has_style() {
-  local package_dir="$1"
-  [[ -d "${package_dir}/styles" ]] \
-    && [[ -n "$(find "${package_dir}/styles" -type f -name '*.style.json' -print -quit)" ]]
-}
-
 install_package_has_sprite() {
   local package_dir="$1"
   [[ -f "${package_dir}/sprite/sprite.json" ]] && [[ -f "${package_dir}/sprite/sprite.png" ]]
 }
 
-install_package_style_requires_sprite() {
-  local package_dir="$1"
-  local style_file
-  style_file="$(find "${package_dir}/styles" -type f -name '*.style.json' -print -quit 2>/dev/null || true)"
-  [[ -n "${style_file}" ]] || return 1
-  jq -e '(.sprite // "") | startswith("huavd-map://sprite/")' "${style_file}" >/dev/null
+install_style_file_for_url() {
+  local root="$1" style_url="$2" name
+  [[ "${style_url}" == huavd-map://styles/* ]] || return 1
+  name="${style_url#huavd-map://styles/}"
+  [[ -n "${name}" && "${name}" != */* && "${name}" != .* ]] || return 1
+  printf '%s/styles/%s\n' "${root}" "${name}"
 }
 
 install_require_declared_assets() {
   local package_dir="$1"
-  local offline_maps_json="$2"
+  local offline_maps_json="$2" entry role file expected_sha file_sha style_url style_file style_sha actual_sha
+  local glyphs_required=0 sprite_required=0
 
-  if install_offline_maps_require_glyphs "${offline_maps_json}" && ! install_package_has_glyphs "${package_dir}"; then
-    die "${HUAVD_EXIT_INPUT}" "install.json declares huavd-map glyphs-url, but package is missing glyphs/*.pbf; run glyph generation before packaging"
+  while IFS= read -r entry; do
+    role="$(jq -r '."asset-role" // empty' <<< "${entry}")"
+    file="$(jq -r '.file // empty' <<< "${entry}")"
+    expected_sha="$(jq -r '.checksum.value // empty' <<< "${entry}")"
+    [[ -n "${role}" && -n "${file}" && -n "${expected_sha}" ]] \
+      || die "${HUAVD_EXIT_INPUT}" "install.json offline_maps entry is missing asset-role, file, or checksum"
+    [[ "${file}" != */* && "${file}" != .* && -f "${package_dir}/${file}" ]] \
+      || die "${HUAVD_EXIT_INPUT}" "install.json PMTiles file is missing from package: ${file}"
+    file_sha="$(sha512_value "${package_dir}/${file}")"
+    [[ "${file_sha}" == "${expected_sha}" ]] \
+      || die "${HUAVD_EXIT_VERIFY}" "install.json PMTiles checksum does not match package file: ${file}"
+
+    style_url="$(jq -r '."styles-url" // empty' <<< "${entry}")"
+    if [[ -z "${style_url}" ]]; then
+      [[ "${role}" != "raster-baked" ]] \
+        || die "${HUAVD_EXIT_INPUT}" "raster-baked install entry must declare styles-url"
+      continue
+    fi
+    style_file="$(install_style_file_for_url "${package_dir}" "${style_url}")" \
+      || die "${HUAVD_EXIT_INPUT}" "install.json has unsupported styles-url: ${style_url}"
+    [[ -f "${style_file}" ]] \
+      || die "${HUAVD_EXIT_INPUT}" "install.json styles-url is missing from package: ${style_url}"
+    jq -e . "${style_file}" >/dev/null \
+      || die "${HUAVD_EXIT_INPUT}" "declared style is not valid JSON: ${style_file}"
+    style_sha="${style_file}.sha512"
+    [[ -f "${style_sha}" ]] \
+      || die "${HUAVD_EXIT_INPUT}" "declared style sha512 sidecar is missing: ${style_sha}"
+    actual_sha="$(sha512_value "${style_file}")"
+    [[ "$(awk '{print $1; exit}' "${style_sha}")" == "${actual_sha}" ]] \
+      || die "${HUAVD_EXIT_VERIFY}" "declared style sha512 sidecar does not match: ${style_file}"
+    if [[ "${role}" == "raster-baked" ]]; then
+      jq -e '
+        [
+          (.sources // {} | to_entries[]
+           | select(
+               .value.type == "raster"
+               and ((.value.url // "") | startswith("pmtiles://"))
+               and ((.value.tileSize // 0) | type == "number" and . > 0)
+             )
+           | .key)
+        ] as $raster_sources
+        | ($raster_sources | length) > 0
+        and any(
+          .layers[]?;
+          .type == "raster" and (.source as $source | $raster_sources | index($source) != null)
+        )
+      ' "${style_file}" >/dev/null \
+        || die "${HUAVD_EXIT_VERIFY}" "raster-baked style lacks a usable PMTiles raster source or layer: ${style_file}"
+    fi
+    jq -e '(.glyphs // "") | startswith("huavd-map://glyphs/")' "${style_file}" >/dev/null && glyphs_required=1
+    jq -e '(.sprite // "") | startswith("huavd-map://sprite/")' "${style_file}" >/dev/null && sprite_required=1
+  done < <(jq -c '.[]' <<< "${offline_maps_json}")
+
+  if (( glyphs_required )) && ! install_package_has_glyphs "${package_dir}"; then
+    die "${HUAVD_EXIT_INPUT}" "declared style requires huavd-map glyphs, but package is missing glyphs/*.pbf"
   fi
-  if install_offline_maps_require_styles "${offline_maps_json}" && ! install_package_has_style "${package_dir}"; then
-    die "${HUAVD_EXIT_INPUT}" "install.json declares huavd-map styles-url, but package is missing styles/*.style.json; run style generation before packaging"
-  fi
-  if install_package_style_requires_sprite "${package_dir}" && ! install_package_has_sprite "${package_dir}"; then
-    die "${HUAVD_EXIT_INPUT}" "style.json declares huavd-map sprite, but package is missing sprite/sprite.json and sprite/sprite.png; run sprite generation before packaging"
+  if (( sprite_required )) && ! install_package_has_sprite "${package_dir}"; then
+    die "${HUAVD_EXIT_INPUT}" "declared style requires huavd-map sprite, but package is missing sprite/sprite.json and sprite/sprite.png"
   fi
 }
 
@@ -319,21 +399,10 @@ install_outputs_have_glyphs() {
   [[ -d "${glyphs_dir}" ]] && [[ -n "$(find "${glyphs_dir}" -type f -name '*.pbf' -print -quit)" ]]
 }
 
-install_outputs_have_style() {
-  [[ -f "$(build_style_path)" ]]
-}
-
 install_outputs_have_sprite() {
   local sprite_dir
   sprite_dir="$(build_sprite_dir)"
   [[ -f "${sprite_dir}/sprite.json" ]] && [[ -f "${sprite_dir}/sprite.png" ]]
-}
-
-install_output_style_requires_sprite() {
-  local style_file
-  style_file="$(build_style_path)"
-  [[ -f "${style_file}" ]] || return 1
-  jq -e '(.sprite // "") | startswith("huavd-map://sprite/")' "${style_file}" >/dev/null
 }
 
 install_ensure_declared_outputs() {
@@ -343,11 +412,15 @@ install_ensure_declared_outputs() {
     log_info "glyph output missing; generating glyphs before packaging"
     "${SCRIPT_DIR}/glyph.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --workdir="${WORKDIR}" --force
   fi
-  if install_offline_maps_require_styles "${offline_maps_json}" && ! install_outputs_have_style; then
+  if install_offline_maps_require_styles "${offline_maps_json}" \
+    && { [[ ! -f "$(build_style_path)" ]] || [[ ! -f "$(build_raster_style_path)" ]]; }; then
     log_info "style output missing; generating style before packaging"
     "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --workdir="${WORKDIR}"
   fi
-  if install_outputs_have_style && install_output_style_requires_sprite && ! install_outputs_have_sprite; then
+  if install_offline_maps_require_glyphs "${offline_maps_json}" && ! install_outputs_have_glyphs; then
+    die "${HUAVD_EXIT_INPUT}" "style generation did not produce required glyph outputs"
+  fi
+  if ! install_outputs_have_sprite; then
     log_info "sprite output missing; generating sprite before packaging"
     "${SCRIPT_DIR}/sprite.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --workdir="${WORKDIR}" --force
   fi

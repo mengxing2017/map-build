@@ -111,10 +111,14 @@ while IFS= read -r role; do
     continue
   fi
   require_file "${pmtiles}"
-  require_file "$(build_manifest_path "${role}")"
+  manifest="$(build_manifest_path "${role}")"
+  attribution="$(build_attribution_path "${role}")"
+  require_file "${manifest}"
+  require_file "${attribution}"
   require_file "$(build_sha512_path "${role}")"
+  install_require_published_role "${role}" "${pmtiles}" "${manifest}" "${attribution}"
   roles_to_prepare+=("${role}")
-done < <(role_list "${ROLE}")
+done < <(install_delivery_roles)
 
 ((${#roles_to_prepare[@]} > 0)) \
   || die "${HUAVD_EXIT_INPUT}" "no artifacts available for prepare-import session=${SESSION} role=${ROLE}"
@@ -146,7 +150,11 @@ while IFS= read -r entry; do
   actual_sha="$(sha512_value "${target_file}")"
   [[ "${actual_sha}" == "${expected_sha}" ]] \
     || die "${HUAVD_EXIT_VERIFY}" "staged PMTiles sha512 mismatch: ${target_file}"
+  mv "${target_file}" "${import_dir}/${file_name}" \
+    || die "${HUAVD_EXIT_DISK}" "failed to publish verified PMTiles into import package: ${file_name}"
 done < <(jq -c '.[]' <<< "${offline_maps_json}")
+rmdir "${staging_dir}" \
+  || die "${HUAVD_EXIT_DISK}" "import staging directory is not empty: ${staging_dir}"
 copy_verify_elapsed_ms="$(( $(epoch_millis) - copy_verify_started_ms ))"
 
 case "${AGGREGATE_MANIFEST}" in
