@@ -20,7 +20,7 @@ for arg in "$@"; do
   case "${arg}" in
     --strict) STRICT=1 ;;
     -h|--help)
-      printf 'usage: %s --region=<id> --role=<base|building|both|dem|all> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--strict]\n' "$0"
+      printf 'usage: %s --region=<id> --role=<base|building|raster_bake|base_raster|both_raster|both|dem|all> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--strict]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -1235,6 +1235,103 @@ verify_role() {
   fi
 }
 
+verify_raster_bake_role() {
+  local pmtiles manifest sha_file metadata actual_sha file_sha manifest_sha stat_size manifest_size expected_tile_type expected_tile_compression tile_count raster_style raster_style_sha glyphs_dir sprite_dir base_pmtiles
+  pmtiles="$(build_pmtiles_path raster_bake)"
+  manifest="$(build_manifest_path raster_bake)"
+  sha_file="$(build_sha512_path raster_bake)"
+
+  require_file "${pmtiles}"
+  require_file "${manifest}"
+  require_file "${sha_file}"
+  require_cmd pmtiles
+
+  expected_tile_type="$(jq -r '.raster_bake.tile_type' "$(tippecanoe_json)")"
+  expected_tile_compression="$(jq -r '.raster_bake.tile_compression' "$(tippecanoe_json)")"
+  printf 'verify role=raster_bake file=%s\n' "${pmtiles}"
+  check_eq "pmtiles magic" "$(pmtiles_magic "${pmtiles}")" "PMTiles"
+  check_eq "pmtiles spec_version" "$(pmtiles_spec_version "${pmtiles}")" "3"
+  check_eq "pmtiles internal_compression gzip" "$(pmtiles_internal_compression "${pmtiles}")" "2"
+  check_eq "pmtiles tile_type WebP" "$(pmtiles_tile_type "${pmtiles}")" "${expected_tile_type}"
+  check_eq "pmtiles tile_compression WebP" "$(pmtiles_tile_compression "${pmtiles}")" "${expected_tile_compression}"
+
+  tile_count="$(pmtiles_addressed_tiles_count "${pmtiles}")"
+  if (( tile_count > 0 )); then
+    ok "raster_bake addressed tile count"
+  else
+    fail "raster_bake addressed tile count must be positive"
+  fi
+
+  stat_size="$(stat -c %s "${pmtiles}")"
+  manifest_size="$(jq -r '.output.size_bytes' "${manifest}")"
+  check_eq "manifest output.size_bytes" "${manifest_size}" "${stat_size}"
+  check_eq "manifest vector_layers" "$(jq -cS '.vector_layers' "${manifest}")" '[]'
+  check_eq "manifest raster_bake.encoding" "$(jq -r '.raster_bake.encoding' "${manifest}")" "webp"
+  check_eq "manifest raster_bake.tile_count" "$(jq -r '.raster_bake.tile_count' "${manifest}")" "${tile_count}"
+  check_eq "manifest raster_bake.tile_type" "$(jq -r '.raster_bake.tile_type' "${manifest}")" "${expected_tile_type}"
+  check_eq "manifest raster_bake.tile_compression" "$(jq -r '.raster_bake.tile_compression' "${manifest}")" "${expected_tile_compression}"
+  base_pmtiles="$(build_pmtiles_path base)"
+  require_file "${base_pmtiles}"
+  check_eq "manifest raster_bake base file" "$(jq -r '.raster_bake.base_input.file' "${manifest}")" "$(basename -- "${base_pmtiles}")"
+  check_eq "manifest raster_bake base sha512" "$(jq -r '.raster_bake.base_input.sha512' "${manifest}")" "$(sha512_value "${base_pmtiles}")"
+  check_eq "manifest raster_bake base bounds" "$(jq -c '.raster_bake.base_input.bounds' "${manifest}")" "$(pmtiles_bounds "${base_pmtiles}" | jq -c .)"
+
+  metadata="$(pmtiles_cli_metadata "${pmtiles}")" || fail "pmtiles metadata readable"
+  if [[ -n "${metadata}" ]] && jq -e . >/dev/null 2>&1 <<< "${metadata}"; then
+    ok "pmtiles metadata JSON"
+    check_eq "metadata format" "$(jq -r '.format' <<< "${metadata}")" "webp"
+    check_eq "metadata vector_layers" "$(jq -cS '.vector_layers' <<< "${metadata}")" '[]'
+    check_eq "metadata huavd:asset-role" "$(jq -r '."huavd:asset-role"' <<< "${metadata}")" "raster-baked"
+    check_eq "metadata huavd:raster-encoding" "$(jq -r '."huavd:raster-encoding"' <<< "${metadata}")" "webp"
+    check_eq "metadata huavd:tile-count" "$(jq -r '."huavd:tile-count"' <<< "${metadata}")" "${tile_count}"
+  else
+    fail "pmtiles metadata JSON"
+  fi
+
+  actual_sha="$(sha512_value "${pmtiles}")"
+  file_sha="$(awk '{print $1; exit}' "${sha_file}")"
+  manifest_sha="$(jq -r '.output.sha512' "${manifest}")"
+  check_eq "sha512 sidecar" "${file_sha}" "${actual_sha}"
+  check_eq "manifest output.sha512" "${manifest_sha}" "${actual_sha}"
+
+  raster_style="$(build_raster_style_path)"
+  if [[ -f "${raster_style}" ]]; then
+    jq -e '
+      .version == 8
+      and any(.sources[]; .type == "raster")
+      and any(.layers[]; .type == "raster")
+    ' "${raster_style}" >/dev/null \
+      && ok "raster style source/layer" \
+      || fail "raster style must declare a raster source and layer"
+  else
+    fail "raster style missing: ${raster_style}"
+  fi
+
+  raster_style_sha="${raster_style}.sha512"
+  if [[ -f "${raster_style_sha}" ]]; then
+    check_eq "raster style sha512 sidecar" "$(awk '{print $1; exit}' "${raster_style_sha}")" "$(sha512_value "${raster_style}")"
+  else
+    fail "raster style sha512 sidecar missing: ${raster_style_sha}"
+  fi
+
+  glyphs_dir="$(build_glyphs_dir)"
+  sprite_dir="$(build_sprite_dir)"
+  if [[ -d "${glyphs_dir}" ]] && [[ -n "$(find "${glyphs_dir}" -type f -name '*.pbf' -print -quit)" ]]; then
+    ok "raster glyphs present"
+  else
+    fail "raster glyphs missing: ${glyphs_dir}"
+  fi
+  if [[ -f "${sprite_dir}/sprite.json" && -f "${sprite_dir}/sprite.png" ]]; then
+    ok "raster sprite present"
+  else
+    fail "raster sprite missing: ${sprite_dir}"
+  fi
+
+  if ((STRICT)); then
+    verify_manifest_package_version "${manifest}" raster_bake
+  fi
+}
+
 verify_dem_role() {
   local pmtiles manifest sha_file metadata actual_sha file_sha manifest_sha stat_size manifest_size tile_type header_bounds metadata_bounds header_json
   pmtiles="$(build_pmtiles_path dem)"
@@ -1317,6 +1414,8 @@ while IFS= read -r role; do
   fi
   if [[ "${role}" == "dem" ]]; then
     verify_dem_role
+  elif [[ "${role}" == "raster_bake" ]]; then
+    verify_raster_bake_role
   else
     verify_role "${role}"
   fi

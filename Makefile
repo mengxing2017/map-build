@@ -167,6 +167,10 @@ clean:
 	  "$(WORKDIR)/outputs/$(SESSION).building.pmtiles.sha512" \
 	  "$(WORKDIR)/outputs/$(SESSION).building.manifest.json" \
 	  "$(WORKDIR)/outputs/$(SESSION).building.attribution.json" \
+	  "$(WORKDIR)/outputs/$(SESSION).raster_bake.pmtiles" \
+	  "$(WORKDIR)/outputs/$(SESSION).raster_bake.pmtiles.sha512" \
+	  "$(WORKDIR)/outputs/$(SESSION).raster_bake.manifest.json" \
+	  "$(WORKDIR)/outputs/$(SESSION).raster_bake.attribution.json" \
 	  "$(WORKDIR)/outputs/$(SESSION).dem.pmtiles" \
 	  "$(WORKDIR)/outputs/$(SESSION).dem.pmtiles.sha512" \
 	  "$(WORKDIR)/outputs/$(SESSION).dem.manifest.json" \
@@ -174,7 +178,10 @@ clean:
 	  "$(WORKDIR)/outputs/$(SESSION).glyphs" \
 	  "$(WORKDIR)/outputs/$(SESSION).sprite" \
 	  "$(WORKDIR)/outputs/$(SESSION).style.json" \
-	  "$(WORKDIR)/outputs/$(SESSION).style.json.sha512"
+	  "$(WORKDIR)/outputs/$(SESSION).style.json.sha512" \
+	  "$(WORKDIR)/outputs/$(SESSION).style-raster.json" \
+	  "$(WORKDIR)/outputs/$(SESSION).style-raster.json.sha512" \
+	  "$(WORKDIR)/cache/bake/$(SESSION)"
 	find "$(WORKDIR)/cache" "$(WORKDIR)/staging" "$(WORKDIR)/outputs" -depth -type d -empty -delete 2>/dev/null || true
 
 all: build pack

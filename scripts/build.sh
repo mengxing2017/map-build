@@ -20,7 +20,7 @@ for arg in "$@"; do
     --glyph=*) GLYPH="${arg#*=}" ;;
     --force) FORCE=1 ;;
     -h|--help)
-      printf 'usage: %s --input=<path-to.osm.pbf> --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base|building|both] [--workdir=<path>] [--glyph=0|1] [--force] [--force-building]\n' "$0"
+      printf 'usage: %s [--input=<path-to.osm.pbf>] --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base|building|raster_bake|base_raster|both_raster|both] [--workdir=<path>] [--glyph=0|1] [--force] [--force-building]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -36,16 +36,12 @@ require_cmd jq
 require_region "${REGION}"
 normalize_session_vars
 
-[[ -n "${INPUT}" ]] || die "${HUAVD_EXIT_INPUT}" "--input is required"
-INPUT="$(resolve_workspace_path "${INPUT}")"
-if [[ ! -f "${INPUT}" ]]; then
-  die "${HUAVD_EXIT_INPUT}" "required input PBF does not exist: ${INPUT}; run 'make fetch', place/rename/symlink the PBF to this path, or set INPUT=/path/to/input.osm.pbf for manually downloaded files"
-fi
-require_cmd osmium tippecanoe pmtiles sha512sum
+require_cmd pmtiles sha512sum
 
 ensure_dir "$(outputs_dir)"
 ensure_dir "$(tags_filter_cache_dir)"
 ensure_dir "$(layers_dir)"
+log_execution_context
 
 cleanup_role_artifacts() {
   local role="$1"
@@ -116,7 +112,8 @@ EOF
   log_info "building skip report written: ${report_file}"
 }
 
-roles_to_build=()
+vector_roles=()
+raster_requested=0
 while IFS= read -r role; do
   if [[ "${role}" == "building" ]] && ! building_role_allowed "${REGION}"; then
     if [[ "${ROLE}" == "building" ]]; then
@@ -138,14 +135,42 @@ while IFS= read -r role; do
       cleanup_role_artifacts "${role}"
     fi
   fi
-  roles_to_build+=("${role}")
+  if [[ "${role}" == "raster_bake" ]]; then
+    raster_requested=1
+  else
+    vector_roles+=("${role}")
+  fi
 done < <(role_list "${ROLE}")
 
-((${#roles_to_build[@]} > 0)) || die "${HUAVD_EXIT_INPUT}" "no buildable roles for region=${REGION} role=${ROLE}"
+(( ${#vector_roles[@]} > 0 || raster_requested == 1 )) \
+  || die "${HUAVD_EXIT_INPUT}" "no buildable roles for region=${REGION} role=${ROLE}"
+
+if (( raster_requested )) && [[ "${GLYPH}" != "1" ]]; then
+  die "${HUAVD_EXIT_INPUT}" \
+    "raster_bake requires --glyph=1 so the packaged raster style can render its vector symbol overlay"
+fi
+
+if ((${#vector_roles[@]} > 0)); then
+  [[ -n "${INPUT}" ]] || die "${HUAVD_EXIT_INPUT}" "--input is required for vector roles"
+  INPUT="$(resolve_workspace_path "${INPUT}")"
+  if [[ ! -f "${INPUT}" ]]; then
+    die "${HUAVD_EXIT_INPUT}" "required input PBF does not exist: ${INPUT}; run 'make fetch', place/rename/symlink the PBF to this path, or set INPUT=/path/to/input.osm.pbf for manually downloaded files"
+  fi
+  require_cmd osmium tippecanoe
+elif [[ -n "${INPUT}" ]]; then
+  INPUT="$(resolve_workspace_path "${INPUT}")"
+fi
+
+base_pmtiles="$(build_pmtiles_path base)"
+if (( raster_requested )) && [[ " ${vector_roles[*]} " != *" base "* ]]; then
+  role_artifacts_complete base \
+    || die "${HUAVD_EXIT_INPUT}" "raster_bake requires a complete base artifact: ${base_pmtiles}; use ROLE=base_raster or build base first"
+  "${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=base --workdir="${WORKDIR}"
+fi
 
 declare -A preprocess_seen=()
 preprocess_layers=()
-for role in "${roles_to_build[@]}"; do
+for role in "${vector_roles[@]}"; do
   while IFS= read -r layer; do
     if [[ -z "${preprocess_seen[${layer}]:-}" ]]; then
       preprocess_seen["${layer}"]=1
@@ -155,16 +180,18 @@ for role in "${roles_to_build[@]}"; do
 done
 preprocess_layers_csv="$(IFS=,; printf '%s' "${preprocess_layers[*]}")"
 
-source_link="$(staging_dir)/source.osm.pbf"
-ln -sf "${INPUT}" "${source_link}"
-log_info "source linked: ${source_link} -> ${INPUT}"
+if ((${#vector_roles[@]} > 0)); then
+  source_link="$(staging_dir)/source.osm.pbf"
+  ln -sf "${INPUT}" "${source_link}"
+  log_info "source linked: ${source_link} -> ${INPUT}"
 
-"${SCRIPT_DIR}/tags-filter.sh" --input="${source_link}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
-"${SCRIPT_DIR}/export.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
-"${SCRIPT_DIR}/normalize.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
+  "${SCRIPT_DIR}/tags-filter.sh" --input="${source_link}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
+  "${SCRIPT_DIR}/export.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
+  "${SCRIPT_DIR}/normalize.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${preprocess_layers_csv}"
+fi
 
 # 注意: 模式两侧都要有 *,否则 *" x " 只匹配“以 x 结尾”的字符串。
-if [[ " ${roles_to_build[*]} " == *" base "* ]] && [[ " ${preprocess_layers[*]} " == *" place_label "* ]]; then
+if [[ " ${vector_roles[*]} " == *" base "* ]] && [[ " ${preprocess_layers[*]} " == *" place_label "* ]]; then
   "${SCRIPT_DIR}/place-admin-enrich.sh" --input="${source_link}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 fi
 
@@ -180,12 +207,12 @@ if [[ " ${preprocess_layers[*]} " == *" admin_line "* ]]; then
   "${SCRIPT_DIR}/admin-line-tier.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 fi
 
-if [[ " ${roles_to_build[*]} " == *" base "* ]] && [[ -n "$(effective_build_profile "${REGION}" base)" ]]; then
+if [[ " ${vector_roles[*]} " == *" base "* ]] && [[ -n "$(effective_build_profile "${REGION}" base)" ]]; then
   base_layers_csv="$(effective_role_layers "${REGION}" base | paste -sd, -)"
   "${SCRIPT_DIR}/profile-transform.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${base_layers_csv}"
 fi
 
-for role in "${roles_to_build[@]}"; do
+for role in "${vector_roles[@]}"; do
   "${SCRIPT_DIR}/tippecanoe.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
   "${SCRIPT_DIR}/metadata.sh" --pmtiles="$(build_pmtiles_path "${role}")" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
   "${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
@@ -197,5 +224,15 @@ done
 
 if [[ "${GLYPH}" == "1" ]]; then
   "${SCRIPT_DIR}/glyph.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --force
+  if (( raster_requested )); then
+    "${SCRIPT_DIR}/sprite.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --force
+  fi
+fi
+
+if (( raster_requested )) || [[ "${GLYPH}" == "1" ]]; then
   "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
+fi
+
+if (( raster_requested )); then
+  "${SCRIPT_DIR}/render-bake.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --base-pmtiles="${base_pmtiles}" --workdir="${WORKDIR}"
 fi

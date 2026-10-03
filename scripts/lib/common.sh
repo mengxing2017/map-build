@@ -39,6 +39,30 @@ timestamp_utc() {
   date -u +%Y-%m-%dT%H:%M:%SZ
 }
 
+execution_revision() {
+  if command -v git >/dev/null 2>&1 && git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git -C "${REPO_ROOT}" rev-parse --short=12 HEAD
+  else
+    printf 'unknown\n'
+  fi
+}
+
+execution_worktree_state() {
+  if command -v git >/dev/null 2>&1 && git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain)" ]]; then
+      printf 'dirty\n'
+    else
+      printf 'clean\n'
+    fi
+  else
+    printf 'unknown\n'
+  fi
+}
+
+log_execution_context() {
+  log_info "execution context commit=$(execution_revision) worktree=$(execution_worktree_state) workdir=${WORKDIR} session=${SESSION} region=${REGION} role=${ROLE}"
+}
+
 log_info() {
   printf '%sINFO%s [%s] %s\n' "${HUAVD_COLOR_INFO}" "${HUAVD_COLOR_RESET}" "$(timestamp_utc)" "$*" >&2
 }

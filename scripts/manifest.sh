@@ -15,7 +15,7 @@ for arg in "$@"; do
   fi
   case "${arg}" in
     -h|--help)
-      printf 'usage: %s --region=<id> --role=<base|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
+      printf 'usage: %s --region=<id> --role=<base|building|raster_bake> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -25,8 +25,8 @@ done
 require_cmd jq sha512sum stat
 require_region "${REGION}"
 normalize_session_vars
-[[ "${ROLE}" == "base" || "${ROLE}" == "building" ]] \
-  || die "${HUAVD_EXIT_INPUT}" "manifest role must be base or building"
+[[ "${ROLE}" == "base" || "${ROLE}" == "building" || "${ROLE}" == "raster_bake" ]] \
+  || die "${HUAVD_EXIT_INPUT}" "manifest role must be base, building, or raster_bake"
 
 pmtiles="$(build_pmtiles_path "${ROLE}")"
 require_file "${pmtiles}"
@@ -60,9 +60,37 @@ fi
 tools_osmium="$(cmd_version osmium)"
 tools_tippecanoe="$(cmd_version tippecanoe)"
 tools_pmtiles="$(cmd_version pmtiles)"
-tippecanoe_params="$(effective_tippecanoe_resolve "${REGION}" "${ROLE}")"
-vector_layer_names="$(effective_role_layers_json "${REGION}" "${ROLE}")"
-build_profile="$(effective_build_profile "${REGION}" "${ROLE}")"
+raster_bake=false
+raster_tile_count="null"
+raster_tile_type="null"
+raster_tile_compression="null"
+raster_base_input="null"
+if [[ "${ROLE}" == "raster_bake" ]]; then
+  base_pmtiles="$(build_pmtiles_path base)"
+  base_manifest="$(build_manifest_path base)"
+  require_file "${base_pmtiles}"
+  require_file "${base_manifest}"
+  tippecanoe_params="null"
+  vector_layer_names='[]'
+  build_profile=""
+  raster_bake=true
+  raster_tile_count="$(pmtiles_addressed_tiles_count "${pmtiles}")"
+  raster_tile_type="$(pmtiles_tile_type "${pmtiles}")"
+  raster_tile_compression="$(pmtiles_tile_compression "${pmtiles}")"
+  raster_base_input="$(jq -cn \
+    --arg file "$(basename -- "${base_pmtiles}")" \
+    --arg sha512 "$(sha512_value "${base_pmtiles}")" \
+    --argjson size_bytes "$(stat -c %s "${base_pmtiles}")" \
+    --argjson bounds "$(pmtiles_bounds "${base_pmtiles}")" \
+    --argjson min_zoom "$(pmtiles_min_zoom "${base_pmtiles}")" \
+    --argjson max_zoom "$(pmtiles_max_zoom "${base_pmtiles}")" \
+    --argjson vector_layers "$(jq -c '.vector_layers' "${base_manifest}")" \
+    '{file: $file, sha512: $sha512, size_bytes: $size_bytes, bounds: $bounds, min_zoom: $min_zoom, max_zoom: $max_zoom, vector_layers: $vector_layers}')"
+else
+  tippecanoe_params="$(effective_tippecanoe_resolve "${REGION}" "${ROLE}")"
+  vector_layer_names="$(effective_role_layers_json "${REGION}" "${ROLE}")"
+  build_profile="$(effective_build_profile "${REGION}" "${ROLE}")"
+fi
 build_profile_schema="null"
 if [[ -n "${build_profile}" ]]; then
   build_profile_schema="$(tier_profile_schema_version)"
@@ -118,6 +146,11 @@ jq -n \
   --arg released_at "${build_id}" \
   --argjson available_locales "${available_locales}" \
   --argjson style_locales "${style_locales}" \
+  --argjson raster_bake "${raster_bake}" \
+  --argjson raster_tile_count "${raster_tile_count}" \
+  --argjson raster_tile_type "${raster_tile_type}" \
+  --argjson raster_tile_compression "${raster_tile_compression}" \
+  --argjson raster_base_input "${raster_base_input}" \
   '{
     schema: $schema,
     region: $region,
@@ -174,6 +207,15 @@ jq -n \
   }
   + (if $build_profile == "" then {} else {
       build_profile: {name: $build_profile, schema_version: $build_profile_schema}
-    } end)' > "${manifest}"
+    } end)
+  + (if $raster_bake then {
+      raster_bake: {
+        encoding: "webp",
+        tile_count: $raster_tile_count,
+        tile_type: $raster_tile_type,
+        tile_compression: $raster_tile_compression,
+        base_input: $raster_base_input
+      }
+    } else {} end)' > "${manifest}"
 
 log_info "manifest OK: ${manifest}"

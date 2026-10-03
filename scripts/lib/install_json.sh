@@ -163,6 +163,12 @@ install_role_record_json() {
     --arg file "${stem}.pmtiles" \
     --argjson viewport "$(viewport_for_offline_map "${role}" "${pmtiles}")" \
     '
+      def role_specific_id($id; $role):
+        if $role == "raster_bake" and ($id | endswith("-raster") | not) then
+          $id + "-raster"
+        else
+          $id
+        end;
       def install_tile_range($range):
         if $range == null then
           null
@@ -177,7 +183,7 @@ install_role_record_json() {
       ($manifest[0]) as $m
       | ($m.huavd_record // {}) as $h
       | {
-          id: (($h.id // "") | if . == "" then $fallback_id else . end),
+          id: role_specific_id((($h.id // "") | if . == "" then $fallback_id else . end); $role),
           name: (($h.name // "") | if . == "" then $fallback_name else . end),
           "source-id": (($h.source_id // "") | if . == "" then $fallback_source_id else . end),
           "package-version": (($h.package_version // "") | if . == "" then $fallback_package_version else . end),
@@ -243,7 +249,13 @@ install_offline_maps_json() {
     install_skip_or_die "${strict}" "no offline_maps entries available for install.json"
     return 1
   fi
-  jq -s '.' "${tmp}"
+  jq -s '
+    if ([.[].id] | length) == ([.[].id] | unique | length) then
+      .
+    else
+      error("install.json offline_maps contains duplicate ids")
+    end
+  ' "${tmp}"
   rm -f "${tmp}"
 }
 
