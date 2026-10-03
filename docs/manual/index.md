@@ -267,7 +267,7 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 
 | 脚本 | 用法 |
 | :--- | :--- |
-| `./scripts/setup-tools.sh` | 安装工具链；通过 `TIPPECANOE_VERSION`、`TIPPECANOE_SOURCE_TARBALL`、`TIPPECANOE_BINARY_URL`、`PMTILES_VERSION`、`INSTALL_PREFIX` 等环境变量控制 |
+| `./scripts/setup-tools.sh` | 安装工具链；通过 `TIPPECANOE_VERSION`、`TIPPECANOE_SOURCE_TARBALL`、`TIPPECANOE_BINARY_URL`、`PMTILES_VERSION`、`MBGL_RENDERER_NPM_PACKAGE`、`INSTALL_PREFIX` 等环境变量控制；默认固定 `mbgl-renderer@0.9.0`，构建参数会记录实际 renderer 版本 |
 | `./scripts/doctor.sh` | 检查命令和配置是否可用 |
 | `./scripts/fetch.sh` | `--region=<id> [--workdir=<path>] [--limit-rate=10m]` |
 | `./scripts/fetch-dem.sh` | `--region=<id> --session=<session> [--source=<id>] [--input=<path>] [--workdir=<path>]`；只接收已授权本地或内网 DEM 输入 |
