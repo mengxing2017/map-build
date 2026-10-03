@@ -1,0 +1,20 @@
+schema_version: 1
+naming:
+  region_slug_examples: {}
+regions:
+  - id: "china/guangdong"
+    slug: "china-guangdong"
+    display_name: "Guangdong Custom"
+    priority: "first-release-sample"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://example.invalid/guangdong.osm.pbf"
+      md5_url: null
+      basename: "guangdong.osm.pbf"
+      parent_region: "china"
+      fallback: null
+    huavd:
+      region_id: "custom-cn-44-base"
+      source_id: "custom-guangdong"
+      mapping_status: "defined"
+      package_version_template: "{yyyymmdd}.{role}"

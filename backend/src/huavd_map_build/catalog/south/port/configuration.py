@@ -1,0 +1,6 @@
+from typing import Any, Protocol
+
+
+class ConfigurationRepository(Protocol):
+    def load(self, name: str) -> dict[str, Any]: ...
+    def load_export(self, layer: str) -> dict[str, Any]: ...

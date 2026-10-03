@@ -1,0 +1,23 @@
+from typing import Protocol
+
+
+class GlyphGenerator(Protocol):
+    def generate(self, command: str, font_path: str, output_directory: str) -> None: ...
+
+
+class GlyphWorkspace(Protocol):
+    def resolve_font(self, configured: str, repository_root: str) -> str: ...
+
+    def stage(self, output_directory: str, force: bool) -> str: ...
+
+    def prepare_generation(self, staging_directory: str, name: str) -> str: ...
+
+    def install_fontstack(
+        self, generated_directory: str, target_directory: str, fontstack: str
+    ) -> None: ...
+
+    def publish(
+        self, staging_directory: str, output_directory: str, manifest: dict
+    ) -> tuple[str, ...]: ...
+
+    def discard(self, staging_directory: str) -> None: ...

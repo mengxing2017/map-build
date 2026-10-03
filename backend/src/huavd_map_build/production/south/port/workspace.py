@@ -1,0 +1,13 @@
+from typing import Protocol
+
+
+class WorkspaceStore(Protocol):
+    def ensure_directory(self, root: str, relative_path: str) -> None: ...
+
+    def set_directory_mode(self, root: str, relative_path: str, mode: int) -> None: ...
+
+    def copy_configuration(self, source: str, root: str) -> None: ...
+
+    def set_configuration_modes(
+        self, root: str, directory_mode: int, file_mode: int
+    ) -> None: ...

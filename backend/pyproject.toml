@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "huavd-map-build"
+version = "0.1.0"
+description = "HUAVD offline map build domain and application core"
+requires-python = ">=3.12"
+dependencies = [
+  "PyYAML>=6.0.3,<7",
+  "mapbox-vector-tile>=2.2,<3",
+]
+
+[project.scripts]
+huavd-map-build = "huavd_map_build.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

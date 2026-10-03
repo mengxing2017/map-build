@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="huavd-map-build-test">
+  <node id="1" lat="0" lon="0" version="1"><tag k="place" v="city"/><tag k="wikidata" v="Q1"/></node>
+  <node id="2" lat="0" lon="1" version="1"/>
+  <node id="3" lat="1" lon="1" version="1"/>
+  <node id="4" lat="1" lon="0" version="1"/>
+  <way id="10" version="1"><nd ref="1"/><nd ref="2"/><nd ref="3"/><nd ref="4"/><nd ref="1"/></way>
+  <relation id="20" version="1">
+    <member type="way" ref="10" role="outer"/><member type="node" ref="1" role="admin_centre"/>
+    <tag k="type" v="boundary"/><tag k="boundary" v="administrative"/>
+    <tag k="admin_level" v="4"/><tag k="name" v="Fixture Province"/><tag k="wikidata" v="Q20"/>
+  </relation>
+</osm>

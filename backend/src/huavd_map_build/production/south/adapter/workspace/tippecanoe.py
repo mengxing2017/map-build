@@ -1,0 +1,10 @@
+from pathlib import Path
+
+
+class FileSystemTippecanoeWorkspace:
+    def require_file(self, path: str) -> None:
+        if not Path(path).is_file():
+            raise ValueError(f"required file does not exist: {path}")
+
+    def ensure_directory(self, path: str) -> None:
+        Path(path).mkdir(parents=True, exist_ok=True)

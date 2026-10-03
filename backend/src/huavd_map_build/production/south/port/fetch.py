@@ -1,0 +1,13 @@
+from typing import Protocol
+
+
+class Downloader(Protocol):
+    def download(self, url: str, destination: str, limit_rate: str | None) -> None: ...
+
+
+class FetchStore(Protocol):
+    def ensure_directory(self, path: str) -> None: ...
+
+    def is_file(self, path: str) -> bool: ...
+
+    def read_text(self, path: str) -> str: ...

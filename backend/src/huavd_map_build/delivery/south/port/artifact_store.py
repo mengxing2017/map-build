@@ -1,0 +1,9 @@
+from typing import Protocol
+
+
+class ArtifactStore(Protocol):
+    def exists(self, path: str) -> bool: ...
+
+    def is_file(self, path: str) -> bool: ...
+
+    def read_text(self, path: str) -> str: ...
