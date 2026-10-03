@@ -7,7 +7,7 @@
 - 从 `config/regions.yaml` 读取区域目录，下载并校验对应的 Geofabrik PBF 与 MD5 文件。
 - 按 `config/layers.yaml` 中的 OSM 标签规则过滤、导出和规范化 GeoJSONSeq，构建道路、铁路、水域、水系、土地利用、建筑、行政区、自然要素、山峰、休闲区和多类标注等 16 个矢量图层。
 - 使用 Tippecanoe 将矢量图层生成 gzip 压缩的 MVT PMTiles；缩放级别、密度控制和高密度区域覆盖均由 `config/tippecanoe.yaml` 配置。
-- 支持 `base` 基础矢量、可选 `building` 建筑矢量，以及来自已授权本地或内网输入的 `dem` 栅格地形三类资产。建筑角色仅在区域配置声明为派生建筑数据时启用；DEM 不会默认下载公开数据源。
+- 支持 `base` 基础矢量、可选 `building` 建筑矢量、由 base/style 预烘焙的 WebP `raster_bake` 图片瓦片，以及来自已授权本地或内网输入的 `dem` 栅格地形。图片瓦片与同源 base、style、glyph、sprite 共同交付，不是孤立资产。
 - 支持显式配置的多区域低缩放概览图：先验证所有源 PBF 来自同一 OSM replication snapshot，再用 `osmium merge` 合并并构建独立的 `overview-vector` PMTiles。
 - 支持从已验证、同快照的本地 PBF 合成分层 `base-vector` 资产；配置可表达地级市到省、省到国家、国家到洲和洲到世界。当前提供中国 composite，产物复用 `china` 的地图身份并可生成 `install.json`。
 - 统一处理多语言名称、数值和布尔属性；建筑缺失高度时可按楼层推导高度，用于 3D 建筑渲染。
@@ -53,6 +53,15 @@ make build REGION=china/guangxi YYYYMMDD=20260829 \
   INPUT=/path/to/guangxi-latest.osm.pbf ROLE=base
 ```
 
+使用同一手动 PBF 构建可消费的矢量底图和图片瓦片：
+
+```bash
+make build REGION=china/guangxi YYYYMMDD=20260829 \
+  INPUT=/path/to/guangxi-latest.osm.pbf ROLE=base_raster
+```
+
+`base_raster` 会自动生成 glyph、sprite 和 vector/raster style，再执行 Python raster bake、质量门与 staged publication。已有同会话 base 和支撑资源时，可使用 `ROLE=raster_bake` 只重跑图片阶段。
+
 默认工作目录为 `/tmp/huavd-map-build`。相对 `INPUT` 会在该目录中解析；可通过 `WORKDIR` 指向持久化构建目录。`make release` 会为每次发布隔离工作目录，并按构建、打包、校验的顺序执行。
 
 ## 多区域概览图
@@ -94,6 +103,9 @@ china-guangxi-20260829.base.pmtiles.sha512
 china-guangxi-20260829.base.manifest.json
 china-guangxi-20260829.base.attribution.json
 china-guangxi-20260829.building.pmtiles              # 已启用时生成
+china-guangxi-20260829.raster_bake.pmtiles            # 请求 raster 角色时生成
+china-guangxi-20260829.raster_bake.ready.json         # 全部质量门通过后最后写入
+china-guangxi-20260829.style-raster.json              # 图片底图 + 矢量标注消费样式
 china-guangxi-20260829.dem.pmtiles                   # 构建 DEM 时生成
 china-guangxi-20260829.bundle.tar.gz
 china-guangxi-20260829.bundle.zip
@@ -113,6 +125,8 @@ china-guangxi-20260829.bundle.zip
 make catalog                                      # 输出区域资产清单
 make fetch REGION=china/guangxi                   # 下载并校验 OSM PBF
 make build REGION=china/guangxi ROLE=base         # 构建基础矢量
+make build REGION=china/guangxi ROLE=base_raster  # 构建基础矢量和 WebP 图片瓦片
+make build REGION=china/guangxi ROLE=raster_bake  # 复用已有 base，只重跑图片阶段
 make build-dem REGION=china/guangxi               # 从已授权输入构建 DEM
 make build-overview OVERVIEW=south-china-overview  # 构建多区域低缩放概览图
 make verify-overview OVERVIEW=south-china-overview # 验证概览图
@@ -163,7 +177,7 @@ devbox run doctor
 
 ### 发布构建工作目录
 
-`make release`、`make release-tar`、`make release-zip`、`make build-raster`、`make pack-raster` 和 `make release-raster` 会默认把实际工作目录隔离到 `${WORKDIR}/${SESSION}`。例如：
+`make release`、`make release-tar` 和 `make release-zip` 会默认把实际工作目录隔离到 `${WORKDIR}/${SESSION}`。例如：
 
 ```bash
 make release WORKDIR=/home/dev/data/map REGION=china/anhui YYYYMMDD=20260818 INPUT=/path/to/anhui.osm.pbf
@@ -175,7 +189,7 @@ make release WORKDIR=/home/dev/data/map REGION=china/anhui YYYYMMDD=20260818 INP
 /home/dev/data/map/china-anhui-20260818/outputs/
 ```
 
-如需指定完整发布目录，可覆盖 `RELEASE_WORKDIR`。单独执行 `make build`、`make pack`、`make verify` 时仍直接使用 `WORKDIR`，便于对已有工作目录做增量操作。对 `make build-raster` 产物打包时，使用 `make pack-raster`，它会自动读取同一个 session 工作目录。
+如需指定完整发布目录，可覆盖 `RELEASE_WORKDIR`。单独执行 `make build`、`make pack`、`make verify` 时仍直接使用 `WORKDIR`，便于对已有工作目录做增量操作。图片瓦片使用同一组入口，并通过 `ROLE=base_raster`、`raster_bake` 或 `both_raster` 选择。
 
 ### 自动安装行为
 

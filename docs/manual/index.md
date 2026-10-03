@@ -164,7 +164,7 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `ROLE` | `both` | 构建或处理的资产角色：`base`、`building`、`raster_bake`、`base_raster`、`both_raster`、`both`、`dem`、`all`；`raster_bake` 复用已验证的 base PMTiles，`base_raster` 同时构建 base 与图片瓦片 |
 | `FORMAT` | `both` | `make pack` 的包格式：`tar`、`zip`、`both` |
 | `IMPORT_FORMAT` | `zip` | `make prepare-import` 的导入包格式：`zip` 或 `tar` |
-| `GLYPH` | `0` | `make build` 是否同时生成 glyph 和 style：`0` 或 `1`；`ROLE=raster_bake`、`base_raster`、`both_raster` 必须为 `1`，以便交付的图片底图样式可叠加矢量标注 |
+| `GLYPH` | `0` | 矢量构建是否同时生成 glyph 和 style：`0` 或 `1`；`ROLE=base_raster`、`both_raster` 会自动启用，`ROLE=raster_bake` 要求同会话已存在 base、glyph、sprite 和 style 支撑资源 |
 | `FORCE_BUILDING` | `0` | 设为 `1` 时允许 `make build` 强制构建 building；只应在已确认 region 建筑数据契约后使用 |
 | `FORCE` | `0` | 设为 `1` 时让 `make build-overview` 忽略已有 overview 成品并重新构建 |
 | `OVERVIEW` | `south-china-overview` | `config/overviews.yaml` 中的 overview id，供 `*-overview` 命令使用 |
@@ -271,7 +271,7 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `./scripts/doctor.sh` | 检查命令和配置是否可用 |
 | `./scripts/fetch.sh` | `--region=<id> [--workdir=<path>] [--limit-rate=10m]` |
 | `./scripts/fetch-dem.sh` | `--region=<id> --session=<session> [--source=<id>] [--input=<path>] [--workdir=<path>]`；只接收已授权本地或内网 DEM 输入 |
-| `./scripts/build.sh` | `[--input=<path-to.osm.pbf>] --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base\|building\|raster_bake\|base_raster\|both_raster\|both] [--workdir=<path>] [--glyph=0\|1] [--force] [--force-building]` |
+| `./scripts/build.sh` | Shell 兼容入口；新构建应使用 `make build`。`raster_bake`、`base_raster`、`both_raster` 的正式入口已由 Makefile 切换到 Python，不应直接调用此脚本启动 raster 构建 |
 | `./scripts/build-dem.sh` | `--region=<id> --session=<session> [--source=<id>] [--input=<pmtiles\|mbtiles\|tile-dir>] [--encoding=<encoding>] [--vertical-datum=<datum>] [--workdir=<path>]` |
 | `./scripts/glyph.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--locales=all\|tag[,tag...]] [--force]` |
 | `./scripts/sprite.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--workdir=<path>] [--force]` |
@@ -282,7 +282,7 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `./scripts/region-pbf-basename.sh` | `[region]`，输出 region 配置中的 `geofabrik.basename` |
 | `./scripts/manifest-catalog.sh` | 生成 region catalog；默认读取 `config/regions.yaml`，写入 `config/derived/catalog.json`；可用 `CONFIG_PATH` 和 `OUTPUT` 覆盖 |
 | `./scripts/init-workdir.sh` | 初始化目录；通过 `HUAVD_MAP_BUILD_HOME`、`HUAVD_MAP_BUILD_SESSION`、`HUAVD_MAP_BUILD_COPY_CONFIG=1` 等环境变量控制 |
-| `./scripts/generate-region-skeletons.rb` | `--iso3166-2-csv=<path> [--existing-config=config/regions.yaml] [--output=config/regions.yaml]` |
+| `./scripts/generate-region-skeletons.sh` | `--iso3166-2-csv=<path> [--existing-config=config/regions.yaml] [--output=config/regions.yaml]`；未指定 `--output` 时输出尚未登记的骨架 |
 
 ### 派生地图入口
 
@@ -411,14 +411,16 @@ make release REGION=china/guangxi YYYYMMDD=20260818 INPUT=/data/osm/guangxi-2607
 
 ```bash
 make release REGION=china/guangxi YYYYMMDD=20260818 \
-  INPUT=/data/osm/guangxi-260726.osm.pbf ROLE=base_raster GLYPH=1 FORMAT=zip
+  INPUT=/data/osm/guangxi-260726.osm.pbf ROLE=base_raster FORMAT=zip
 ```
 
-该命令先构建并验证 `base` 矢量 PMTiles，再以它为输入生成 `raster_bake` WebP PMTiles；包内同时包含图片底图样式、矢量标注和其 glyph/sprite 资源。只重跑图片阶段时可保留已验证的 base，使用 `ROLE=raster_bake GLYPH=1`，无需重新提供 PBF。
+该命令先通过 Python vector pipeline 构建并验证 `base` 矢量 PMTiles，再以它为输入生成 `raster_bake` WebP PMTiles；包内同时包含图片底图样式、矢量标注和 glyph/sprite 资源。`base_raster` 会自动启用资源生成。只重跑图片阶段时可保留已验证的 base 和支撑资源，使用 `ROLE=raster_bake`，无需重新提供 PBF。
+
+Python vector build 会在 stderr 实时输出各阶段的 `START`、`DONE` 或 `FAIL`，并带有 `stage=<当前>/<总数>`。stdout 在构建结束前保持为空是正常的，因为它只用于最终结构化 job JSON。
 
 交付 `ROLE=raster_bake` 时，`make pack` 和 `make prepare-import` 会自动将已验证的 `base` 一并纳入同一安装 bundle；图片底图不作为孤立的离线地图交付。安装描述会逐条解析 `styles-url`，校验对应样式、SHA-512 sidecar、glyph 和 sprite 引用都在归档内闭合。
 
-图片构建会在 `${WORKDIR}/cache/bake/${SESSION}/parameters.json` 写入 base 身份、渲染器身份、配置覆盖和最终生效参数，并在展开全量任务前强制渲染低、中、高缩放样本，校验生成 WebP 的容器、尺寸和实际解码。瓦片按其精确 Web Mercator geographic bounds 渲染，而不是假定相机 zoom 与 XYZ zoom 等价；随后以同一 geographic bounds 渲染相邻 2x2 合成图，和四张独立瓦片逐像素比较，发现明显的缩放错位或接缝会终止构建。每个新瓦片先写入临时文件，解码通过后原子发布，并写入匹配其内容摘要的 `.webp.sha512` 验证标记；缓存复用要求容器、尺寸和该标记均有效。异常缓存会隔离到同一缓存目录的 `quarantine/`。同一输入指纹的任务互斥执行，单片渲染和编码默认 120 秒超时，可通过 `BAKE_TILE_TIMEOUT_SECONDS` 调整。
+图片构建会在 `${WORKDIR}/cache/bake/${SESSION}/parameters.json` 写入 base 身份、渲染器身份、配置覆盖和最终生效参数。瓦片按精确 Web Mercator geographic bounds 渲染，而不是假定相机 zoom 与 XYZ zoom 等价。每个新瓦片先写入临时文件，经 WebP 容器、尺寸和 `dwebp` 解码校验后原子发布，并写入匹配内容摘要的 `.webp.sha512` 验证标记；缓存复用要求容器、尺寸和该标记均有效。异常缓存会隔离到同一缓存目录的 `quarantine/`。同一 workspace 的任务互斥执行，单片渲染和编码默认 120 秒超时。当前 Python 正式入口尚未执行旧 Shell 的 2x2 macro-tile 逐像素视觉网格比较，因此不能把 `metrics.json.quality.visual_grid_validation=not-run` 解释为通过。
 
 在启动长任务前，先基于已验证的 `base` 估算矩形覆盖的瓦片数量。`BAKE_MAX_TILES` 是可选预算；当计划超过它时，命令会在启动渲染器前以输入错误退出。计划写入 `${WORKDIR}/cache/bake/${SESSION}/plan.json`，按缩放级别列出瓦片数量和坐标范围。
 
@@ -426,9 +428,30 @@ make release REGION=china/guangxi YYYYMMDD=20260818 \
 make raster-estimate REGION=china/guangxi YYYYMMDD=20260818 BAKE_MAX_TILES=200000
 ```
 
-正常构建完成后，同一缓存目录的 `metrics.json` 会记录计划、初始缓存命中、结构损坏隔离、未验证缓存复验、渲染批次与重试次数、预检、网格比对、worker 队列、渲染/组装/转换耗时以及中间文件大小，用于比较相同样本下的配置调整。最终 `verify` 会从 PMTiles 抽取低、中、高缩放样本并再次解码，同时核对 tile 计划、输入指纹和清单中的覆盖摘要。
+正常构建完成后，同一缓存目录的 `metrics.json` 会记录计划、初始缓存命中、结构损坏隔离、未验证缓存复验、渲染批次与重试次数、MVT 预检、worker 队列、渲染/组装/转换耗时以及中间文件大小，用于比较相同样本下的配置调整。finalization 会从 PMTiles 抽取首、中、末 zoom 的中心样本并再次解码，同时核对 addressed tile count、tile 计划、输入指纹和清单中的覆盖摘要。
 
 `raster_bake` 会先在 `outputs/.staging/` 完成转换、metadata、manifest 和验证，再发布正式文件与 `${SESSION}.raster_bake.ready.json`。`pack` 和 `prepare-import` 只接受与 PMTiles、manifest、attribution 摘要一致的 ready marker，避免把中断构建的半成品纳入交付。
+
+直接诊断 Python raster pipeline 时可执行：
+
+```bash
+PYTHONPATH=backend/src python -m huavd_map_build build raster-bake \
+  --region china/guangxi --yyyymmdd 20260818 \
+  --workdir /tmp/huavd-map-build --no-publish
+```
+
+`--no-publish` 只在 `cache/bake/${SESSION}/` 保留候选 PMTiles，不写正式 outputs 或 ready marker。默认不传该参数时会执行 metadata、manifest、attribution、PMTiles/WebP 抽样、消费者资源闭合和 ready-last 发布。
+
+默认 npm `mbgl-renderer` 需要可用的图形显示环境。在无 DISPLAY 的构建机上，应提供经过验证的 `maplibre-native` renderer，或先在目标构建机验证 renderer 能实际输出 PNG；`doctor` 的 CLI/动态库检查不等同于真实渲染成功。
+
+直接使用 maplibre-native renderer 时：
+
+```bash
+PYTHONPATH=backend/src python -m huavd_map_build build raster-bake \
+  --region china/guangxi --yyyymmdd 20260818 \
+  --workdir /tmp/huavd-map-build \
+  --renderer-engine maplibre-native --renderer-command /path/to/mbgl-render
+```
 
 `make pack` 会在 outputs 目录写入 `${SESSION}.pack.metrics.json`，`make prepare-import` 会在导入归档旁写入 `${SESSION}.import.zip.metrics.json` 或 `${SESSION}.import.tar.gz.metrics.json`。它们分别记录清单哈希、归档、复制校验和成品大小，便于把交付尾部成本纳入同一基准。
 
@@ -777,7 +800,7 @@ make release
 ```bash
 BAKE_BBOX=108.2,22.7,108.4,22.9 \
 BAKE_MIN_ZOOM=12 BAKE_MAX_ZOOM=14 \
-make release ROLE=base_raster FORMAT=zip GLYPH=1
+make release ROLE=base_raster FORMAT=zip
 
 make prepare-import-release ROLE=base_raster IMPORT_FORMAT=zip
 ```

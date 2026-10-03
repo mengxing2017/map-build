@@ -9,16 +9,19 @@ REGION_BASENAME ?= $(notdir $(REGION))
 REGION_SLUG     ?= $(shell echo $(REGION) | tr '/' '-')
 INPUT          ?=
 ROLE           ?= both
+ARTIFACT_ROLE  ?= base
 FORMAT         ?= both
 IMPORT_FORMAT  ?= zip
 GLYPH          ?= 0
 FORCE_BUILDING ?= 0
+FORCE          ?= 0
 OVERVIEW       ?= south-china-overview
 DERIVED_MAP    ?= china-base
 ASSET          ?= china-regional-osm
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
+PYTHON         ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
-.PHONY: init init-workdir install-config init-build-machine-workdir install-build-machine-config setup doctor catalog fetch fetch-dem build build-dem build-overview raster-estimate source-inventory derived-inventory adapter-run compose-layers build-derived-map glyph sprite style verify verify-dem verify-overview verify-derived-map pack pack-overview pack-derived-map pack-tar pack-zip prepare-import prepare-import-all prepare-import-release prepare-import-release-all prepare-derived-import clean all release release-tar release-zip release-import release-import-all lint diff-products
+.PHONY: init init-workdir python-workspace-init install-config init-build-machine-workdir install-build-machine-config setup doctor python-doctor catalog python-catalog-validate python-catalog-shadow python-build-plan python-artifact-paths python-test fetch fetch-dem build build-dem build-overview raster-estimate source-inventory derived-inventory adapter-run compose-layers build-derived-map glyph sprite style verify verify-dem verify-overview verify-derived-map pack pack-overview pack-derived-map pack-tar pack-zip prepare-import prepare-import-all prepare-import-release prepare-import-release-all prepare-derived-import clean all release release-tar release-zip release-import release-import-all lint diff-products
 
 init: init-workdir
 
@@ -26,6 +29,9 @@ init-workdir:
 	HUAVD_MAP_BUILD_HOME="$(WORKDIR)" \
 	HUAVD_MAP_BUILD_SESSION="$(SESSION)" \
 	./scripts/init-workdir.sh
+
+python-workspace-init:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build workspace init --workdir="$(WORKDIR)" --session="$(SESSION)"
 
 install-config:
 	HUAVD_MAP_BUILD_HOME="$(WORKDIR)" \
@@ -50,8 +56,29 @@ setup:
 doctor:
 	WORKDIR="$(WORKDIR)" ./scripts/doctor.sh
 
+python-doctor:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build doctor
+
 catalog:
 	./scripts/manifest-catalog.sh
+
+python-catalog-validate:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build catalog validate
+
+python-catalog-shadow:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build catalog region "$(REGION)" --role="$(ROLE)" --yyyymmdd="$(YYYYMMDD)"
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build catalog tippecanoe "$(REGION)" --role="$(firstword $(subst _, ,$(ROLE)))"
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build catalog raster-bake "$(REGION)"
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build catalog vector-layers "$(REGION)" --role="$(firstword $(subst _, ,$(ROLE)))"
+
+python-build-plan:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build plan --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ROLE)" --workdir="$(WORKDIR)" $(if $(INPUT),--input="$(INPUT)",)
+
+python-artifact-paths:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact paths --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ARTIFACT_ROLE)" --workdir="$(WORKDIR)"
+
+python-test:
+	PYTHONPATH=backend/src $(PYTHON) -m unittest discover -s backend/tests -v
 
 fetch: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/fetch.sh --region="$(REGION)"
@@ -59,16 +86,48 @@ fetch: init-workdir
 fetch-dem: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/fetch-dem.sh --region="$(REGION)" --session="$(SESSION)" --source="$(DEM_SOURCE)" $(if $(DEM_INPUT),--input="$(DEM_INPUT)",)
 
-build: init-workdir
+build: python-workspace-init
+ifneq ($(filter $(ROLE),base building both),)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build execute-vector \
+	  --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --workdir="$(WORKDIR)" \
+	  --role="$(ROLE)" --glyph="$(GLYPH)" $(if $(INPUT),--input="$(INPUT)",) \
+	  $(if $(filter 1,$(FORCE)),--force,) \
+	  $(if $(filter 1,$(FORCE_BUILDING)),--force-building,)
+else ifneq ($(filter $(ROLE),base_raster both_raster),)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build execute-vector \
+	  --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --workdir="$(WORKDIR)" \
+	  --role="$(if $(filter base_raster,$(ROLE)),base,both)" --glyph=1 \
+	  $(if $(INPUT),--input="$(INPUT)",) $(if $(filter 1,$(FORCE)),--force,) \
+	  $(if $(filter 1,$(FORCE_BUILDING)),--force-building,)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build raster-bake \
+	  --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --workdir="$(WORKDIR)" \
+	  $(if $(BAKE_BBOX),--bbox="$(BAKE_BBOX)",) \
+	  $(if $(BAKE_MIN_ZOOM),--min-zoom="$(BAKE_MIN_ZOOM)",) \
+	  $(if $(BAKE_MAX_ZOOM),--max-zoom="$(BAKE_MAX_ZOOM)",) \
+	  $(if $(BAKE_MAX_TILES),--max-tiles="$(BAKE_MAX_TILES)",)
+else ifeq ($(ROLE),raster_bake)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build raster-bake \
+	  --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --workdir="$(WORKDIR)" \
+	  $(if $(BAKE_BBOX),--bbox="$(BAKE_BBOX)",) \
+	  $(if $(BAKE_MIN_ZOOM),--min-zoom="$(BAKE_MIN_ZOOM)",) \
+	  $(if $(BAKE_MAX_ZOOM),--max-zoom="$(BAKE_MAX_ZOOM)",) \
+	  $(if $(BAKE_MAX_TILES),--max-tiles="$(BAKE_MAX_TILES)",)
+else
 	input="$(INPUT)"; \
 	if [ -z "$$input" ]; then \
 	  basename="$$(WORKDIR="$(WORKDIR)" REGION="$(REGION)" ./scripts/region-pbf-basename.sh "$(REGION)" 2>/dev/null || printf '%s-latest.osm.pbf\n' "$(REGION_BASENAME)")"; \
 	  input="mirror/$$basename"; \
 	fi; \
-	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" FORCE_BUILDING="$(FORCE_BUILDING)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ROLE)" --glyph="$(GLYPH)" $(if $(filter 1,$(FORCE_BUILDING)),--force-building,)
+	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" FORCE_BUILDING="$(FORCE_BUILDING)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ROLE)" --glyph="$(GLYPH)" $(if $(filter 1,$(FORCE)),--force,) $(if $(filter 1,$(FORCE_BUILDING)),--force-building,)
+endif
 
 raster-estimate:
-	WORKDIR="$(WORKDIR)" ./scripts/render-bake.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --estimate $(if $(BAKE_MAX_TILES),--max-tiles="$(BAKE_MAX_TILES)",)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build raster-plan \
+	  --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --workdir="$(WORKDIR)" \
+	  $(if $(BAKE_BBOX),--bbox="$(BAKE_BBOX)",) \
+	  $(if $(BAKE_MIN_ZOOM),--min-zoom="$(BAKE_MIN_ZOOM)",) \
+	  $(if $(BAKE_MAX_ZOOM),--max-zoom="$(BAKE_MAX_ZOOM)",) \
+	  $(if $(BAKE_MAX_TILES),--max-tiles="$(BAKE_MAX_TILES)",)
 
 build-dem: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/build-dem.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(DEM_SOURCE),--source="$(DEM_SOURCE)",) $(if $(DEM_INPUT),--input="$(DEM_INPUT)",) $(if $(DEM_ENCODING),--encoding="$(DEM_ENCODING)",)
@@ -113,19 +172,27 @@ style: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/style.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)"
 
 verify:
+ifneq ($(filter $(ROLE),base building both),)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build quality release --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ROLE)" --workdir="$(WORKDIR)"
+else
 	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)"
+endif
 
 verify-dem:
 	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role=dem --strict
 
 pack:
+ifneq ($(filter $(ROLE),base building both raster_bake base_raster both_raster),)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact pack --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)" --workdir="$(WORKDIR)"
+else
 	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
+endif
 
 pack-tar:
-	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format=tar
+	$(MAKE) pack FORMAT=tar WORKDIR="$(WORKDIR)" REGION="$(REGION)" YYYYMMDD="$(YYYYMMDD)" SESSION="$(SESSION)" ROLE="$(ROLE)"
 
 pack-zip:
-	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format=zip
+	$(MAKE) pack FORMAT=zip WORKDIR="$(WORKDIR)" REGION="$(REGION)" YYYYMMDD="$(YYYYMMDD)" SESSION="$(SESSION)" ROLE="$(ROLE)"
 
 prepare-import:
 	role="$(ROLE)"; \
