@@ -161,10 +161,10 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `YYYYMMDD` | 当前 UTC 日 | 输出版本日，格式为 8 位数字，例如 `20260818` |
 | `SESSION` | `{region-slug}-{YYYYMMDD}` | 构建会话名，例如 `china-guangxi-20260818`；通常不需要手动设置 |
 | `INPUT` | 空 | `make build` 的输入 PBF；为空时自动使用 `mirror/{geofabrik.basename}` |
-| `ROLE` | `both` | 构建或处理的资产角色：`base`、`building`、`both`、`dem`、`all`；`build` 仅接受前三者，`pack`/`verify` 可处理 DEM |
+| `ROLE` | `both` | 构建或处理的资产角色：`base`、`building`、`raster_bake`、`base_raster`、`both_raster`、`both`、`dem`、`all`；`raster_bake` 复用已验证的 base PMTiles，`base_raster` 同时构建 base 与图片瓦片 |
 | `FORMAT` | `both` | `make pack` 的包格式：`tar`、`zip`、`both` |
 | `IMPORT_FORMAT` | `zip` | `make prepare-import` 的导入包格式：`zip` 或 `tar` |
-| `GLYPH` | `0` | `make build` 是否同时生成 glyph 和 style：`0` 或 `1` |
+| `GLYPH` | `0` | `make build` 是否同时生成 glyph 和 style：`0` 或 `1`；`ROLE=raster_bake`、`base_raster`、`both_raster` 必须为 `1`，以便交付的图片底图样式可叠加矢量标注 |
 | `FORCE_BUILDING` | `0` | 设为 `1` 时允许 `make build` 强制构建 building；只应在已确认 region 建筑数据契约后使用 |
 | `FORCE` | `0` | 设为 `1` 时让 `make build-overview` 忽略已有 overview 成品并重新构建 |
 | `OVERVIEW` | `south-china-overview` | `config/overviews.yaml` 中的 overview id，供 `*-overview` 命令使用 |
@@ -260,7 +260,7 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 --region=<id>
 --yyyymmdd=YYYYMMDD
 --session=<session>
---role=base|building|both
+--role=base|building|raster_bake|base_raster|both_raster|both
 ```
 
 脚本也会读取同名环境变量。相对输入路径解析规则与 `make` 一致：`mirror/`、`cache/`、`staging/`、`outputs/` 开头的路径会按 `WORKDIR` 下的路径处理。
@@ -271,14 +271,14 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `./scripts/doctor.sh` | 检查命令和配置是否可用 |
 | `./scripts/fetch.sh` | `--region=<id> [--workdir=<path>] [--limit-rate=10m]` |
 | `./scripts/fetch-dem.sh` | `--region=<id> --session=<session> [--source=<id>] [--input=<path>] [--workdir=<path>]`；只接收已授权本地或内网 DEM 输入 |
-| `./scripts/build.sh` | `--input=<path-to.osm.pbf> --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base\|building\|both] [--workdir=<path>] [--glyph=0\|1] [--force] [--force-building]` |
+| `./scripts/build.sh` | `[--input=<path-to.osm.pbf>] --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base\|building\|raster_bake\|base_raster\|both_raster\|both] [--workdir=<path>] [--glyph=0\|1] [--force] [--force-building]` |
 | `./scripts/build-dem.sh` | `--region=<id> --session=<session> [--source=<id>] [--input=<pmtiles\|mbtiles\|tile-dir>] [--encoding=<encoding>] [--vertical-datum=<datum>] [--workdir=<path>]` |
 | `./scripts/glyph.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--locales=all\|tag[,tag...]] [--force]` |
 | `./scripts/sprite.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--workdir=<path>] [--force]` |
 | `./scripts/style.sh` | `--region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--locale=<tag>] [--pmtiles-url=<url>]` |
-| `./scripts/verify.sh` | `--region=<id> --role=<base\|building\|both\|dem\|all> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--strict]` |
-| `./scripts/pack.sh` | `--session=<session> [--role=base\|building\|both\|dem\|all] [--format=tar\|zip\|both] [--workdir=<path>]` |
-| `./scripts/prepare-import.sh` | `--session=<session> [--role=base\|building\|both] [--format=tar\|zip] [--output=<archive-path>] [--transfer-id=<id>] [--aggregate] [--workdir=<path>] [--region=<id>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/verify.sh` | `--region=<id> --role=<base\|building\|raster_bake\|base_raster\|both_raster\|both\|dem\|all> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--strict]` |
+| `./scripts/pack.sh` | `--session=<session> [--role=base\|building\|raster_bake\|base_raster\|both_raster\|both\|dem\|all] [--format=tar\|zip\|both] [--workdir=<path>]` |
+| `./scripts/prepare-import.sh` | `--session=<session> [--role=base\|building\|raster_bake\|base_raster\|both_raster\|both] [--format=tar\|zip] [--output=<archive-path>] [--transfer-id=<id>] [--aggregate] [--workdir=<path>] [--region=<id>] [--yyyymmdd=YYYYMMDD]` |
 | `./scripts/region-pbf-basename.sh` | `[region]`，输出 region 配置中的 `geofabrik.basename` |
 | `./scripts/manifest-catalog.sh` | 生成 region catalog；默认读取 `config/regions.yaml`，写入 `config/derived/catalog.json`；可用 `CONFIG_PATH` 和 `OUTPUT` 覆盖 |
 | `./scripts/init-workdir.sh` | 初始化目录；通过 `HUAVD_MAP_BUILD_HOME`、`HUAVD_MAP_BUILD_SESSION`、`HUAVD_MAP_BUILD_COPY_CONFIG=1` 等环境变量控制 |
@@ -406,6 +406,17 @@ make release
 ```bash
 make release REGION=china/guangxi YYYYMMDD=20260818 INPUT=/data/osm/guangxi-260726.osm.pbf ROLE=base
 ```
+
+使用同一份手动下载的 PBF 快速验证图片瓦片交付：
+
+```bash
+make release REGION=china/guangxi YYYYMMDD=20260818 \
+  INPUT=/data/osm/guangxi-260726.osm.pbf ROLE=base_raster GLYPH=1 FORMAT=zip
+```
+
+该命令先构建并验证 `base` 矢量 PMTiles，再以它为输入生成 `raster_bake` WebP PMTiles；包内同时包含图片底图样式、矢量标注和其 glyph/sprite 资源。只重跑图片阶段时可保留已验证的 base，使用 `ROLE=raster_bake GLYPH=1`，无需重新提供 PBF。
+
+图片构建会在 `${WORKDIR}/cache/bake/${SESSION}/parameters.json` 写入 base 身份、配置覆盖和最终生效参数，并在展开全量任务前强制渲染低、中、高缩放样本，校验生成 WebP 的容器与尺寸。
 
 生成 PMTiles 后再补 glyph 和 style：
 
