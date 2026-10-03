@@ -95,6 +95,7 @@ fi
 if [[ "${OUTPUT_PATH}" == "${import_dir}/"* ]]; then
   die "${HUAVD_EXIT_INPUT}" "import output must not be inside the import cache directory: ${OUTPUT_PATH}"
 fi
+import_started_ms="$(epoch_millis)"
 
 if [[ -z "${TRANSFER_ID}" ]]; then
   TRANSFER_ID="$(install_transfer_id)"
@@ -131,6 +132,7 @@ rm -rf "${import_dir}"
 ensure_dir "${staging_dir}"
 ensure_dir "$(dirname -- "${OUTPUT_PATH}")"
 
+copy_verify_started_ms="$(epoch_millis)"
 while IFS= read -r entry; do
   file_name="$(jq -r '.file' <<< "${entry}")"
   expected_sha="$(jq -r '.checksum.value' <<< "${entry}")"
@@ -145,6 +147,7 @@ while IFS= read -r entry; do
   [[ "${actual_sha}" == "${expected_sha}" ]] \
     || die "${HUAVD_EXIT_VERIFY}" "staged PMTiles sha512 mismatch: ${target_file}"
 done < <(jq -c '.[]' <<< "${offline_maps_json}")
+copy_verify_elapsed_ms="$(( $(epoch_millis) - copy_verify_started_ms ))"
 
 case "${AGGREGATE_MANIFEST}" in
   0) install_write_document "${install_json}" "${TRANSFER_ID}" "${offline_maps_json}" "${document_region}" "${bundle_id}" "${activation}" ;;
@@ -181,7 +184,9 @@ if [[ -d "${sprite_dir}" ]]; then
 fi
 
 install_require_declared_assets "${import_dir}" "${offline_maps_json}"
+prepare_elapsed_ms="$(( $(epoch_millis) - import_started_ms ))"
 
+archive_started_ms="$(epoch_millis)"
 case "${FORMAT}" in
   tar)
     tar -C "${import_dir}" -czf "${OUTPUT_PATH}" . \
@@ -196,6 +201,36 @@ case "${FORMAT}" in
     ;;
 esac
 write_sha512_file "${OUTPUT_PATH}"
+archive_elapsed_ms="$(( $(epoch_millis) - archive_started_ms ))"
+import_elapsed_ms="$(( $(epoch_millis) - import_started_ms ))"
+import_file_count="$(find "${import_dir}" -type f | wc -l | tr -d '[:space:]')"
+import_bytes="$(find "${import_dir}" -type f -printf '%s\n' | awk '{sum += $1} END {print sum + 0}')"
+metrics_path="${OUTPUT_PATH}.metrics.json"
+jq -n \
+  --arg generated_at "$(timestamp_utc)" \
+  --arg session "${SESSION}" \
+  --arg role "${ROLE}" \
+  --arg format "${FORMAT}" \
+  --arg archive "${OUTPUT_PATH}" \
+  --argjson copy_verify_ms "${copy_verify_elapsed_ms}" \
+  --argjson prepare_ms "${prepare_elapsed_ms}" \
+  --argjson archive_ms "${archive_elapsed_ms}" \
+  --argjson total_ms "${import_elapsed_ms}" \
+  --argjson import_file_count "${import_file_count}" \
+  --argjson import_bytes "${import_bytes}" \
+  --argjson archive_bytes "$(stat -c %s "${OUTPUT_PATH}")" \
+  '{
+    schema_version: 1,
+    generated_at: $generated_at,
+    session: $session,
+    role: $role,
+    format: $format,
+    archive: $archive,
+    import_directory: {file_count: $import_file_count, bytes: $import_bytes},
+    phases_ms: {copy_and_verify: $copy_verify_ms, prepare: $prepare_ms, archive_and_sha512: $archive_ms, total: $total_ms},
+    archive_bytes: $archive_bytes
+  }' > "${metrics_path}"
+write_sha512_file "${metrics_path}"
 
 printf 'prepare-import OK: %s\n' "${OUTPUT_PATH}"
 printf 'archive: %s\n' "${OUTPUT_PATH}"
@@ -203,4 +238,5 @@ printf 'archive_sha512: %s.sha512\n' "${OUTPUT_PATH}"
 printf 'install.json: %s\n' "${install_json}"
 printf 'transfer_id: %s\n' "${TRANSFER_ID}"
 printf 'staging: %s\n' "${staging_dir}"
+printf 'metrics: %s\n' "${metrics_path}"
 jq -r '.offline_maps[] | "offline-map id=\(.id) name=\(.name) file=\(.file) checksum=\(.checksum.value)"' "${install_json}"

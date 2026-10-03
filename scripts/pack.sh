@@ -27,7 +27,7 @@ for arg in "$@"; do
   esac
 done
 
-require_cmd tar zip sha256sum sha512sum
+require_cmd jq tar zip sha256sum sha512sum
 [[ -n "${SESSION}" ]] || die "${HUAVD_EXIT_INPUT}" "--session is required"
 validate_session "${SESSION}"
 YYYYMMDD="$(session_yyyymmdd "${SESSION}")"
@@ -40,12 +40,14 @@ esac
 
 out_dir="$(outputs_dir)"
 pack_dir="$(pack_cache_dir)/${SESSION}"
+pack_started_ms="$(epoch_millis)"
 ensure_dir "${out_dir}"
 rm -rf "${pack_dir}"
 ensure_dir "${pack_dir}"
 
 copied=0
 roles_in_pack=()
+prepare_started_ms="$(epoch_millis)"
 while IFS= read -r role; do
   stem="${SESSION}.${role}"
   files=(
@@ -130,7 +132,9 @@ if ((${#roles_in_pack[@]} > 0)); then
     log_warn "skip install.json generation for pack: jq is not available"
   fi
 fi
+prepare_elapsed_ms="$(( $(epoch_millis) - prepare_started_ms ))"
 
+checksums_started_ms="$(epoch_millis)"
 (
   cd -- "${pack_dir}"
   rm -f SHA256SUMS SHA512SUMS
@@ -149,16 +153,26 @@ fi
         fi
       done > SHA512SUMS
 )
+checksums_elapsed_ms="$(( $(epoch_millis) - checksums_started_ms ))"
+
+tar_elapsed_ms=null
+zip_elapsed_ms=null
+tar_bytes=null
+zip_bytes=null
 
 if [[ "${FORMAT}" == "tar" || "${FORMAT}" == "both" ]]; then
+  tar_started_ms="$(epoch_millis)"
   tar_path="${out_dir}/${SESSION}.bundle.tar.gz"
   tar -C "${pack_dir}" -czf "${tar_path}" . \
     || die "${HUAVD_EXIT_ERROR}" "tar pack failed: ${tar_path}"
   write_sha512_file "${tar_path}"
+  tar_elapsed_ms="$(( $(epoch_millis) - tar_started_ms ))"
+  tar_bytes="$(stat -c %s "${tar_path}")"
   printf '%s\n' "${tar_path}"
 fi
 
 if [[ "${FORMAT}" == "zip" || "${FORMAT}" == "both" ]]; then
+  zip_started_ms="$(epoch_millis)"
   zip_path="${out_dir}/${SESSION}.bundle.zip"
   rm -f "${zip_path}"
   (
@@ -166,7 +180,42 @@ if [[ "${FORMAT}" == "zip" || "${FORMAT}" == "both" ]]; then
     zip -qr "${zip_path}" .
   ) || die "${HUAVD_EXIT_ERROR}" "zip pack failed: ${zip_path}"
   write_sha512_file "${zip_path}"
+  zip_elapsed_ms="$(( $(epoch_millis) - zip_started_ms ))"
+  zip_bytes="$(stat -c %s "${zip_path}")"
   printf '%s\n' "${zip_path}"
 fi
 
+pack_file_count="$(find "${pack_dir}" -type f | wc -l | tr -d '[:space:]')"
+pack_bytes="$(find "${pack_dir}" -type f -printf '%s\n' | awk '{sum += $1} END {print sum + 0}')"
+pack_elapsed_ms="$(( $(epoch_millis) - pack_started_ms ))"
+metrics_path="${out_dir}/${SESSION}.pack.metrics.json"
+jq -n \
+  --arg generated_at "$(timestamp_utc)" \
+  --arg session "${SESSION}" \
+  --arg role "${ROLE}" \
+  --arg format "${FORMAT}" \
+  --argjson copied_roles "${copied}" \
+  --argjson pack_file_count "${pack_file_count}" \
+  --argjson pack_bytes "${pack_bytes}" \
+  --argjson prepare_ms "${prepare_elapsed_ms}" \
+  --argjson checksums_ms "${checksums_elapsed_ms}" \
+  --argjson tar_ms "${tar_elapsed_ms}" \
+  --argjson zip_ms "${zip_elapsed_ms}" \
+  --argjson total_ms "${pack_elapsed_ms}" \
+  --argjson tar_bytes "${tar_bytes}" \
+  --argjson zip_bytes "${zip_bytes}" \
+  '{
+    schema_version: 1,
+    generated_at: $generated_at,
+    session: $session,
+    role: $role,
+    format: $format,
+    copied_roles: $copied_roles,
+    pack_directory: {file_count: $pack_file_count, bytes: $pack_bytes},
+    phases_ms: {prepare: $prepare_ms, checksums: $checksums_ms, tar: $tar_ms, zip: $zip_ms, total: $total_ms},
+    archives: {tar_bytes: $tar_bytes, zip_bytes: $zip_bytes}
+  }' > "${metrics_path}"
+write_sha512_file "${metrics_path}"
+
+log_info "pack metrics: ${metrics_path}"
 log_info "pack OK: ${pack_dir}"

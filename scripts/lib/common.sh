@@ -39,6 +39,10 @@ timestamp_utc() {
   date -u +%Y-%m-%dT%H:%M:%SZ
 }
 
+epoch_millis() {
+  date +%s%3N
+}
+
 execution_revision() {
   if command -v git >/dev/null 2>&1 && git -C "${REPO_ROOT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     git -C "${REPO_ROOT}" rev-parse --short=12 HEAD
