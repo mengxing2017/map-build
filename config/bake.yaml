@@ -9,6 +9,7 @@ defaults:
     pixel_ratio: 1
     parallel_jobs: 8
     bbox_padding_tiles: 1
+    max_tiles: null
     retries: 2
     pmtiles_extract: false
     skip_existing: true

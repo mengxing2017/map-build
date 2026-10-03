@@ -15,9 +15,146 @@ BAKE_MIN_ZOOM="${BAKE_MIN_ZOOM:-}"
 BAKE_MAX_ZOOM="${BAKE_MAX_ZOOM:-}"
 FORCE=0
 RENDER_ONE=0
+ESTIMATE=0
+BAKE_MAX_TILES="${BAKE_MAX_TILES:-}"
 
 usage() {
-  printf 'usage: %s --region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--base-pmtiles=<path>] [--bbox=w,s,e,n] [--min-zoom=Z] [--max-zoom=Z] [--force]\n' "$0"
+  printf 'usage: %s --region=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>] [--base-pmtiles=<path>] [--bbox=w,s,e,n] [--min-zoom=Z] [--max-zoom=Z] [--max-tiles=N] [--estimate] [--force]\n' "$0"
+}
+
+tree_stats_json() {
+  local directory="$1"
+  python3 - "${directory}" <<'PY'
+import json
+import os
+import sys
+
+directory = sys.argv[1]
+count = total_bytes = 0
+if os.path.isdir(directory):
+    for root, _dirs, files in os.walk(directory):
+        for name in files:
+            path = os.path.join(root, name)
+            try:
+                total_bytes += os.path.getsize(path)
+                count += 1
+            except FileNotFoundError:
+                pass
+print(json.dumps({"file_count": count, "bytes": total_bytes}, separators=(",", ":")))
+PY
+}
+
+filesystem_stats_json() {
+  local directory="$1"
+  python3 - "${directory}" <<'PY'
+import json
+import os
+import sys
+
+stat = os.statvfs(sys.argv[1])
+print(json.dumps({
+    "available_bytes": stat.f_bavail * stat.f_frsize,
+    "available_inodes": stat.f_favail,
+}, separators=(",", ":")))
+PY
+}
+
+write_tile_plan() {
+  local bounds="$1" min_zoom="$2" max_zoom="$3" tile_list="$4" plan_file="$5" max_tiles="$6" write_tiles="$7"
+  python3 - "${bounds}" "${min_zoom}" "${max_zoom}" "${tile_list}" "${plan_file}" "${max_tiles}" "${write_tiles}" "${bbox_padding_tiles}" <<'PY'
+import json
+import math
+import sys
+
+bounds = [float(part) for part in sys.argv[1].split(",")]
+min_zoom, max_zoom = map(int, sys.argv[2:4])
+tile_list, plan_file, max_tiles, write_tiles, padding = sys.argv[4:]
+max_tiles = int(max_tiles) if max_tiles else None
+write_tiles = write_tiles == "1"
+padding = int(padding)
+if len(bounds) != 4:
+    raise SystemExit("raster bake bounds must contain west,south,east,north")
+west, south, east, north = bounds
+if not west < east or not south < north:
+    raise SystemExit("raster bake bounds must satisfy west < east and south < north")
+
+def lon_to_x(lon, z):
+    return int(math.floor((lon + 180.0) / 360.0 * (1 << z)))
+
+def lat_to_y(lat, z):
+    lat = max(min(lat, 85.05112878), -85.05112878)
+    rad = math.radians(lat)
+    return int(math.floor((1.0 - math.log(math.tan(rad) + 1.0 / math.cos(rad)) / math.pi) / 2.0 * (1 << z)))
+
+ranges = []
+for z in range(min_zoom, max_zoom + 1):
+    max_index = (1 << z) - 1
+    xmin = max(0, min(max_index, lon_to_x(west, z)))
+    xmax = max(0, min(max_index, lon_to_x(east, z)))
+    ymin = max(0, min(max_index, lat_to_y(north, z)))
+    ymax = max(0, min(max_index, lat_to_y(south, z)))
+    xmin, xmax = min(xmin, xmax), max(xmin, xmax)
+    ymin, ymax = min(ymin, ymax), max(ymin, ymax)
+    xmin = max(0, xmin - padding)
+    xmax = min(max_index, xmax + padding)
+    ymin = max(0, ymin - padding)
+    ymax = min(max_index, ymax + padding)
+    count = (xmax - xmin + 1) * (ymax - ymin + 1)
+    ranges.append((z, xmin, xmax, ymin, ymax, count))
+
+total = sum(item[-1] for item in ranges)
+plan = {
+    "schema_version": 1,
+    "coverage_strategy": "bbox-rectangle-with-padding",
+    "bounds": bounds,
+    "min_zoom": min_zoom,
+    "max_zoom": max_zoom,
+    "bbox_padding_tiles": padding,
+    "max_tiles": max_tiles,
+    "tile_count": total,
+    "tiles_by_zoom": [
+        {"zoom": z, "tile_count": count, "x_range": [xmin, xmax], "y_range": [ymin, ymax]}
+        for z, xmin, xmax, ymin, ymax, count in ranges
+    ],
+}
+with open(plan_file, "w", encoding="utf-8") as f:
+    json.dump(plan, f, sort_keys=True, separators=(",", ":"))
+    f.write("\n")
+if write_tiles:
+    def tile_center(x, y, z):
+        n = 1 << z
+        lon = (x + 0.5) / n * 360.0 - 180.0
+        lat_rad = math.atan(math.sinh(math.pi * (1.0 - 2.0 * (y + 0.5) / n)))
+        return lon, math.degrees(lat_rad)
+    with open(tile_list, "w", encoding="utf-8") as f:
+        for z, xmin, xmax, ymin, ymax, _count in ranges:
+            for x in range(xmin, xmax + 1):
+                for y in range(ymin, ymax + 1):
+                    lon, lat = tile_center(x, y, z)
+                    f.write(f"{z}\t{x}\t{y}\t{lon:.8f}\t{lat:.8f}\n")
+PY
+}
+
+validate_mvt_service_tile() {
+  local base_url="$1" z="$2" x="$3" y="$4"
+  python3 - "${base_url}" "${z}" "${x}" "${y}" <<'PY'
+import json
+import sys
+import time
+from urllib.request import urlopen
+
+url = sys.argv[1].format(z=sys.argv[2], x=sys.argv[3], y=sys.argv[4])
+started = time.perf_counter()
+with urlopen(url, timeout=5) as response:
+    payload = response.read()
+if not payload:
+    raise SystemExit(f"empty MVT response: {url}")
+print(json.dumps({
+    "url": url,
+    "bytes": len(payload),
+    "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+}, separators=(",", ":")))
+PY
 }
 
 PMTILES_SERVE_PID=""
@@ -69,6 +206,7 @@ render_one_tile() {
   local png="${BAKE_PNG_DIR}/${z}/${x}/${y}.png"
   local webp="${BAKE_WEBP_DIR}/${z}/${x}/${y}.webp"
   local render_log="${png}.render.log"
+  local render_started_ms render_elapsed_ms=0 encode_started_ms encode_elapsed_ms
   ensure_dir "$(dirname -- "${png}")"
   ensure_dir "$(dirname -- "${webp}")"
 
@@ -77,6 +215,7 @@ render_one_tile() {
   fi
 
   if [[ "${BAKE_SKIP_EXISTING}" != "1" || ! -s "${png}" ]]; then
+    render_started_ms="$(epoch_millis)"
     rm -f "${png}" "${render_log}"
     if [[ -n "${MBGL_RENDER_TILE_COMMAND:-}" ]]; then
       local command="${MBGL_RENDER_TILE_COMMAND}"
@@ -123,6 +262,7 @@ render_one_tile() {
       die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "renderer rejected the bake style for PNG tile: ${png} (z=${z} x=${x} y=${y}; log=${render_log}); use a renderer compatible with MapLibre style-spec data expressions"
     fi
     rm -f "${render_log}"
+    render_elapsed_ms="$(( $(epoch_millis) - render_started_ms ))"
   fi
 
   [[ -s "${png}" ]] \
@@ -133,8 +273,13 @@ render_one_tile() {
     cwebp_args+=("-lossless")
   fi
   cwebp_args+=("-m" "${BAKE_WEBP_METHOD}" "-metadata" "${BAKE_WEBP_METADATA}")
+  encode_started_ms="$(epoch_millis)"
   cwebp "${cwebp_args[@]}" "${png}" -o "${webp}" >/dev/null \
     || die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "cwebp failed for PNG tile: ${png}"
+  encode_elapsed_ms="$(( $(epoch_millis) - encode_started_ms ))"
+  if [[ -n "${BAKE_PREFLIGHT_TIMING_FILE:-}" ]]; then
+    printf '%s\t%s\t%s\t%s\t%s\n' "${z}" "${x}" "${y}" "${render_elapsed_ms}" "${encode_elapsed_ms}" >> "${BAKE_PREFLIGHT_TIMING_FILE}"
+  fi
 }
 
 write_missing_tiles() {
@@ -251,6 +396,8 @@ for arg in "$@"; do
     --bbox=*) BAKE_BBOX="${arg#*=}" ;;
     --min-zoom=*) BAKE_MIN_ZOOM="${arg#*=}" ;;
     --max-zoom=*) BAKE_MAX_ZOOM="${arg#*=}" ;;
+    --max-tiles=*) BAKE_MAX_TILES="${arg#*=}" ;;
+    --estimate) ESTIMATE=1 ;;
     --force) FORCE=1 ;;
     -h|--help)
       usage
@@ -267,7 +414,10 @@ if (( RENDER_ONE )); then
 fi
 
 ROLE="raster_bake"
-require_cmd jq pmtiles cwebp python3 sha512sum xargs
+require_cmd jq pmtiles python3 sha512sum
+if (( ! ESTIMATE )); then
+  require_cmd cwebp xargs
+fi
 require_region "${REGION}"
 normalize_session_vars
 log_execution_context
@@ -278,7 +428,7 @@ case "${MBGL_RENDER_ENGINE}" in
   *) die "${HUAVD_EXIT_INPUT}" "invalid MBGL_RENDER_ENGINE=${MBGL_RENDER_ENGINE}; expected mbgl-renderer or maplibre-native" ;;
 esac
 MBGL_RENDER_BIN="${MBGL_RENDER:-mbgl-render}"
-if [[ -z "${MBGL_RENDER_TILE_COMMAND:-}" ]]; then
+if (( ! ESTIMATE )) && [[ -z "${MBGL_RENDER_TILE_COMMAND:-}" ]]; then
   require_cmd "${MBGL_RENDER_BIN}"
 fi
 
@@ -297,15 +447,6 @@ require_file "$(build_sha512_path base)"
 base_tile_type="$(pmtiles_tile_type "${BASE_PMTILES}")"
 [[ "${base_tile_type}" == "1" ]] \
   || die "${HUAVD_EXIT_VERIFY}" "base PMTiles must be MVT tile_type=1, got ${base_tile_type}"
-
-if [[ ! -f "$(bake_render_style_path)" || "${SCRIPT_DIR}/style.sh" -nt "$(bake_render_style_path)" || "${CONFIG_DIR}/styles.yaml" -nt "$(bake_render_style_path)" || "$(bake_json)" -nt "$(bake_render_style_path)" ]]; then
-  "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
-fi
-require_file "$(bake_render_style_path)"
-[[ -d "$(build_glyphs_dir)" ]] \
-  || die "${HUAVD_EXIT_INPUT}" "raster_bake requires generated glyphs: $(build_glyphs_dir); run build with --glyph=1"
-[[ -d "$(build_sprite_dir)" ]] \
-  || die "${HUAVD_EXIT_INPUT}" "raster_bake requires generated sprite: $(build_sprite_dir); run build with --glyph=1"
 
 bake_config="$(bake_json)"
 bake_defaults="$(jq -c '.defaults.raster_bake' "${bake_config}")"
@@ -331,6 +472,7 @@ webp_lossless="${BAKE_WEBP_LOSSLESS:-$(jq -r 'if (.cwebp | has("lossless")) and 
 webp_method="$(jq -r '.cwebp.method // 6' <<< "${bake_defaults}")"
 webp_metadata="$(jq -r '.cwebp.metadata // "none"' <<< "${bake_defaults}")"
 encoding="$(jq -r '.encoding // "webp"' <<< "${bake_defaults}")"
+max_tiles="${BAKE_MAX_TILES:-$(jq -r '.max_tiles // empty' <<< "${bake_defaults}")}"
 
 [[ "${min_zoom}" =~ ^[0-9]+$ && "${max_zoom}" =~ ^[0-9]+$ && "${tile_size}" =~ ^[0-9]+$ ]] \
   || die "${HUAVD_EXIT_INPUT}" "bake zooms and tile_size must be integers"
@@ -340,6 +482,8 @@ encoding="$(jq -r '.encoding // "webp"' <<< "${bake_defaults}")"
   || die "${HUAVD_EXIT_INPUT}" "raster bake encoding=${encoding} is unsupported; only webp is supported"
 [[ "${bbox_padding_tiles}" =~ ^[0-9]+$ && "${bake_retries}" =~ ^[0-9]+$ ]] \
   || die "${HUAVD_EXIT_INPUT}" "BAKE_BBOX_PADDING_TILES and BAKE_RETRIES must be non-negative integers"
+[[ -z "${max_tiles}" || "${max_tiles}" =~ ^[1-9][0-9]*$ ]] \
+  || die "${HUAVD_EXIT_INPUT}" "BAKE_MAX_TILES must be a positive integer when set"
 (( min_zoom <= max_zoom )) || die "${HUAVD_EXIT_INPUT}" "bake min_zoom must be <= max_zoom"
 (( parallel_jobs > 0 )) || die "${HUAVD_EXIT_INPUT}" "BAKE_JOBS must be > 0"
 
@@ -348,7 +492,7 @@ case "${webp_lossless}" in true) webp_lossless=1 ;; false) webp_lossless=0 ;; 1|
 case "${pmtiles_extract}" in true) pmtiles_extract=1 ;; false) pmtiles_extract=0 ;; 1|0) ;; *) die "${HUAVD_EXIT_INPUT}" "pmtiles_extract must be true, false, 1, or 0" ;; esac
 
 output="$(build_pmtiles_path raster_bake)"
-if [[ -e "${output}" && "${FORCE}" != "1" ]]; then
+if (( ! ESTIMATE )) && [[ -e "${output}" && "${FORCE}" != "1" ]]; then
   die "${HUAVD_EXIT_ERROR}" "output already exists: ${output}; pass --force"
 fi
 
@@ -356,12 +500,39 @@ bake_dir="$(bake_cache_dir)"
 bake_runtime_style="${bake_dir}/style-render-runtime.json"
 tile_list="${bake_dir}/tiles.tsv"
 preflight_list="${bake_dir}/preflight.tsv"
+plan_json="${bake_dir}/plan.json"
+metrics_json="${bake_dir}/metrics.json"
+assembly_metrics_json="${bake_dir}/assembly-metrics.json"
 png_dir="${bake_dir}/png"
 webp_dir="${bake_dir}/webp"
 mbtiles="${bake_dir}/raster_bake.mbtiles"
 ensure_dir "${bake_dir}" "${png_dir}" "${webp_dir}" "$(outputs_dir)"
+filesystem_before="$(filesystem_stats_json "${bake_dir}")"
 
 bounds="${BAKE_BBOX:-$(pmtiles_bounds "${BASE_PMTILES}" | jq -r '@csv' | tr -d '"')}"
+planning_started_ms="$(epoch_millis)"
+write_tile_plan "${bounds}" "${min_zoom}" "${max_zoom}" "${tile_list}" "${plan_json}" "${max_tiles}" "$((ESTIMATE == 1 ? 0 : 1))"
+planning_elapsed_ms="$(( $(epoch_millis) - planning_started_ms ))"
+tile_count="$(jq -r '.tile_count' "${plan_json}")"
+(( tile_count > 0 )) || die "${HUAVD_EXIT_INPUT}" "bake tile plan is empty for bounds=${bounds}"
+if [[ -n "${max_tiles}" ]] && (( tile_count > max_tiles )); then
+  die "${HUAVD_EXIT_INPUT}" "raster bake plan exceeds max_tiles: planned=${tile_count} max_tiles=${max_tiles}; reduce bounds/zoom or raise BAKE_MAX_TILES"
+fi
+log_info "raster bake plan tiles=${tile_count} zoom=${min_zoom}-${max_zoom} padding=${bbox_padding_tiles} bounds=${bounds} plan=${plan_json}"
+if (( ESTIMATE )); then
+  cat "${plan_json}"
+  exit 0
+fi
+
+if [[ ! -f "$(bake_render_style_path)" || "${SCRIPT_DIR}/style.sh" -nt "$(bake_render_style_path)" || "${CONFIG_DIR}/styles.yaml" -nt "$(bake_render_style_path)" || "$(bake_json)" -nt "$(bake_render_style_path)" ]]; then
+  "${SCRIPT_DIR}/style.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
+fi
+require_file "$(bake_render_style_path)"
+[[ -d "$(build_glyphs_dir)" ]] \
+  || die "${HUAVD_EXIT_INPUT}" "raster_bake requires generated glyphs: $(build_glyphs_dir); run build with --glyph=1"
+[[ -d "$(build_sprite_dir)" ]] \
+  || die "${HUAVD_EXIT_INPUT}" "raster_bake requires generated sprite: $(build_sprite_dir); run build with --glyph=1"
+
 bake_overrides_json="$(jq -cn --args "${bake_overrides[@]}" '$ARGS.positional | map(fromjson)')"
 jq -n \
   --arg commit "$(execution_revision)" \
@@ -379,6 +550,7 @@ jq -n \
   --arg skip_existing "${skip_existing}" \
   --arg webp_lossless "${webp_lossless}" \
   --arg pmtiles_extract "${pmtiles_extract}" \
+  --arg max_tiles "${max_tiles}" \
   '{
     schema: 1,
     execution: {commit: $commit, worktree: $worktree, workdir: $workdir, session: $session},
@@ -400,7 +572,8 @@ jq -n \
       parallel_jobs: ($parallel_jobs | tonumber),
       skip_existing: ($skip_existing == "1"),
       webp_lossless: ($webp_lossless == "1"),
-      pmtiles_extract: ($pmtiles_extract == "1")
+      pmtiles_extract: ($pmtiles_extract == "1"),
+      max_tiles: (if $max_tiles == "" then null else ($max_tiles | tonumber) end)
     }
   }' > "${bake_dir}/parameters.json"
 write_sha512_file "${bake_dir}/parameters.json"
@@ -417,7 +590,7 @@ bake_inputs="$(
 bake_inputs_digest="$(printf '%s' "${bake_inputs}" | sha512sum | awk '{print $1}')"
 if [[ ! -f "${bake_inputs_file}" || "$(<"${bake_inputs_file}")" != "${bake_inputs_digest}" ]]; then
   rm -rf "${png_dir}" "${webp_dir}"
-  rm -f "${mbtiles}" "${tile_list}"
+  rm -f "${mbtiles}"
   ensure_dir "${png_dir}" "${webp_dir}"
   printf '%s\n' "${bake_inputs_digest}" > "${bake_inputs_file}"
   log_info "raster bake cache invalidated: base, style, or bake configuration changed"
@@ -425,6 +598,7 @@ fi
 
 runtime_source_url="pmtiles://${BASE_PMTILES}"
 runtime_tile_url=""
+mvt_preflight_json='null'
 if [[ -z "${MBGL_RENDER_TILE_COMMAND:-}" && "${MBGL_RENDER_ENGINE}" == "mbgl-renderer" ]]; then
   trap cleanup_render_bake EXIT
   serve_pmtiles="${BASE_PMTILES}"
@@ -448,6 +622,9 @@ if [[ -z "${MBGL_RENDER_TILE_COMMAND:-}" && "${MBGL_RENDER_ENGINE}" == "mbgl-ren
   wait_for_local_port "${pmtiles_serve_port}" "${PMTILES_SERVE_PID}" "${pmtiles_serve_log}" \
     || die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "pmtiles serve failed to start; see ${pmtiles_serve_log}"
   runtime_tile_url="http://127.0.0.1:${pmtiles_serve_port}/${pmtiles_archive}/{z}/{x}/{y}.mvt"
+  IFS=$'\t' read -r mvt_z mvt_x mvt_y _mvt_lng _mvt_lat < "${tile_list}"
+  mvt_preflight_json="$(validate_mvt_service_tile "${runtime_tile_url}" "${mvt_z}" "${mvt_x}" "${mvt_y}")" \
+    || die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "pmtiles serve returned no MVT tile for preflight z=${mvt_z} x=${mvt_x} y=${mvt_y}"
   log_info "pmtiles serve OK: ${pmtiles_serve_dir} on 127.0.0.1:${pmtiles_serve_port}"
 fi
 
@@ -465,55 +642,6 @@ jq --arg base_url "${runtime_source_url}" --arg tile_url "${runtime_tile_url}" '
   )
 ' "$(bake_render_style_path)" > "${bake_runtime_style}"
 
-python3 - "${bounds}" "${min_zoom}" "${max_zoom}" "${tile_list}" "${bbox_padding_tiles}" <<'PY'
-import math
-import sys
-
-bounds = [float(part) for part in sys.argv[1].split(",")]
-min_zoom = int(sys.argv[2])
-max_zoom = int(sys.argv[3])
-out = sys.argv[4]
-padding = int(sys.argv[5])
-west, south, east, north = bounds
-
-def lon_to_x(lon, z):
-    return int(math.floor((lon + 180.0) / 360.0 * (1 << z)))
-
-def lat_to_y(lat, z):
-    lat = max(min(lat, 85.05112878), -85.05112878)
-    rad = math.radians(lat)
-    return int(math.floor((1.0 - math.log(math.tan(rad) + 1.0 / math.cos(rad)) / math.pi) / 2.0 * (1 << z)))
-
-def tile_center(x, y, z):
-    n = 1 << z
-    lon = (x + 0.5) / n * 360.0 - 180.0
-    lat_rad = math.atan(math.sinh(math.pi * (1.0 - 2.0 * (y + 0.5) / n)))
-    lat = math.degrees(lat_rad)
-    return lon, lat
-
-with open(out, "w", encoding="utf-8") as f:
-    for z in range(min_zoom, max_zoom + 1):
-        max_index = (1 << z) - 1
-        xmin = max(0, min(max_index, lon_to_x(west, z)))
-        xmax = max(0, min(max_index, lon_to_x(east, z)))
-        ymin = max(0, min(max_index, lat_to_y(north, z)))
-        ymax = max(0, min(max_index, lat_to_y(south, z)))
-        xmin, xmax = min(xmin, xmax), max(xmin, xmax)
-        ymin, ymax = min(ymin, ymax), max(ymin, ymax)
-        xmin = max(0, xmin - padding)
-        xmax = min(max_index, xmax + padding)
-        ymin = max(0, ymin - padding)
-        ymax = min(max_index, ymax + padding)
-        for x in range(xmin, xmax + 1):
-            for y in range(ymin, ymax + 1):
-                lon, lat = tile_center(x, y, z)
-                f.write(f"{z}\t{x}\t{y}\t{lon:.8f}\t{lat:.8f}\n")
-PY
-
-tile_count="$(wc -l < "${tile_list}" | tr -d '[:space:]')"
-(( tile_count > 0 )) || die "${HUAVD_EXIT_INPUT}" "bake tile list is empty for bounds=${bounds}"
-log_info "raster bake tiles=${tile_count} zoom=${min_zoom}-${max_zoom} padding=${bbox_padding_tiles} bounds=${bounds}"
-
 export BAKE_STYLE="${bake_runtime_style}"
 export BAKE_PNG_DIR="${png_dir}"
 export BAKE_WEBP_DIR="${webp_dir}"
@@ -526,6 +654,10 @@ export MBGL_RENDER_ENGINE
 export MBGL_RENDER_BIN
 export MBGL_RENDER_TILE_COMMAND="${MBGL_RENDER_TILE_COMMAND:-}"
 
+preflight_started_ms="$(epoch_millis)"
+preflight_timings="${bake_dir}/preflight-timings.tsv"
+: > "${preflight_timings}"
+BAKE_PREFLIGHT_TIMING_FILE="${preflight_timings}"
 write_preflight_tiles "${tile_list}" "${preflight_list}"
 while IFS=$'\t' read -r preflight_z preflight_x preflight_y preflight_lng preflight_lat; do
   log_info "raster bake renderer preflight z=${preflight_z} x=${preflight_x} y=${preflight_y}"
@@ -535,36 +667,63 @@ while IFS=$'\t' read -r preflight_z preflight_x preflight_y preflight_lng prefli
   render_one_tile "${preflight_z}" "${preflight_x}" "${preflight_y}" "${preflight_lng}" "${preflight_lat}"
   validate_webp_tile "${webp_dir}/${preflight_z}/${preflight_x}/${preflight_y}.webp" "${tile_size}"
 done < "${preflight_list}"
+unset BAKE_PREFLIGHT_TIMING_FILE
+preflight_elapsed_ms="$(( $(epoch_millis) - preflight_started_ms ))"
+preflight_timing_json="$(python3 - "${preflight_timings}" <<'PY'
+import json
+import sys
 
-render_input="${tile_list}"
+rows = []
+with open(sys.argv[1], encoding="utf-8") as source:
+    for line in source:
+        z, x, y, render_ms, encode_ms = line.rstrip("\n").split("\t")
+        rows.append({"z": int(z), "x": int(x), "y": int(y), "render_ms": int(render_ms), "encode_ms": int(encode_ms)})
+print(json.dumps(rows, separators=(",", ":")))
+PY
+)"
+
 missing_list="${bake_dir}/missing.tsv"
-for attempt in $(seq 0 "${bake_retries}"); do
-  if (( attempt > 0 )); then
-    log_warn "retry raster bake missing tiles attempt=${attempt}/${bake_retries}"
-  fi
-  render_failed=0
-  render_tile_list "${render_input}" || render_failed=1
-  missing_count="$(write_missing_tiles "${tile_list}" "${missing_list}" | tr -d '[:space:]')"
-  if (( missing_count == 0 )); then
-    log_info "raster bake webp tiles complete: ${tile_count}"
-    break
-  fi
-  if (( render_failed )); then
-    log_warn "raster bake renderer exited non-zero; missing tiles=${missing_count}"
-  fi
-  if (( attempt == bake_retries )); then
-    head -n 20 "${missing_list}" >&2
-    die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "raster bake has ${missing_count} missing WebP tiles after ${bake_retries} retries"
-  fi
+missing_count="$(write_missing_tiles "${tile_list}" "${missing_list}" | tr -d '[:space:]')"
+cache_hit_count="$((tile_count - missing_count))"
+log_info "raster bake cache hits=${cache_hit_count} render_queue=${missing_count} total=${tile_count}"
+render_started_ms="$(epoch_millis)"
+if (( missing_count > 0 )); then
   render_input="${missing_list}"
-done
+  for attempt in $(seq 0 "${bake_retries}"); do
+    if (( attempt > 0 )); then
+      log_warn "retry raster bake missing tiles attempt=${attempt}/${bake_retries}"
+    fi
+    render_failed=0
+    render_tile_list "${render_input}" || render_failed=1
+    missing_count="$(write_missing_tiles "${tile_list}" "${missing_list}" | tr -d '[:space:]')"
+    if (( missing_count == 0 )); then
+      log_info "raster bake webp tiles complete: ${tile_count}"
+      break
+    fi
+    if (( render_failed )); then
+      log_warn "raster bake renderer exited non-zero; missing tiles=${missing_count}"
+    fi
+    if (( attempt == bake_retries )); then
+      head -n 20 "${missing_list}" >&2
+      die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "raster bake has ${missing_count} missing WebP tiles after ${bake_retries} retries"
+    fi
+    render_input="${missing_list}"
+  done
+else
+  log_info "raster bake rendering skipped: all planned tiles are cached"
+fi
+render_elapsed_ms="$(( $(epoch_millis) - render_started_ms ))"
 
-python3 - "${webp_dir}" "${mbtiles}" "$(artifact_stem raster_bake)" "${bounds}" "${min_zoom}" "${max_zoom}" "${tile_list}" <<'PY'
+assemble_started_ms="$(epoch_millis)"
+python3 - "${webp_dir}" "${mbtiles}" "$(artifact_stem raster_bake)" "${bounds}" "${min_zoom}" "${max_zoom}" "${tile_list}" "${assembly_metrics_json}" <<'PY'
+import json
 import os
 import sqlite3
 import sys
+import time
 
-webp_dir, mbtiles, name, bounds, min_zoom, max_zoom, tile_list = sys.argv[1:]
+webp_dir, mbtiles, name, bounds, min_zoom, max_zoom, tile_list, metrics_path = sys.argv[1:]
+started = time.perf_counter()
 expected = set()
 with open(tile_list, "r", encoding="utf-8") as f:
     for line in f:
@@ -592,6 +751,7 @@ try:
     }
     conn.executemany("insert into metadata(name, value) values (?, ?)", metadata.items())
     inserted = 0
+    scan_insert_started = time.perf_counter()
     for root, _dirs, files in os.walk(webp_dir):
         for file_name in files:
             if not file_name.endswith(".webp"):
@@ -616,27 +776,96 @@ try:
                 (z, x, tile_row, data),
             )
             inserted += 1
+    scan_insert_ms = round((time.perf_counter() - scan_insert_started) * 1000, 3)
+    index_started = time.perf_counter()
     conn.execute("create unique index tile_index on tiles (zoom_level, tile_column, tile_row)")
+    index_ms = round((time.perf_counter() - index_started) * 1000, 3)
     if inserted != len(expected):
         raise SystemExit(f"MBTiles tile count mismatch: inserted={inserted} expected={len(expected)}")
+    commit_started = time.perf_counter()
     conn.commit()
+    commit_ms = round((time.perf_counter() - commit_started) * 1000, 3)
+    with open(metrics_path, "w", encoding="utf-8") as metrics:
+        json.dump({
+            "expected_tiles": len(expected),
+            "inserted_tiles": inserted,
+            "scan_and_insert_ms": scan_insert_ms,
+            "index_ms": index_ms,
+            "commit_ms": commit_ms,
+            "total_ms": round((time.perf_counter() - started) * 1000, 3),
+        }, metrics, separators=(",", ":"))
+        metrics.write("\n")
 finally:
     conn.close()
 PY
+assemble_elapsed_ms="$(( $(epoch_millis) - assemble_started_ms ))"
 
+convert_started_ms="$(epoch_millis)"
 rm -f "${output}" "${output}.sha512"
 pmtiles convert "${mbtiles}" "${output}" \
   || die "${HUAVD_EXIT_ERROR}" "pmtiles convert failed: ${mbtiles}"
+convert_elapsed_ms="$(( $(epoch_millis) - convert_started_ms ))"
 
 pmtiles_tile_count="$(pmtiles_addressed_tiles_count "${output}")"
 [[ "${pmtiles_tile_count}" == "${tile_count}" ]] \
   || die "${HUAVD_EXIT_VERIFY}" "raster_bake PMTiles tile_count mismatch: header=${pmtiles_tile_count} expected=${tile_count}"
 
+postprocess_started_ms="$(epoch_millis)"
 "${SCRIPT_DIR}/metadata.sh" --pmtiles="${output}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
 "${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
 "${SCRIPT_DIR}/attribution.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
 write_sha512_file "${output}"
 "${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
+postprocess_elapsed_ms="$(( $(epoch_millis) - postprocess_started_ms ))"
+
+webp_stats="$(tree_stats_json "${webp_dir}")"
+png_stats="$(tree_stats_json "${png_dir}")"
+filesystem_after="$(filesystem_stats_json "${bake_dir}")"
+jq -n \
+  --arg generated_at "$(timestamp_utc)" \
+  --argjson planned_tiles "${tile_count}" \
+  --argjson cache_hit_tiles "${cache_hit_count}" \
+  --argjson preflight_tiles "$(wc -l < "${preflight_list}" | tr -d '[:space:]')" \
+  --argjson worker_queue_tiles "$((tile_count - cache_hit_count))" \
+  --argjson planning_ms "${planning_elapsed_ms}" \
+  --argjson preflight_ms "${preflight_elapsed_ms}" \
+  --argjson render_ms "${render_elapsed_ms}" \
+  --argjson assemble_ms "${assemble_elapsed_ms}" \
+  --argjson convert_ms "${convert_elapsed_ms}" \
+  --argjson postprocess_ms "${postprocess_elapsed_ms}" \
+  --argjson mvt_preflight "${mvt_preflight_json}" \
+  --argjson preflight_timings "${preflight_timing_json}" \
+  --argjson mbtiles_assembly "$(<"${assembly_metrics_json}")" \
+  --argjson webp_cache "${webp_stats}" \
+  --argjson png_cache "${png_stats}" \
+  --argjson filesystem_before "${filesystem_before}" \
+  --argjson filesystem_after "${filesystem_after}" \
+  --argjson mbtiles_bytes "$(stat -c %s "${mbtiles}")" \
+  --argjson pmtiles_bytes "$(stat -c %s "${output}")" \
+  '{
+    schema_version: 1,
+    generated_at: $generated_at,
+    planned_tiles: $planned_tiles,
+    cache_hit_tiles: $cache_hit_tiles,
+    preflight_tiles: $preflight_tiles,
+    worker_queue_tiles: $worker_queue_tiles,
+    phases_ms: {
+      planning: $planning_ms,
+      renderer_preflight: $preflight_ms,
+      render_and_encode: $render_ms,
+      mbtiles_assembly: $assemble_ms,
+      pmtiles_convert: $convert_ms,
+      postprocess_and_verify: $postprocess_ms
+    },
+    mvt_service_preflight: $mvt_preflight,
+    renderer_preflight_tiles: $preflight_timings,
+    mbtiles_assembly: $mbtiles_assembly,
+    intermediate_files: {webp_cache: $webp_cache, png_cache: $png_cache},
+    filesystem: {before: $filesystem_before, after: $filesystem_after},
+    artifacts: {mbtiles_bytes: $mbtiles_bytes, pmtiles_bytes: $pmtiles_bytes}
+  }' > "${metrics_json}"
+write_sha512_file "${metrics_json}"
+log_info "raster bake metrics: ${metrics_json}"
 
 if [[ "${png_retention}" == "0" ]]; then
   rm -rf "${png_dir}"
