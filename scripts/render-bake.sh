@@ -179,6 +179,47 @@ cleanup_render_bake() {
   fi
 }
 
+prepare_publish_stage() {
+  local source
+  PUBLISH_DIR="$(outputs_dir)/.staging/${SESSION}.raster_bake.$$"
+  ensure_dir "${PUBLISH_DIR}"
+  for source in \
+    "$(build_pmtiles_path base)" \
+    "$(build_sha512_path base)" \
+    "$(build_manifest_path base)" \
+    "$(build_attribution_path base)" \
+    "$(build_style_path)" \
+    "$(build_style_path).sha512" \
+    "$(build_raster_style_path)" \
+    "$(build_raster_style_path).sha512" \
+    "$(build_glyphs_dir)" \
+    "$(build_sprite_dir)"; do
+    [[ -e "${source}" ]] || continue
+    ln -s "${source}" "${PUBLISH_DIR}/$(basename -- "${source}")"
+  done
+}
+
+publish_raster_bake_stage() {
+  local staged_output="$1" staged_manifest="$2" staged_attribution="$3" staged_sha="$4"
+  local ready_tmp ready_target
+  ready_tmp="${PUBLISH_DIR}/$(basename -- "$(build_ready_path raster_bake)")"
+  ready_target="$(build_ready_path raster_bake)"
+  jq -n \
+    --arg file "$(basename -- "${staged_output}")" \
+    --arg sha512 "$(sha512_value "${staged_output}")" \
+    --arg manifest_sha512 "$(sha512_value "${staged_manifest}")" \
+    --arg attribution_sha512 "$(sha512_value "${staged_attribution}")" \
+    --arg generated_at "$(timestamp_utc)" \
+    '{schema_version: 1, role: "raster_bake", file: $file, sha512: $sha512, manifest_sha512: $manifest_sha512, attribution_sha512: $attribution_sha512, published_at: $generated_at}' > "${ready_tmp}"
+
+  mv -f "${staged_output}" "$(build_pmtiles_path raster_bake)"
+  mv -f "${staged_sha}" "$(build_sha512_path raster_bake)"
+  mv -f "${staged_manifest}" "$(build_manifest_path raster_bake)"
+  mv -f "${staged_attribution}" "$(build_attribution_path raster_bake)"
+  mv -f "${ready_tmp}" "${ready_target}"
+  rm -rf "${PUBLISH_DIR}"
+}
+
 quarantine_webp_tile() {
   local file="$1" z="$2" x="$3" y="$4"
   [[ -e "${file}" ]] || return 0
@@ -746,6 +787,7 @@ require_file "$(bake_render_style_path)"
   || die "${HUAVD_EXIT_INPUT}" "raster_bake requires generated glyphs: $(build_glyphs_dir); run build with --glyph=1"
 [[ -d "$(build_sprite_dir)" ]] \
   || die "${HUAVD_EXIT_INPUT}" "raster_bake requires generated sprite: $(build_sprite_dir); run build with --glyph=1"
+prepare_publish_stage
 bake_source_id="$(jq -r '.source.id // "huavd-offline"' "$(styles_json)")"
 jq -e --arg source_id "${bake_source_id}" '
   (.glyphs? == null)
@@ -774,6 +816,7 @@ jq -n \
   --argjson resolved "${bake_defaults}" \
   --arg min_zoom "${min_zoom}" \
   --arg max_zoom "${max_zoom}" \
+  --arg tile_size "${tile_size}" \
   --arg parallel_jobs "${parallel_jobs}" \
   --arg skip_existing "${skip_existing}" \
   --arg webp_lossless "${webp_lossless}" \
@@ -803,6 +846,7 @@ jq -n \
       bounds: $bounds,
       min_zoom: ($min_zoom | tonumber),
       max_zoom: ($max_zoom | tonumber),
+      tile_size: ($tile_size | tonumber),
       parallel_jobs: ($parallel_jobs | tonumber),
       skip_existing: ($skip_existing == "1"),
       webp_lossless: ($webp_lossless == "1"),
@@ -1054,21 +1098,27 @@ PY
 assemble_elapsed_ms="$(( $(epoch_millis) - assemble_started_ms ))"
 
 convert_started_ms="$(epoch_millis)"
-rm -f "${output}" "${output}.sha512"
-pmtiles convert "${mbtiles}" "${output}" \
+staged_output="${PUBLISH_DIR}/$(basename -- "${output}")"
+rm -f "${staged_output}" "${staged_output}.sha512"
+pmtiles convert "${mbtiles}" "${staged_output}" \
   || die "${HUAVD_EXIT_ERROR}" "pmtiles convert failed: ${mbtiles}"
 convert_elapsed_ms="$(( $(epoch_millis) - convert_started_ms ))"
 
-pmtiles_tile_count="$(pmtiles_addressed_tiles_count "${output}")"
+pmtiles_tile_count="$(pmtiles_addressed_tiles_count "${staged_output}")"
 [[ "${pmtiles_tile_count}" == "${tile_count}" ]] \
   || die "${HUAVD_EXIT_VERIFY}" "raster_bake PMTiles tile_count mismatch: header=${pmtiles_tile_count} expected=${tile_count}"
 
 postprocess_started_ms="$(epoch_millis)"
-"${SCRIPT_DIR}/metadata.sh" --pmtiles="${output}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
-"${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
-"${SCRIPT_DIR}/attribution.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
-write_sha512_file "${output}"
-"${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
+HUAVD_OUTPUTS_DIR="${PUBLISH_DIR}" "${SCRIPT_DIR}/metadata.sh" --pmtiles="${staged_output}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
+HUAVD_OUTPUTS_DIR="${PUBLISH_DIR}" "${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
+HUAVD_OUTPUTS_DIR="${PUBLISH_DIR}" "${SCRIPT_DIR}/attribution.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
+write_sha512_file "${staged_output}"
+HUAVD_OUTPUTS_DIR="${PUBLISH_DIR}" "${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=raster_bake --workdir="${WORKDIR}"
+publish_raster_bake_stage \
+  "${staged_output}" \
+  "${PUBLISH_DIR}/$(basename -- "$(build_manifest_path raster_bake)")" \
+  "${PUBLISH_DIR}/$(basename -- "$(build_attribution_path raster_bake)")" \
+  "${staged_output}.sha512"
 postprocess_elapsed_ms="$(( $(epoch_millis) - postprocess_started_ms ))"
 
 webp_stats="$(tree_stats_json "${webp_dir}")"

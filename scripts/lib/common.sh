@@ -184,7 +184,7 @@ normalize_session_vars() {
 }
 
 outputs_dir() {
-  printf '%s/outputs\n' "${WORKDIR}"
+  printf '%s\n' "${HUAVD_OUTPUTS_DIR:-${WORKDIR}/outputs}"
 }
 
 report_dir() {
@@ -309,6 +309,11 @@ bake_render_style_path() {
 build_sha512_path() {
   local role="${1:-${ROLE}}"
   printf '%s/%s.pmtiles.sha512\n' "$(outputs_dir)" "$(artifact_stem "${role}")"
+}
+
+build_ready_path() {
+  local role="${1:-${ROLE}}"
+  printf '%s/%s.ready.json\n' "$(outputs_dir)" "$(artifact_stem "${role}")"
 }
 
 relative_output_path() {

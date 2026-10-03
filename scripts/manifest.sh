@@ -66,6 +66,7 @@ raster_tile_type="null"
 raster_tile_compression="null"
 raster_base_input="null"
 raster_plan="null"
+raster_tile_size="null"
 if [[ "${ROLE}" == "raster_bake" ]]; then
   base_pmtiles="$(build_pmtiles_path base)"
   base_manifest="$(build_manifest_path base)"
@@ -81,9 +82,14 @@ if [[ "${ROLE}" == "raster_bake" ]]; then
   bake_plan="$(bake_cache_dir)/plan.json"
   bake_tiles="$(bake_cache_dir)/tiles.tsv"
   bake_inputs="$(bake_cache_dir)/inputs.sha512"
+  bake_parameters="$(bake_cache_dir)/parameters.json"
   require_file "${bake_plan}"
   require_file "${bake_tiles}"
   require_file "${bake_inputs}"
+  require_file "${bake_parameters}"
+  raster_tile_size="$(jq -r '.effective.tile_size // empty' "${bake_parameters}")"
+  [[ "${raster_tile_size}" =~ ^[1-9][0-9]*$ ]] \
+    || die "${HUAVD_EXIT_VERIFY}" "raster_bake parameters have no valid tile_size"
   raster_plan="$(jq -cn \
     --arg plan_sha512 "$(sha512_value "${bake_plan}")" \
     --arg tiles_sha512 "$(sha512_value "${bake_tiles}")" \
@@ -168,6 +174,7 @@ jq -n \
   --argjson raster_tile_compression "${raster_tile_compression}" \
   --argjson raster_base_input "${raster_base_input}" \
   --argjson raster_plan "${raster_plan}" \
+  --argjson raster_tile_size "${raster_tile_size}" \
   '{
     schema: $schema,
     region: $region,
@@ -231,6 +238,7 @@ jq -n \
         tile_count: $raster_tile_count,
         tile_type: $raster_tile_type,
         tile_compression: $raster_tile_compression,
+        tile_size: $raster_tile_size,
         base_input: $raster_base_input,
         plan: $raster_plan
       }

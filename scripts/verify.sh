@@ -1263,7 +1263,7 @@ verify_role() {
 }
 
 verify_raster_bake_role() {
-  local pmtiles manifest sha_file metadata actual_sha file_sha manifest_sha stat_size manifest_size expected_tile_type expected_tile_compression tile_count raster_style raster_style_sha glyphs_dir sprite_dir base_pmtiles bake_plan bake_tiles bake_inputs
+  local pmtiles manifest sha_file metadata actual_sha file_sha manifest_sha stat_size manifest_size expected_tile_type expected_tile_compression tile_count raster_style raster_style_sha glyphs_dir sprite_dir base_pmtiles bake_plan bake_tiles bake_inputs bake_parameters raster_tile_size
   pmtiles="$(build_pmtiles_path raster_bake)"
   manifest="$(build_manifest_path raster_bake)"
   sha_file="$(build_sha512_path raster_bake)"
@@ -1306,13 +1306,18 @@ verify_raster_bake_role() {
   bake_plan="$(bake_cache_dir)/plan.json"
   bake_tiles="$(bake_cache_dir)/tiles.tsv"
   bake_inputs="$(bake_cache_dir)/inputs.sha512"
+  bake_parameters="$(bake_cache_dir)/parameters.json"
   require_file "${bake_plan}"
   require_file "${bake_tiles}"
   require_file "${bake_inputs}"
+  require_file "${bake_parameters}"
+  raster_tile_size="$(jq -r '.effective.tile_size // empty' "${bake_parameters}")"
+  [[ "${raster_tile_size}" =~ ^[1-9][0-9]*$ ]] || fail "raster_bake parameters tile_size"
   check_eq "manifest raster_bake plan sha512" "$(jq -r '.raster_bake.plan.plan_sha512' "${manifest}")" "$(sha512_value "${bake_plan}")"
   check_eq "manifest raster_bake tiles sha512" "$(jq -r '.raster_bake.plan.tiles_sha512' "${manifest}")" "$(sha512_value "${bake_tiles}")"
   check_eq "manifest raster_bake input fingerprint" "$(jq -r '.raster_bake.plan.input_fingerprint' "${manifest}")" "$(<"${bake_inputs}")"
   check_eq "manifest raster_bake requested tile count" "$(jq -r '.raster_bake.plan.requested_tile_count' "${manifest}")" "${tile_count}"
+  check_eq "manifest raster_bake tile size" "$(jq -r '.raster_bake.tile_size' "${manifest}")" "${raster_tile_size}"
   if jq -e '
     (.raster_bake.plan.tiles_by_zoom | type == "array" and length > 0)
     and ((.raster_bake.plan.tiles_by_zoom | map(.tile_count) | add) == .raster_bake.plan.requested_tile_count)
@@ -1333,6 +1338,7 @@ verify_raster_bake_role() {
   else
     fail "pmtiles metadata JSON"
   fi
+  check_eq "metadata huavd:raster-tile-size" "$(jq -r '."huavd:raster-tile-size" // empty' <<< "${metadata}")" "${raster_tile_size}"
 
   actual_sha="$(sha512_value "${pmtiles}")"
   file_sha="$(awk '{print $1; exit}' "${sha_file}")"
@@ -1362,7 +1368,7 @@ verify_raster_bake_role() {
 
   glyphs_dir="$(build_glyphs_dir)"
   sprite_dir="$(build_sprite_dir)"
-  if [[ -d "${glyphs_dir}" ]] && [[ -n "$(find "${glyphs_dir}" -type f -name '*.pbf' -print -quit)" ]]; then
+  if [[ -d "${glyphs_dir}" ]] && [[ -n "$(find -L "${glyphs_dir}" -type f -name '*.pbf' -print -quit)" ]]; then
     ok "raster glyphs present"
   else
     fail "raster glyphs missing: ${glyphs_dir}"

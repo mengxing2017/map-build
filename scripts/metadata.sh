@@ -39,6 +39,7 @@ tile_type="$(pmtiles_tile_type "${PMTILES}")"
 format="pbf"
 raster_bake=false
 tile_count="null"
+raster_tile_size="null"
 if [[ "${ROLE}" == "raster_bake" ]]; then
   expected_tile_type="$(jq -r '.raster_bake.tile_type' "$(tippecanoe_json)")"
   expected_tile_compression="$(jq -r '.raster_bake.tile_compression' "$(tippecanoe_json)")"
@@ -49,6 +50,9 @@ if [[ "${ROLE}" == "raster_bake" ]]; then
   format="webp"
   raster_bake=true
   tile_count="$(pmtiles_addressed_tiles_count "${PMTILES}")"
+  raster_tile_size="$(jq -r '.effective.tile_size // empty' "$(bake_cache_dir)/parameters.json")"
+  [[ "${raster_tile_size}" =~ ^[1-9][0-9]*$ ]] \
+    || die "${HUAVD_EXIT_VERIFY}" "raster_bake parameters have no valid tile_size"
 else
   [[ "${tile_type}" == "1" ]] \
     || die "${HUAVD_EXIT_VERIFY}" "PMTiles tile_type must be 1 (MVT), got ${tile_type}"
@@ -99,6 +103,7 @@ jq -n \
   --argjson build_profile_schema "${build_profile_schema}" \
   --argjson raster_bake "${raster_bake}" \
   --argjson tile_count "${tile_count}" \
+  --argjson raster_tile_size "${raster_tile_size}" \
   '{
     name: $name,
     format: $format,
@@ -122,6 +127,7 @@ jq -n \
     } end)
   + (if $raster_bake then {
       "huavd:tile-count": $tile_count,
+      "huavd:raster-tile-size": $raster_tile_size,
       "huavd:raster-encoding": "webp"
     } else {} end)' > "${metadata_path}"
 
