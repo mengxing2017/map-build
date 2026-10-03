@@ -416,7 +416,7 @@ make release REGION=china/guangxi YYYYMMDD=20260818 \
 
 该命令先构建并验证 `base` 矢量 PMTiles，再以它为输入生成 `raster_bake` WebP PMTiles；包内同时包含图片底图样式、矢量标注和其 glyph/sprite 资源。只重跑图片阶段时可保留已验证的 base，使用 `ROLE=raster_bake GLYPH=1`，无需重新提供 PBF。
 
-图片构建会在 `${WORKDIR}/cache/bake/${SESSION}/parameters.json` 写入 base 身份、配置覆盖和最终生效参数，并在展开全量任务前强制渲染低、中、高缩放样本，校验生成 WebP 的容器与尺寸。
+图片构建会在 `${WORKDIR}/cache/bake/${SESSION}/parameters.json` 写入 base 身份、渲染器身份、配置覆盖和最终生效参数，并在展开全量任务前强制渲染低、中、高缩放样本，校验生成 WebP 的容器、尺寸和实际解码。瓦片按其精确 Web Mercator geographic bounds 渲染，而不是假定相机 zoom 与 XYZ zoom 等价；随后以同一 geographic bounds 渲染相邻 2x2 合成图，和四张独立瓦片逐像素比较，发现明显的缩放错位或接缝会终止构建。每个新瓦片先写入临时文件，解码通过后原子发布；异常缓存会隔离到同一缓存目录的 `quarantine/`。同一输入指纹的任务互斥执行，单片渲染和编码默认 120 秒超时，可通过 `BAKE_TILE_TIMEOUT_SECONDS` 调整。
 
 在启动长任务前，先基于已验证的 `base` 估算矩形覆盖的瓦片数量。`BAKE_MAX_TILES` 是可选预算；当计划超过它时，命令会在启动渲染器前以输入错误退出。计划写入 `${WORKDIR}/cache/bake/${SESSION}/plan.json`，按缩放级别列出瓦片数量和坐标范围。
 
@@ -424,7 +424,7 @@ make release REGION=china/guangxi YYYYMMDD=20260818 \
 make raster-estimate REGION=china/guangxi YYYYMMDD=20260818 BAKE_MAX_TILES=200000
 ```
 
-正常构建完成后，同一缓存目录的 `metrics.json` 会记录计划、缓存命中、预检、worker 队列、渲染/组装/转换耗时以及中间文件大小，用于比较相同样本下的配置调整。
+正常构建完成后，同一缓存目录的 `metrics.json` 会记录计划、缓存命中、预检、网格比对、worker 队列、渲染/组装/转换耗时以及中间文件大小，用于比较相同样本下的配置调整。最终 `verify` 会从 PMTiles 抽取低、中、高缩放样本并再次解码，同时核对 tile 计划、输入指纹和清单中的覆盖摘要。
 
 `make pack` 会在 outputs 目录写入 `${SESSION}.pack.metrics.json`，`make prepare-import` 会在导入归档旁写入 `${SESSION}.import.zip.metrics.json` 或 `${SESSION}.import.tar.gz.metrics.json`。它们分别记录清单哈希、归档、复制校验和成品大小，便于把交付尾部成本纳入同一基准。
 
