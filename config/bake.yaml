@@ -11,6 +11,9 @@ defaults:
     bbox_padding_tiles: 1
     max_tiles: null
     retries: 2
+    tile_timeout_seconds: 120
+    visual_grid_max_channel_difference: 8
+    visual_grid_max_differing_pixels: 1024
     pmtiles_extract: false
     skip_existing: true
     png_cache_retention: 0

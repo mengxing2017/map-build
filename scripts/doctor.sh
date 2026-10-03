@@ -24,6 +24,8 @@ REQUIRED=(
   tippecanoe
   pmtiles
   cwebp
+  dwebp
+  timeout
   xargs
   node
   pnpm
