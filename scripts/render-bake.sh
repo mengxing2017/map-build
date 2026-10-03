@@ -365,6 +365,7 @@ write_missing_tiles() {
   local input_list="$1" missing_list="$2"
   python3 - "${input_list}" "${BAKE_WEBP_DIR}" "${missing_list}" "${BAKE_TILE_SIZE}" "${BAKE_QUARANTINE_DIR}" <<'PY'
 import hashlib
+import json
 import os
 import shutil
 import sys
@@ -435,7 +436,11 @@ if invalid:
     print(f"raster bake quarantined structurally invalid cache tiles={invalid}", file=sys.stderr)
 if unverified:
     print(f"raster bake revalidating unverified cache tiles={unverified}", file=sys.stderr)
-print(missing)
+print(json.dumps({
+    "missing_tiles": missing,
+    "structurally_invalid_tiles": invalid,
+    "unverified_tiles": unverified,
+}, separators=(",", ":")))
 PY
 }
 
@@ -993,19 +998,30 @@ PY
 )"
 
 missing_list="${bake_dir}/missing.tsv"
-missing_count="$(write_missing_tiles "${tile_list}" "${missing_list}" | tr -d '[:space:]')"
+cache_scan="$(write_missing_tiles "${tile_list}" "${missing_list}")"
+missing_count="$(jq -r '.missing_tiles' <<< "${cache_scan}")"
+cache_invalid_count="$(jq -r '.structurally_invalid_tiles' <<< "${cache_scan}")"
+cache_unverified_count="$(jq -r '.unverified_tiles' <<< "${cache_scan}")"
 cache_hit_count="$((tile_count - missing_count))"
-log_info "raster bake cache hits=${cache_hit_count} render_queue=${missing_count} total=${tile_count}"
+worker_queue_count="${missing_count}"
+render_attempt_count=0
+retry_attempt_count=0
+log_info "raster bake cache hits=${cache_hit_count} render_queue=${worker_queue_count} invalid=${cache_invalid_count} unverified=${cache_unverified_count} total=${tile_count}"
 render_started_ms="$(epoch_millis)"
 if (( missing_count > 0 )); then
   render_input="${missing_list}"
   for attempt in $(seq 0 "${bake_retries}"); do
+    render_attempt_count=$((render_attempt_count + 1))
     if (( attempt > 0 )); then
+      retry_attempt_count=$((retry_attempt_count + 1))
       log_warn "retry raster bake missing tiles attempt=${attempt}/${bake_retries}"
     fi
     render_failed=0
     render_tile_list "${render_input}" || render_failed=1
-    missing_count="$(write_missing_tiles "${tile_list}" "${missing_list}" | tr -d '[:space:]')"
+    cache_scan="$(write_missing_tiles "${tile_list}" "${missing_list}")"
+    missing_count="$(jq -r '.missing_tiles' <<< "${cache_scan}")"
+    cache_invalid_count="$((cache_invalid_count + $(jq -r '.structurally_invalid_tiles' <<< "${cache_scan}")))"
+    cache_unverified_count="$((cache_unverified_count + $(jq -r '.unverified_tiles' <<< "${cache_scan}")))"
     if (( missing_count == 0 )); then
       log_info "raster bake webp tiles complete: ${tile_count}"
       break
@@ -1148,8 +1164,12 @@ jq -n \
   --arg generated_at "$(timestamp_utc)" \
   --argjson planned_tiles "${tile_count}" \
   --argjson cache_hit_tiles "${cache_hit_count}" \
+  --argjson cache_invalid_tiles "${cache_invalid_count}" \
+  --argjson cache_unverified_tiles "${cache_unverified_count}" \
   --argjson preflight_tiles "$(wc -l < "${preflight_list}" | tr -d '[:space:]')" \
-  --argjson worker_queue_tiles "$((tile_count - cache_hit_count))" \
+  --argjson worker_queue_tiles "${worker_queue_count}" \
+  --argjson render_attempts "${render_attempt_count}" \
+  --argjson retry_attempts "${retry_attempt_count}" \
   --argjson planning_ms "${planning_elapsed_ms}" \
   --argjson preflight_ms "${preflight_elapsed_ms}" \
   --argjson render_ms "${render_elapsed_ms}" \
@@ -1172,8 +1192,14 @@ jq -n \
     generated_at: $generated_at,
     planned_tiles: $planned_tiles,
     cache_hit_tiles: $cache_hit_tiles,
+    cache: {
+      initial_hits: $cache_hit_tiles,
+      structurally_invalid: $cache_invalid_tiles,
+      unverified: $cache_unverified_tiles
+    },
     preflight_tiles: $preflight_tiles,
     worker_queue_tiles: $worker_queue_tiles,
+    recovery: {render_attempts: $render_attempts, retry_attempts: $retry_attempts},
     phases_ms: {
       planning: $planning_ms,
       renderer_preflight: $preflight_ms,
