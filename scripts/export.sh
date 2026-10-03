@@ -2,62 +2,35 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
-# shellcheck source=lib/config.sh
-source "${SCRIPT_DIR}/lib/config.sh"
-
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+REGION="${REGION:-china/guangxi}"
+WORKDIR="${WORKDIR:-${HUAVD_MAP_BUILD_HOME:-/tmp/huavd-map-build}}"
+YYYYMMDD="${YYYYMMDD:-$(date -u +%Y%m%d)}"
+SESSION="${SESSION:-}"
 LAYERS="all"
 
 for arg in "$@"; do
-  if parse_common_arg "${arg}"; then
-    continue
-  fi
   case "${arg}" in
+    --region=*) REGION="${arg#*=}" ;;
+    --workdir=*) WORKDIR="${arg#*=}" ;;
+    --yyyymmdd=*) YYYYMMDD="${arg#*=}" ;;
+    --session=*) SESSION="${arg#*=}" ;;
     --layers=*) LAYERS="${arg#*=}" ;;
     -h|--help)
       printf 'usage: %s --region=<id> [--layers=all|layer[,layer...]] [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
-    *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
+    *) printf 'ERROR: unknown argument: %s\n' "${arg}" >&2; exit 2 ;;
   esac
 done
 
-require_cmd jq
-require_region "${REGION}"
-normalize_session_vars
-load_selected_layers SELECTED_LAYERS "${LAYERS}"
+PYTHON="${HUAVD_MAP_BUILD_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+if [[ ! -x "${PYTHON}" ]]; then
+  PYTHON="$(command -v python3 || true)"
+fi
+[[ -n "${PYTHON}" ]] || { printf 'Python 3 is required; run make setup\n' >&2; exit 5; }
 
-slug="$(region_slug_configured "${REGION}")"
-cache_dir="$(tags_filter_cache_dir)"
-stage_export_config="$(export_config_staging_dir)"
-stage_layers="$(layers_dir)"
-ensure_dir "${stage_export_config}"
-ensure_dir "${stage_layers}"
-
-for layer in "${SELECTED_LAYERS[@]}"; do
-  source_config="${CONFIG_DIR}/export-config/${layer}.json"
-  input="${cache_dir}/${slug}-${layer}.osm.pbf"
-  require_file "${source_config}"
-  require_file "${input}"
-done
-
-require_cmd osmium
-
-for layer in "${SELECTED_LAYERS[@]}"; do
-  source_config="${CONFIG_DIR}/export-config/${layer}.json"
-  staged_config="${stage_export_config}/${layer}.json"
-  input="${cache_dir}/${slug}-${layer}.osm.pbf"
-  output="${stage_layers}/${layer}.geojsonseq"
-  cp "${source_config}" "${staged_config}"
-  export_args=()
-  if [[ "$(layer_export_keep_untagged "${layer}")" == "true" ]]; then
-    export_args+=("--keep-untagged")
-  fi
-
-  log_info "osmium export ${layer} -> ${output}"
-  osmium export "${export_args[@]}" -c "${staged_config}" -f geojsonseq -O -o "${output}" "${input}" \
-    || die "${HUAVD_EXIT_ERROR}" "osmium export failed for layer ${layer}"
-done
-
-log_info "export OK: ${stage_layers}"
+PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}" \
+  exec "${PYTHON}" -m huavd_map_build build export \
+    --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" \
+    --layers="${LAYERS}" ${SESSION:+--session="${SESSION}"}

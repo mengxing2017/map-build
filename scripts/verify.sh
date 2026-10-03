@@ -27,7 +27,7 @@ for arg in "$@"; do
   esac
 done
 
-require_cmd jq sha512sum stat
+require_cmd jq stat
 ROLE="${ROLE:-base}"
 if [[ -n "${SESSION}" ]]; then
   validate_session "${SESSION}"

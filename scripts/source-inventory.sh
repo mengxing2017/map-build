@@ -16,7 +16,7 @@ for arg in "$@"; do
   esac
 done
 [[ -n "${ASSET}" ]] || die "${HUAVD_EXIT_INPUT}" "--asset is required"
-require_cmd jq md5sum sha512sum
+require_cmd jq
 source_asset_validate "${ASSET}"
 
 failures=0
@@ -32,7 +32,7 @@ while IFS= read -r region; do
     failures=$((failures + 1)); continue
   fi
   expected="$(awk '{print $1; exit}' "${sidecar}")"
-  actual="$(md5sum "${input}" | awk '{print $1}')"
+  actual="$(md5_value "${input}")"
   if [[ -z "${expected}" || "${expected}" != "${actual}" ]]; then
     printf 'INVALID asset=%s region=%s md5 expected=%s actual=%s\n' "${ASSET}" "${region}" "${expected:-missing}" "${actual}"
     failures=$((failures + 1)); continue

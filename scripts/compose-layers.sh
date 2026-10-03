@@ -19,7 +19,7 @@ for arg in "$@"; do
   esac
 done
 [[ -n "${DERIVED_MAP}" ]] || die "${HUAVD_EXIT_INPUT}" "--derived-map is required"
-require_cmd jq sha512sum sort awk
+require_cmd jq sort awk
 derived_map_validate "${DERIVED_MAP}"
 REGION="$(derived_map_target_region "${DERIVED_MAP}")"
 normalize_session_vars

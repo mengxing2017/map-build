@@ -2,7 +2,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"; source "${SCRIPT_DIR}/lib/common.sh"; source "${SCRIPT_DIR}/lib/config.sh"; source "${SCRIPT_DIR}/lib/pmtiles.sh"; source "${SCRIPT_DIR}/lib/overview.sh"
 OVERVIEW=""; for arg in "$@"; do case "${arg}" in --overview=*) OVERVIEW="${arg#*=}";; --yyyymmdd=*) YYYYMMDD="${arg#*=}";; --workdir=*) WORKDIR="${arg#*=}";; -h|--help) printf 'usage: %s --overview=<id> [--yyyymmdd=YYYYMMDD] [--workdir=<path>]\n' "$0"; exit 0;; *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}";; esac; done
-[[ -n "${OVERVIEW}" ]] || die "${HUAVD_EXIT_INPUT}" "--overview is required"; validate_yyyymmdd "${YYYYMMDD}"; require_cmd jq sha512sum stat pmtiles; overview_validate "${OVERVIEW}"
+[[ -n "${OVERVIEW}" ]] || die "${HUAVD_EXIT_INPUT}" "--overview is required"; validate_yyyymmdd "${YYYYMMDD}"; require_cmd jq stat pmtiles; overview_validate "${OVERVIEW}"
 pmtiles="$(overview_pmtiles_path "${OVERVIEW}" "${YYYYMMDD}")"; manifest="$(overview_manifest_path "${OVERVIEW}" "${YYYYMMDD}")"; require_file "${pmtiles}"; require_file "${manifest}"; require_file "$(overview_sha512_path "${OVERVIEW}" "${YYYYMMDD}")"
 failures=0; check() { [[ "$2" == "$3" ]] && printf 'OK   %s\n' "$1" || { printf 'FAIL %s: expected %s got %s\n' "$1" "$3" "$2"; failures=$((failures+1)); }; }
 check magic "$(pmtiles_magic "${pmtiles}")" PMTiles; check spec_version "$(pmtiles_spec_version "${pmtiles}")" 3; check tile_type "$(pmtiles_tile_type "${pmtiles}")" 1; check internal_compression "$(pmtiles_internal_compression "${pmtiles}")" 2; check tile_compression "$(pmtiles_tile_compression "${pmtiles}")" 2; [[ "$(pmtiles_max_zoom "${pmtiles}")" -le 10 ]] || { printf 'FAIL max zoom > 10\n'; failures=$((failures+1)); }

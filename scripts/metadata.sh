@@ -25,10 +25,23 @@ for arg in "$@"; do
   esac
 done
 
-require_cmd pmtiles jq sha512sum
+case "${ROLE}" in
+  base|building)
+    normalize_session_vars
+    python="$(huavd_python)"
+    args=(artifact write-vector-metadata --region="${REGION}"
+      --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --role="${ROLE}"
+      --workdir="${WORKDIR}")
+    [[ -n "${PMTILES}" ]] && args+=(--pmtiles="$(resolve_workspace_path "${PMTILES}")")
+    PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}" \
+      exec "${python}" -m huavd_map_build "${args[@]}"
+    ;;
+esac
+
+require_cmd pmtiles jq
 require_region "${REGION}"
 normalize_session_vars
-[[ "${ROLE}" == "base" || "${ROLE}" == "building" || "${ROLE}" == "raster_bake" ]] \
+[[ "${ROLE}" == "raster_bake" ]] \
   || die "${HUAVD_EXIT_INPUT}" "metadata role must be base, building, or raster_bake"
 
 [[ -n "${PMTILES}" ]] || PMTILES="$(build_pmtiles_path "${ROLE}")"

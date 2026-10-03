@@ -22,7 +22,7 @@ for arg in "$@"; do
 done
 [[ -n "${DERIVED_MAP}" ]] || die "${HUAVD_EXIT_INPUT}" "--derived-map is required"
 [[ "${GLYPH}" =~ ^[01]$ ]] || die "${HUAVD_EXIT_INPUT}" "--glyph must be 0 or 1"
-require_cmd jq sha512sum tippecanoe pmtiles
+require_cmd jq tippecanoe pmtiles
 derived_map_validate "${DERIVED_MAP}"
 REGION="$(derived_map_target_region "${DERIVED_MAP}")"
 ROLE=base

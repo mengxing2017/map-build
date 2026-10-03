@@ -27,7 +27,7 @@ for arg in "$@"; do
   esac
 done
 
-require_cmd jq tar zip sha256sum sha512sum
+require_cmd jq tar zip
 [[ -n "${SESSION}" ]] || die "${HUAVD_EXIT_INPUT}" "--session is required"
 validate_session "${SESSION}"
 YYYYMMDD="$(session_yyyymmdd "${SESSION}")"
@@ -139,9 +139,8 @@ checksums_started_ms="$(epoch_millis)"
 (
   cd -- "${pack_dir}"
   rm -f SHA256SUMS SHA512SUMS
-  find . -type f ! -name SHA256SUMS ! -name SHA512SUMS ! -name '*.sha512' -print0 \
-    | sort -z \
-    | xargs -0 sha256sum > SHA256SUMS
+  write_checksum_manifest . SHA256SUMS sha256 \
+    --exclude-name=SHA512SUMS --exclude-suffix=.sha512
   find . -type f ! -name SHA256SUMS ! -name SHA512SUMS ! -name '*.sha512' -print0 \
     | sort -z \
     | while IFS= read -r -d '' file; do
@@ -150,7 +149,7 @@ checksums_started_ms="$(epoch_millis)"
           sha512="$(awk '{print $1; exit}' "${sidecar}")"
           printf '%s  %s\n' "${sha512}" "${file}"
         else
-          sha512sum "${file}"
+          printf '%s  %s\n' "$(sha512_value "${file}")" "${file}"
         fi
       done > SHA512SUMS
 )

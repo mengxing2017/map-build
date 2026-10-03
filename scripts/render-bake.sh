@@ -687,7 +687,7 @@ if (( RENDER_ONE )); then
 fi
 
 ROLE="raster_bake"
-require_cmd jq pmtiles python3 sha512sum
+require_cmd jq pmtiles python3
 if (( ! ESTIMATE )); then
   require_cmd cwebp dwebp timeout xargs
 fi
@@ -890,13 +890,15 @@ log_info "raster bake parameters: ${bake_dir}/parameters.json"
 
 bake_inputs_file="${bake_dir}/inputs.sha512"
 bake_inputs="$(
-  sha512sum "${BASE_PMTILES}" "$(bake_render_style_path)" "${bake_config}"
+  for input in "${BASE_PMTILES}" "$(bake_render_style_path)" "${bake_config}"; do
+    printf '%s  %s\n' "$(sha512_value "${input}")" "${input}"
+  done
   printf '%s\n' "${bounds:-}" "${min_zoom}" "${max_zoom}" "${tile_size}" "${pixel_ratio}" "${bbox_padding_tiles}" "${webp_lossless}" "${webp_method}" "${webp_metadata}"
   printf '%s\n' "${bake_defaults}"
   printf '%s\n' "${BAKE_BBOX:-}"
   printf '%s\n' "tile-bounds-v1" "${MBGL_RENDER_ENGINE}" "${renderer_identity}"
 )"
-bake_inputs_digest="$(printf '%s' "${bake_inputs}" | sha512sum | awk '{print $1}')"
+bake_inputs_digest="$(printf '%s' "${bake_inputs}" | sha512_stdin)"
 quarantine_dir="${bake_dir}/quarantine/${bake_inputs_digest}"
 BAKE_LOCK_DIR="${bake_dir}/locks/${bake_inputs_digest}"
 if ! mkdir -p "${bake_dir}/locks" || ! mkdir "${BAKE_LOCK_DIR}"; then

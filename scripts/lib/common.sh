@@ -356,18 +356,61 @@ role_list() {
 	esac
 }
 
+huavd_python() {
+  local python="${HUAVD_MAP_BUILD_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+  if [[ ! -x "${python}" ]]; then
+    python="$(command -v python3 || true)"
+  fi
+  [[ -n "${python}" ]] \
+    || die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "Python 3 is required; run make setup"
+  printf '%s\n' "${python}"
+}
+
 write_sha512_file() {
-  local file="$1"
-  require_cmd sha512sum
+  local file="$1" python
   require_file "${file}"
-  (cd -- "$(dirname -- "${file}")" && sha512sum "$(basename -- "${file}")" > "$(basename -- "${file}").sha512")
+  python="$(huavd_python)"
+  PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}" \
+    "${python}" -m huavd_map_build artifact write-sha512 "${file}" >/dev/null
 }
 
 sha512_value() {
-  local file="$1"
-  require_cmd sha512sum
+  checksum_value sha512 "$1"
+}
+
+md5_value() {
+  checksum_value md5 "$1"
+}
+
+sha256_value() {
+  checksum_value sha256 "$1"
+}
+
+write_checksum_manifest() {
+  local root="$1" output_name="$2" algorithm="$3"
+  shift 3
+  local python
+  python="$(huavd_python)"
+  PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}" \
+    "${python}" -m huavd_map_build artifact write-checksum-manifest \
+      --root="${root}" --output-name="${output_name}" \
+      --algorithm="${algorithm}" "$@" >/dev/null
+}
+
+checksum_value() {
+  local algorithm="$1" file="$2" python
   require_file "${file}"
-  sha512sum "${file}" | awk '{print $1}'
+  python="$(huavd_python)"
+  PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}" \
+    "${python}" -m huavd_map_build artifact checksum \
+      --algorithm="${algorithm}" "${file}"
+}
+
+sha512_stdin() {
+  local python
+  python="$(huavd_python)"
+  PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}" \
+    "${python}" -m huavd_map_build artifact sha512-stdin
 }
 
 cmd_version() {

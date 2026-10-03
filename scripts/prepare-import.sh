@@ -52,7 +52,7 @@ for arg in "$@"; do
 done
 
 ROLE="${ROLE:-base}"
-require_cmd jq sha512sum
+require_cmd jq
 require_region "${REGION}"
 normalize_session_vars
 role_list "${ROLE}" >/dev/null

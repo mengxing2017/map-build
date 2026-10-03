@@ -22,10 +22,24 @@ for arg in "$@"; do
   esac
 done
 
-require_cmd jq sha512sum stat
+case "${ROLE}" in
+  base|building)
+    normalize_session_vars
+    python="$(huavd_python)"
+    args=(artifact write-vector-manifest --region="${REGION}"
+      --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --role="${ROLE}"
+      --workdir="${WORKDIR}" --activation="${HUAVD_MAP_ACTIVATION:-manual}")
+    [[ -n "${HUAVD_MAP_BUNDLE_ID:-}" ]] \
+      && args+=(--bundle-id="${HUAVD_MAP_BUNDLE_ID}")
+    PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}" \
+      exec "${python}" -m huavd_map_build "${args[@]}"
+    ;;
+esac
+
+require_cmd jq stat
 require_region "${REGION}"
 normalize_session_vars
-[[ "${ROLE}" == "base" || "${ROLE}" == "building" || "${ROLE}" == "raster_bake" ]] \
+[[ "${ROLE}" == "raster_bake" ]] \
   || die "${HUAVD_EXIT_INPUT}" "manifest role must be base, building, or raster_bake"
 
 pmtiles="$(build_pmtiles_path "${ROLE}")"

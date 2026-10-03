@@ -15,9 +15,6 @@ REQUIRED=(
   bash
   jq
   wget
-  md5sum
-  sha512sum
-  sha256sum
   tar
   zip
   osmium
@@ -162,15 +159,11 @@ elif [[ -x "${VENV_BIN_DIR}/fonttools" ]]; then
   WARNINGS=$((WARNINGS + 1))
 fi
 
-if command -v yq >/dev/null 2>&1; then
-  printf 'OK   %-12s %s\n' "yq" "$(cmd_version yq)"
-elif command -v python3 >/dev/null 2>&1 && python3 -c 'import yaml' >/dev/null 2>&1; then
-  printf 'OK   %-12s python3+PyYAML\n' "yaml"
-elif command -v ruby >/dev/null 2>&1 && ruby -ryaml -e 'exit 0' >/dev/null 2>&1; then
-  printf 'OK   %-12s ruby stdlib yaml\n' "yaml"
+if [[ -x "${VENV_PYTHON}" ]] && "${VENV_PYTHON}" -c 'import yaml' >/dev/null 2>&1; then
+  printf 'OK   %-12s project Python+PyYAML\n' "yaml"
 else
-  printf 'WARN %-12s missing yq or python3+PyYAML\n' "yaml"
-  WARNINGS=$((WARNINGS + 1))
+  printf 'FAIL %-12s project Python cannot import PyYAML; run make setup\n' "yaml"
+  FAILURES=$((FAILURES + 1))
 fi
 
 fail_config() {

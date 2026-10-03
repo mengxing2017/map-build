@@ -18,7 +18,7 @@ for arg in "$@"; do
   esac
 done
 [[ -n "${ASSET}" ]] || die "${HUAVD_EXIT_INPUT}" "--asset is required"
-require_cmd jq osmium sha512sum
+require_cmd jq osmium
 source_asset_validate "${ASSET}"
 "${SCRIPT_DIR}/source-inventory.sh" --asset="${ASSET}" --workdir="${WORKDIR}" >/dev/null
 

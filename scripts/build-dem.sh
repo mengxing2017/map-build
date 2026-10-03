@@ -31,7 +31,7 @@ for arg in "$@"; do
   esac
 done
 
-require_cmd jq pmtiles sha512sum
+require_cmd jq pmtiles
 require_region "${REGION}"
 normalize_session_vars
 

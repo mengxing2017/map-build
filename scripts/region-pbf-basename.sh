@@ -2,18 +2,22 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
-# shellcheck source=lib/config.sh
-source "${SCRIPT_DIR}/lib/config.sh"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 region="${1:-${REGION:-}}"
-[[ -n "${region}" ]] || die "${HUAVD_EXIT_INPUT}" "region is required"
-require_cmd jq
-require_region "${region}"
+if [[ -z "${region}" ]]; then
+  printf 'ERROR: region is required\n' >&2
+  exit 2
+fi
 
-basename="$(region_pbf_basename "${region}")"
-[[ -n "${basename}" && "${basename}" != "null" ]] \
-  || die "${HUAVD_EXIT_INPUT}" "region lacks geofabrik.basename: ${region}"
+python="${HUAVD_MAP_BUILD_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+if [[ ! -x "${python}" ]]; then
+  python="$(command -v python3 || true)"
+fi
+if [[ -z "${python}" ]]; then
+  printf 'ERROR: Python 3 is required; run make setup\n' >&2
+  exit 5
+fi
 
-printf '%s\n' "${basename}"
+export PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}"
+exec "${python}" -m huavd_map_build catalog pbf-basename "${region}"

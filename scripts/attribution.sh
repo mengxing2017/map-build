@@ -2,41 +2,60 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "${SCRIPT_DIR}/lib/common.sh"
-# shellcheck source=lib/config.sh
-source "${SCRIPT_DIR}/lib/config.sh"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+
+WORKDIR="${WORKDIR:-${HUAVD_MAP_BUILD_HOME:-/tmp/huavd-map-build}}"
+REGION="${REGION:-china/guangxi}"
+YYYYMMDD="${YYYYMMDD:-$(date -u +%Y%m%d)}"
+ROLE="${ROLE:-}"
+SESSION="${SESSION:-}"
 
 for arg in "$@"; do
-  if parse_common_arg "${arg}"; then
-    continue
-  fi
   case "${arg}" in
+    --workdir=*) WORKDIR="${arg#*=}" ;;
+    --region=*) REGION="${arg#*=}" ;;
+    --yyyymmdd=*) YYYYMMDD="${arg#*=}"; SESSION="" ;;
+    --session=*) SESSION="${arg#*=}" ;;
+    --role=*) ROLE="${arg#*=}" ;;
     -h|--help)
       printf 'usage: %s --region=<id> --role=<base|building|raster_bake> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
       exit 0
       ;;
-    *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
+    *)
+      printf 'ERROR: unknown argument: %s\n' "${arg}" >&2
+      exit 2
+      ;;
   esac
 done
 
-require_cmd jq
-require_region "${REGION}"
-normalize_session_vars
-[[ "${ROLE}" == "base" || "${ROLE}" == "building" || "${ROLE}" == "raster_bake" ]] \
-  || die "${HUAVD_EXIT_INPUT}" "attribution role must be base, building, or raster_bake"
+if [[ -n "${SESSION}" ]]; then
+  if [[ ! "${SESSION}" =~ ^[a-z0-9]+(-[a-z0-9]+)*-[0-9]{8}$ ]]; then
+    printf 'ERROR: invalid SESSION: %s; expected {region-slug}-{yyyymmdd}\n' "${SESSION}" >&2
+    exit 2
+  fi
+  YYYYMMDD="${SESSION##*-}"
+fi
 
-output="$(build_attribution_path "${ROLE}")"
-ensure_dir "$(dirname -- "${output}")"
+case "${ROLE}" in
+  base|building|raster_bake) ;;
+  *)
+    printf 'ERROR: attribution role must be base, building, or raster_bake\n' >&2
+    exit 2
+    ;;
+esac
 
-jq -n \
-  --arg url "$(region_pbf_url "${REGION}")" \
-  '{
-    data_license: "ODbL-1.0",
-    attribution: "© OpenStreetMap contributors",
-    sources: [
-      {vendor: "geofabrik", url: $url}
-    ]
-  }' > "${output}"
+python="${HUAVD_MAP_BUILD_PYTHON:-${REPO_ROOT}/.venv/bin/python}"
+if [[ ! -x "${python}" ]]; then
+  python="$(command -v python3 || true)"
+fi
+if [[ -z "${python}" ]]; then
+  printf 'ERROR: Python 3 is required; run make setup\n' >&2
+  exit 5
+fi
 
-log_info "attribution OK: ${output}"
+export PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}"
+exec "${python}" -m huavd_map_build artifact write-attribution \
+  --region "${REGION}" \
+  --yyyymmdd "${YYYYMMDD}" \
+  --role "${ROLE}" \
+  --workdir "${WORKDIR}" >/dev/null

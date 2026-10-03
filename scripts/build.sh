@@ -36,7 +36,7 @@ require_cmd jq
 require_region "${REGION}"
 normalize_session_vars
 
-require_cmd pmtiles sha512sum
+require_cmd pmtiles
 
 ensure_dir "$(outputs_dir)"
 ensure_dir "$(tags_filter_cache_dir)"
@@ -214,10 +214,7 @@ fi
 
 for role in "${vector_roles[@]}"; do
   "${SCRIPT_DIR}/tippecanoe.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
-  "${SCRIPT_DIR}/metadata.sh" --pmtiles="$(build_pmtiles_path "${role}")" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
-  "${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
-  "${SCRIPT_DIR}/attribution.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
-  write_sha512_file "$(build_pmtiles_path "${role}")"
+  "${SCRIPT_DIR}/finalize-vector.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --session="${SESSION}" --role="${role}" --workdir="${WORKDIR}"
   "${SCRIPT_DIR}/verify.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"
   printf 'build OK: %s\n' "$(build_pmtiles_path "${role}")"
 done

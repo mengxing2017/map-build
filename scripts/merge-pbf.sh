@@ -19,7 +19,7 @@ for arg in "$@"; do
 done
 [[ -n "${OVERVIEW}" ]] || die "${HUAVD_EXIT_INPUT}" "--overview is required"
 validate_yyyymmdd "${YYYYMMDD}"
-require_cmd jq osmium sha512sum md5sum
+require_cmd jq osmium
 overview_validate "${OVERVIEW}"
 
 replication_value() {
@@ -38,7 +38,7 @@ while IFS= read -r region; do
   require_file "${input}"
   require_file "${md5_file}"
   expected_md5="$(awk '{print $1; exit}' "${md5_file}")"
-  actual_md5="$(md5sum "${input}" | awk '{print $1}')"
+  actual_md5="$(md5_value "${input}")"
   [[ -n "${expected_md5}" && "${expected_md5}" == "${actual_md5}" ]] \
     || die "${HUAVD_EXIT_VERIFY}" "mirror MD5 mismatch for ${region}: refetch the PBF and its .md5 sidecar"
   timestamp="$(replication_value "${input}" osmosis_replication_timestamp || true)"
@@ -58,7 +58,7 @@ for i in "${!timestamps[@]}"; do
 done
 
 fingerprint_json="$(printf '%s\n' "${fingerprints[@]}" | jq -s --arg overview "${OVERVIEW}" --argjson schema "$(jq -r '.schema_version' "$(overviews_json)")" '{overview:$overview,schema_version:$schema,inputs:sort_by(.region)}')"
-fingerprint="$(printf '%s' "${fingerprint_json}" | sha512sum | awk '{print $1}')"
+fingerprint="$(printf '%s' "${fingerprint_json}" | sha512_stdin)"
 cache_dir="$(overview_merge_cache_dir "${OVERVIEW}")"
 cache_path="${cache_dir}/${fingerprint}.osm.pbf"
 lineage_path="${cache_dir}/${fingerprint}.json"

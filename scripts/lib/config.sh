@@ -11,39 +11,12 @@ HUAVD_MAP_BUILD_CONFIG_LOADED=1
 yaml_to_json() {
   local source="$1"
   local target="$2"
+  local python
   ensure_dir "$(dirname -- "${target}")"
-
-  if command -v yq >/dev/null 2>&1; then
-    if yq -o=json '.' "${source}" > "${target}" 2>/dev/null; then
-      return
-    fi
-    if yq '.' "${source}" > "${target}" 2>/dev/null; then
-      return
-    fi
-  fi
-
-  if command -v python3 >/dev/null 2>&1; then
-    if python3 - "${source}" > "${target}" <<'PY' 2>/dev/null; then
-import json
-import sys
-import yaml
-
-with open(sys.argv[1], "r", encoding="utf-8") as f:
-    data = yaml.safe_load(f)
-json.dump(data, sys.stdout, ensure_ascii=False, indent=2)
-sys.stdout.write("\n")
-PY
-      return
-    fi
-  fi
-
-  if command -v ruby >/dev/null 2>&1; then
-    if ruby -ryaml -rjson -e 'puts JSON.pretty_generate(YAML.load_file(ARGV.fetch(0)))' "${source}" > "${target}" 2>/dev/null; then
-      return
-    fi
-  fi
-
-  die "${HUAVD_EXIT_REMOTE_OR_TOOL}" "no YAML parser available; install yq or python3+PyYAML"
+  python="$(huavd_python)"
+  PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}" \
+    "${python}" -m huavd_map_build catalog yaml-to-json \
+      --source="${source}" --output="${target}"
 }
 
 config_json_path() {

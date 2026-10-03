@@ -19,7 +19,7 @@ for arg in "$@"; do
   esac
 done
 [[ -n "${DERIVED_MAP}" ]] || die "${HUAVD_EXIT_INPUT}" "--derived-map is required"
-require_cmd jq sha512sum
+require_cmd jq
 derived_map_validate "${DERIVED_MAP}"
 REGION="$(derived_map_target_region "${DERIVED_MAP}")"
 ROLE=base

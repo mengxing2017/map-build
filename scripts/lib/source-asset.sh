@@ -83,7 +83,7 @@ source_asset_fingerprint() {
       input="$(source_asset_input_path "${asset}" "${region}")"
       printf '%s %s\n' "$(sha512_value "${input}")" "${region}"
     done < <(source_asset_input_regions "${asset}")
-  } | sha512sum | awk '{print $1}'
+  } | sha512_stdin
 }
 
 source_asset_cache_dir() {
