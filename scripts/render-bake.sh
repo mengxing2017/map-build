@@ -226,6 +226,9 @@ quarantine_webp_tile() {
   local destination="${BAKE_QUARANTINE_DIR}/webp/${z}/${x}/${y}.webp.$(date +%s%N).$$"
   ensure_dir "$(dirname -- "${destination}")"
   mv -f "${file}" "${destination}"
+  if [[ -f "${file}.sha512" ]]; then
+    mv -f "${file}.sha512" "${destination}.sha512"
+  fi
   log_warn "quarantined invalid WebP cache tile z=${z} x=${x} y=${y}: ${destination}"
 }
 
@@ -277,6 +280,7 @@ render_one_tile() {
 
   if [[ "${BAKE_SKIP_EXISTING}" == "1" && -s "${webp}" ]]; then
     if validate_webp_tile "${webp}" "${BAKE_TILE_SIZE}"; then
+      write_sha512_file "${webp}"
       return 0
     fi
     quarantine_webp_tile "${webp}" "${z}" "${x}" "${y}"
@@ -350,6 +354,7 @@ render_one_tile() {
   validate_webp_tile "${webp_tmp}" "${BAKE_TILE_SIZE}" \
     || die "${HUAVD_EXIT_VERIFY}" "cwebp produced an invalid WebP tile: ${webp_tmp}"
   mv -f "${webp_tmp}" "${webp}"
+  write_sha512_file "${webp}"
   encode_elapsed_ms="$(( $(epoch_millis) - encode_started_ms ))"
   if [[ -n "${BAKE_PREFLIGHT_TIMING_FILE:-}" ]]; then
     printf '%s\t%s\t%s\t%s\t%s\n' "${z}" "${x}" "${y}" "${render_elapsed_ms}" "${encode_elapsed_ms}" >> "${BAKE_PREFLIGHT_TIMING_FILE}"
@@ -359,6 +364,7 @@ render_one_tile() {
 write_missing_tiles() {
   local input_list="$1" missing_list="$2"
   python3 - "${input_list}" "${BAKE_WEBP_DIR}" "${missing_list}" "${BAKE_TILE_SIZE}" "${BAKE_QUARANTINE_DIR}" <<'PY'
+import hashlib
 import os
 import shutil
 import sys
@@ -366,11 +372,7 @@ import sys
 tile_list, webp_dir, missing_list, expected_size, quarantine_dir = sys.argv[1:]
 expected_size = int(expected_size)
 
-def structurally_valid_webp(path):
-    try:
-        data = open(path, "rb").read()
-    except OSError:
-        return False
+def structurally_valid_webp(data):
     if len(data) < 16 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
         return False
     offset = 12
@@ -398,6 +400,7 @@ def structurally_valid_webp(path):
 
 missing = 0
 invalid = 0
+unverified = 0
 with open(tile_list, "r", encoding="utf-8") as src, open(missing_list, "w", encoding="utf-8") as dst:
     for line in src:
         parts = line.rstrip("\n").split("\t")
@@ -405,16 +408,33 @@ with open(tile_list, "r", encoding="utf-8") as src, open(missing_list, "w", enco
             continue
         z, x, y = parts[:3]
         webp = os.path.join(webp_dir, z, x, f"{y}.webp")
-        if not structurally_valid_webp(webp):
+        marker = f"{webp}.sha512"
+        try:
+            data = open(webp, "rb").read()
+        except OSError:
+            data = None
+        try:
+            recorded_sha512 = open(marker, "r", encoding="utf-8").read().split(maxsplit=1)[0]
+        except (OSError, IndexError):
+            recorded_sha512 = ""
+        if data is None or not structurally_valid_webp(data):
             if os.path.exists(webp):
                 target = os.path.join(quarantine_dir, "webp", z, x, f"{y}.webp.invalid")
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 shutil.move(webp, target)
+                if os.path.exists(marker):
+                    shutil.move(marker, f"{target}.sha512")
                 invalid += 1
             dst.write(line)
             missing += 1
+        elif recorded_sha512 != hashlib.sha512(data).hexdigest():
+            dst.write(line)
+            missing += 1
+            unverified += 1
 if invalid:
     print(f"raster bake quarantined structurally invalid cache tiles={invalid}", file=sys.stderr)
+if unverified:
+    print(f"raster bake revalidating unverified cache tiles={unverified}", file=sys.stderr)
 print(missing)
 PY
 }
