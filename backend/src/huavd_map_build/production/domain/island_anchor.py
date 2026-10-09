@@ -6,6 +6,9 @@ from typing import Any
 
 from huavd_map_build.shared.kernel import RegionId, SessionId
 
+_REFINE_DEPTH = 24
+_REFINE_VISITS = 4096
+
 
 @dataclass(frozen=True, slots=True)
 class IslandAnchorRequest:
@@ -131,4 +134,80 @@ def _interior(polygons: list[Any], grid: int) -> tuple[list[float], str]:
             ]
             if _inside(point, polygons):
                 return point, "grid"
+    segments = _ring_segments(polygons)
+    for polygon in sorted(polygons, key=lambda item: -_ring_area(item[0])):
+        point = _refined_interior(polygon, polygons, segments)
+        if point is not None:
+            return point, "grid"
     return list(outer[0]), "vertex"
+
+
+def _refined_interior(
+    polygon: list[Any], polygons: list[Any], segments: list[tuple[Any, Any]]
+) -> list[float] | None:
+    outer = polygon[0]
+    xs = [point[0] for point in outer]
+    ys = [point[1] for point in outer]
+    min_x, max_x, min_y, max_y = min(xs), max(xs), min(ys), max(ys)
+    if max_x <= min_x or max_y <= min_y or not segments:
+        return None
+    half = max(max_x - min_x, max_y - min_y) / 2
+    stack = [((min_x + max_x) / 2, (min_y + max_y) / 2, half, 0)]
+    visits = 0
+    while stack and visits < _REFINE_VISITS:
+        x, y, size, depth = stack.pop()
+        visits += 1
+        if depth >= _REFINE_DEPTH:
+            continue
+        quarter = size / 2
+        children = []
+        found = None
+        for x_offset in (-quarter, quarter):
+            for y_offset in (-quarter, quarter):
+                point = [x + x_offset, y + y_offset]
+                if _inside(point, polygons):
+                    found = point
+                    break
+                distance = _boundary_distance(point, segments)
+                if distance <= quarter * math.sqrt(2):
+                    children.append((point[0], point[1], quarter, distance))
+            if found is not None:
+                break
+        if found is not None:
+            return found
+        children.sort(key=lambda child: (child[3], child[0], child[1]))
+        for child_x, child_y, child_half, _distance in reversed(children):
+            stack.append((child_x, child_y, child_half, depth + 1))
+    return None
+
+
+def _ring_segments(polygons: list[Any]) -> list[tuple[Any, Any]]:
+    segments = []
+    for polygon in polygons:
+        for ring in polygon:
+            if not isinstance(ring, list) or len(ring) < 2:
+                continue
+            for index, first in enumerate(ring):
+                segments.append((first, ring[(index + 1) % len(ring)]))
+    return segments
+
+
+def _boundary_distance(point: list[float], segments: list[tuple[Any, Any]]) -> float:
+    return min(
+        _segment_distance(point, first, second) for first, second in segments
+    )
+
+
+def _segment_distance(point: list[float], first: Any, second: Any) -> float:
+    x, y = point
+    start_x, start_y = first[0], first[1]
+    delta_x, delta_y = second[0] - start_x, second[1] - start_y
+    span = delta_x * delta_x + delta_y * delta_y
+    if span == 0:
+        return math.hypot(x - start_x, y - start_y)
+    ratio = max(
+        0.0, min(1.0, ((x - start_x) * delta_x + (y - start_y) * delta_y) / span)
+    )
+    return math.hypot(
+        x - (start_x + ratio * delta_x), y - (start_y + ratio * delta_y)
+    )
