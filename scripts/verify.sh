@@ -847,20 +847,21 @@ verify_staged_place_admin_enrichment() {
     fail "staged place_label same-name-tier dedup is invalid"
   fi
 
-  # 行政地名显示名覆盖一致性：对带 official_name 的要素，其 target_fields 要么全部等于
-  # official_name（已覆盖），要么全都不等于（未覆盖）——不允许只改一部分导致渲染不确定。
   if jq --seq -n -e --argjson adn "${admin_display_name}" '
     [inputs] as $features
     | ($features | length) > 0
       and (if ($adn.enabled // false) then
              all($features[];
                (.properties.official_name // null) as $on
+               | (.properties.label_tier // null) as $tier
                | if $on == null then true
-                 else
+                 else ((($adn.tiers // []) | index($tier)) != null
+                       or any($adn.locality_keywords[]?; . as $keyword | $on | contains($keyword))) as $eligible
+                 | if ($eligible | not) then true else
                    ([ ($adn.target_fields // [])[] as $k | .properties[$k] | select(. != null) ]) as $vals
                    | (([ $vals[] | select(. == $on) ] | length) == 0)
                      or (([ $vals[] | select(. == $on) ] | length) == ($vals | length))
-                 end)
+                 end end)
            else true end)
   ' "${staged}" >/dev/null; then
     ok "staged place_label admin display name override"
