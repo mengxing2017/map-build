@@ -143,3 +143,5 @@ class BuildConfigurationTest(unittest.TestCase):
         self.assertTrue(china["admin_display_name"]["enabled"])
         self.assertEqual(["name"], japan["admin_display_name"]["target_fields"])
         self.assertFalse(japan["admin_display_name"]["enabled"])
+        self.assertEqual("drop", china["conventional_region_filter"]["action"])
+        self.assertEqual([2, 4, 5, 6], china["conventional_region_filter"]["admin_evidence_levels"])

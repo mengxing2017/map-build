@@ -277,6 +277,7 @@ class BuildConfigurationService:
         ):
             raise ValueError("invalid place-label hierarchy configuration")
         display = self._place_admin_display_name(document, region, ranks)
+        conventional = self._conventional_region_filter(document, ranks, zooms)
         return {
             "boundary_tier": dict(boundary),
             "tier_expected_place": {key: list(value) for key, value in expected.items()},
@@ -285,6 +286,55 @@ class BuildConfigurationService:
             "tier_zoom": {key: dict(value) for key, value in zooms.items()},
             "dedupe_name_tiers": list(dedupe),
             "admin_display_name": display,
+            "conventional_region_filter": conventional,
+        }
+
+    @staticmethod
+    def _conventional_region_filter(
+        document: dict[str, Any], ranks: dict[str, Any], zooms: dict[str, Any]
+    ) -> dict[str, Any]:
+        policy = document.get("conventional_region_filter")
+        if not isinstance(policy, dict):
+            raise ValueError("invalid place-label hierarchy configuration")
+        enabled = policy.get("enabled")
+        action = policy.get("action")
+        places = policy.get("places")
+        tiers = policy.get("tiers")
+        levels = policy.get("admin_evidence_levels")
+        prefix = policy.get("min_prefix_len")
+        population_evidence = policy.get("population_is_admin_evidence")
+        maximum = policy.get("max_candidates")
+        keep_names = policy.get("keep_names")
+        if (
+            not isinstance(enabled, bool)
+            or action not in {"drop", "demote", "report_only"}
+            or not isinstance(places, list) or not places
+            or any(not isinstance(value, str) or not value for value in places)
+            or not isinstance(tiers, list) or not tiers
+            or any(not isinstance(value, str) or value not in ranks or value not in zooms
+                   for value in tiers)
+            or not isinstance(levels, list) or not levels
+            or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0
+                   for value in levels)
+            or len(set(levels)) != len(levels)
+            or not isinstance(prefix, int) or isinstance(prefix, bool)
+            or not 2 <= prefix <= 8
+            or not isinstance(population_evidence, bool)
+            or not isinstance(maximum, int) or isinstance(maximum, bool) or maximum <= 0
+            or not isinstance(keep_names, list)
+            or any(not isinstance(value, str) or not value.strip() for value in keep_names)
+        ):
+            raise ValueError("invalid place-label hierarchy configuration")
+        return {
+            "enabled": enabled,
+            "action": action,
+            "places": list(places),
+            "tiers": list(tiers),
+            "admin_evidence_levels": list(levels),
+            "min_prefix_len": prefix,
+            "population_is_admin_evidence": population_evidence,
+            "max_candidates": maximum,
+            "keep_names": list(keep_names),
         }
 
     def style(self, region: str, locale: str | None = None) -> dict[str, Any]:

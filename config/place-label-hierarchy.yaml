@@ -55,6 +55,17 @@ tier_zoom:
 # 仅限行政层级；0 个或 ≥2 个 admin_id 的同名点视为合法重名，不去重。
 dedupe_name_tiers: [prefecture, county]
 
+conventional_region_filter:
+  enabled: true
+  action: drop
+  places: [region, state]
+  tiers: [province, prefecture]
+  admin_evidence_levels: [2, 4, 5, 6]
+  min_prefix_len: 2
+  population_is_admin_evidence: true
+  max_candidates: 25
+  keep_names: []
+
 # 行政地名显示名：用 place 节点的 official_name（官方全称）覆盖显示字段，使自治州/自治县/
 # 民族乡以及各国“官方全称”统一显示。
 # 结构：default（所有未命中区域使用的通用 profile）+ profiles（按区域前缀命中，覆盖 default）。
