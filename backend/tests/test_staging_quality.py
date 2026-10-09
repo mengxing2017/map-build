@@ -55,9 +55,14 @@ def valid_reports():
                 "same_name_tier_dropped_count": 0,
                 "redundant_role_member_dropped_count": 0,
                 "admin_display_name_override_count": 0,
+                "conventional_region_candidate_count": 0,
+                "conventional_region_dropped_count": 0,
+                "conventional_region_demoted_count": 0,
             },
             "relations": [], "shared_member_choices": [],
             "same_name_tier_duplicates": [], "redundant_role_members": [],
+            "conventional_region_candidates": [],
+            "conventional_region_skipped_reason": None,
         },
         "island_water_report": {
             "schema_version": 1, "layer": "island",
@@ -227,6 +232,24 @@ class BaseStagingQualityGateTest(unittest.TestCase):
             MemoryLayerReader(features={"place_label": (feature,)}, reports=reports),
         ).inspect(self.build)
         self.assertTrue(report.passed, report.as_dict())
+
+    def test_validates_conventional_region_candidate_audit(self) -> None:
+        reports = valid_reports()
+        place_report = reports["place_label_dedup_report"]
+        place_report["summary"].update({
+            "conventional_region_candidate_count": 1,
+            "conventional_region_dropped_count": 1,
+        })
+        place_report["conventional_region_candidates"] = [{
+            "node_id": 1, "name": "Yuebei", "place": "region", "tier": "prefecture",
+            "reason": "no-admin-evidence", "a1": False, "a2": False, "a3": False,
+            "action": "drop", "outcome": "dropped",
+        }]
+        result = BaseStagingQualityGate(
+            self.configuration,
+            MemoryLayerReader(reports=reports),
+        ).inspect(self.build)
+        self.assertTrue(result.passed, result.as_dict())
 
     def test_reports_place_label_semantic_violations(self) -> None:
         common = {

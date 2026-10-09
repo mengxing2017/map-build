@@ -117,7 +117,8 @@ class BaseStagingQualityGate:
                 "place_label",
                 f"{root}/staging/{session}/place_label_dedup_report.json",
                 lambda value: self._valid_place_report(
-                    value, stats.get("place_label", {}).get("count", 0)
+                    value, stats.get("place_label", {}).get("count", 0),
+                    self._configuration.place_label_hierarchy(build.region.value),
                 ),
             ),
             (
@@ -181,9 +182,13 @@ class BaseStagingQualityGate:
         return None if valid else "admin_line tier report contract is invalid"
 
     @classmethod
-    def _valid_place_report(cls, value: dict[str, Any], count: int) -> str | None:
+    def _valid_place_report(
+        cls, value: dict[str, Any], count: int, policy: dict[str, Any]
+    ) -> str | None:
         try:
             summary = value["summary"]
+            conventional = policy["conventional_region_filter"]
+            candidates = value["conventional_region_candidates"]
             valid = (
                 value.get("schema_version") == 1
                 and all(
@@ -193,17 +198,62 @@ class BaseStagingQualityGate:
                         "shared_member_choices",
                         "same_name_tier_duplicates",
                         "redundant_role_members",
+                        "conventional_region_candidates",
                     )
                 )
                 and summary["output_feature_count"] == count
+                and summary["conventional_region_candidate_count"] == len(candidates)
+                and summary["conventional_region_candidate_count"] <= conventional["max_candidates"]
             )
             for key in (
                 "exact_duplicate_dropped_count", "same_name_tier_dropped_count",
                 "redundant_role_member_dropped_count",
                 "admin_display_name_override_count",
+                "conventional_region_candidate_count",
+                "conventional_region_dropped_count",
+                "conventional_region_demoted_count",
             ):
                 valid = valid and cls._nonnegative(summary[key])
-        except (KeyError, TypeError):
+            dropped = sum(
+                isinstance(item, dict) and item.get("outcome") == "dropped"
+                for item in candidates
+            )
+            demoted = sum(
+                isinstance(item, dict) and item.get("outcome") == "demoted"
+                for item in candidates
+            )
+            valid = valid and (
+                summary["conventional_region_dropped_count"] == dropped
+                and summary["conventional_region_demoted_count"] == demoted
+            )
+            skipped_reason = value.get("conventional_region_skipped_reason")
+            if not conventional["enabled"]:
+                valid = valid and skipped_reason == "disabled" and not candidates
+            elif skipped_reason is not None:
+                valid = valid and isinstance(skipped_reason, str) and not candidates
+            else:
+                expected_outcome = {
+                    "report_only": "reported", "drop": "dropped", "demote": "demoted",
+                }[conventional["action"]]
+                for item in candidates:
+                    valid = valid and (
+                        isinstance(item, dict)
+                        and type(item.get("node_id")) is int
+                        and isinstance(item.get("name"), str)
+                        and isinstance(item.get("place"), str)
+                        and isinstance(item.get("tier"), str)
+                        and item.get("reason") in {
+                            "no-admin-evidence", "boundary-coverage-incomplete",
+                        }
+                        and all(isinstance(item.get(key), bool) for key in ("a1", "a2", "a3"))
+                        and item.get("action") == conventional["action"]
+                        and (
+                            item.get("outcome") == "kept"
+                            if item.get("reason") == "boundary-coverage-incomplete"
+                            else item.get("outcome") == expected_outcome
+                        )
+                    )
+        except (KeyError, TypeError, AttributeError):
             valid = False
         return None if valid else "place_label enrichment report contract is invalid"
 
