@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from copy import deepcopy
 import json
+import re
 from typing import Any
 from urllib.parse import unquote
 
@@ -177,6 +178,126 @@ def apply_admin_display_name(
     return True
 
 
+def _normalized_name(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = re.sub(r"\s+", " ", value).strip()
+    return normalized or None
+
+
+def _feature_name_forms(properties: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(
+        normalized for key in ("name", "name:zh", "name:zh-Hans", "name:en", "official_name")
+        if (normalized := _normalized_name(properties.get(key))) is not None
+    ))
+
+
+def _relation_name_forms(relation: AdministrativeRelation) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(
+        normalized for value in relation.names
+        if (normalized := _normalized_name(value)) is not None
+    ))
+
+
+def _prefix_match(left: str, right: str, minimum: int) -> bool:
+    shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+    return len(shorter) >= minimum and longer.startswith(shorter)
+
+
+def _conventional_region_filter(
+    features: list[dict[str, Any]],
+    dropped_ids: set[int | None],
+    relations: tuple[AdministrativeRelation, ...],
+    node_wikidata: dict[int, str],
+    boundaries: dict[int, list[Any]],
+    hierarchy: dict[str, Any],
+) -> tuple[set[int], list[dict[str, Any]], str | None, int, int]:
+    policy = hierarchy["conventional_region_filter"]
+    if not policy["enabled"]:
+        return set(), [], "disabled", 0, 0
+    if not boundaries:
+        return set(), [], "boundary-index-empty", 0, 0
+
+    levels = set(policy["admin_evidence_levels"])
+    evidence_relations = tuple(
+        relation for relation in relations if relation.level in levels
+    )
+    relation_qids = {
+        relation.wikidata for relation in evidence_relations if relation.wikidata
+    }
+    keep_names = {
+        normalized for value in policy["keep_names"]
+        if (normalized := _normalized_name(value)) is not None
+    }
+    filter_dropped: set[int] = set()
+    candidates: list[dict[str, Any]] = []
+    dropped_count = 0
+    demoted_count = 0
+    for feature in features:
+        feature_id = numeric_feature_id(feature)
+        properties = feature.get("properties", {})
+        if (
+            feature_id is None or feature_id in dropped_ids
+            or properties.get("admin_id") is not None
+            or properties.get("place") not in policy["places"]
+            or properties.get("label_tier") not in policy["tiers"]
+        ):
+            continue
+        names = _feature_name_forms(properties)
+        if not names or keep_names.intersection(names):
+            continue
+        a1 = node_wikidata.get(feature_id) in relation_qids
+        primary_name = name_key(properties)
+        matches = tuple(
+            relation for relation in evidence_relations
+            if primary_name is not None and _prefix_match(
+                primary_name, relation.display_name() or "", policy["min_prefix_len"]
+            )
+        )
+        coverage_incomplete = bool(matches) and any(
+            not boundaries.get(relation.id) for relation in matches
+        )
+        coordinates = feature.get("geometry", {}).get("coordinates", [])
+        a2 = not coverage_incomplete and any(
+            point_in_multipolygon(coordinates, boundaries.get(relation.id, []))
+            for relation in matches
+        )
+        a3 = policy["population_is_admin_evidence"] and population(feature) > 0
+        if a1 or a2 or a3:
+            continue
+
+        outcome = "kept" if coverage_incomplete else {
+            "report_only": "reported", "drop": "dropped", "demote": "demoted",
+        }[policy["action"]]
+        candidates.append({
+            "node_id": feature_id,
+            "name": properties.get("name") if isinstance(properties.get("name"), str)
+                    else names[0],
+            "place": properties.get("place"),
+            "tier": properties.get("label_tier"),
+            "reason": "boundary-coverage-incomplete" if coverage_incomplete
+                      else "no-admin-evidence",
+            "a1": a1,
+            "a2": a2,
+            "a3": a3,
+            "action": policy["action"],
+            "outcome": outcome,
+        })
+        if outcome == "dropped":
+            filter_dropped.add(feature_id)
+            dropped_count += 1
+        elif outcome == "demoted":
+            apply_label_rendering(feature, "locality", hierarchy)
+            demoted_count += 1
+
+    if len(candidates) > policy["max_candidates"]:
+        raise PlaceAdminExecutionError(
+            "conventional region candidate count exceeds configured maximum: "
+            f"{len(candidates)} > {policy['max_candidates']}"
+        )
+    return filter_dropped, candidates, None, dropped_count, demoted_count
+
+
 def enrich_place_labels(
     features: list[dict[str, Any]],
     relations: tuple[AdministrativeRelation, ...],
@@ -319,6 +440,16 @@ def enrich_place_labels(
         item["dropped_node_id"]
         for item in (*exact_duplicates, *name_duplicates, *member_duplicates)
     }
+    (
+        conventional_dropped_ids,
+        conventional_candidates,
+        conventional_skipped_reason,
+        conventional_dropped_count,
+        conventional_demoted_count,
+    ) = _conventional_region_filter(
+        intermediate, dropped_ids, relations, node_wikidata, boundaries, hierarchy
+    )
+    dropped_ids.update(conventional_dropped_ids)
     output: list[dict[str, Any]] = []
     policy = hierarchy["admin_display_name"]
     override_count = sum(
@@ -349,6 +480,9 @@ def enrich_place_labels(
             "same_name_tier_dropped_count": len(name_duplicates),
             "redundant_role_member_dropped_count": len(member_duplicates),
             "admin_display_name_override_count": override_count,
+            "conventional_region_candidate_count": len(conventional_candidates),
+            "conventional_region_dropped_count": conventional_dropped_count,
+            "conventional_region_demoted_count": conventional_demoted_count,
             "output_feature_count": len(output),
         },
         "relations": [{
@@ -361,6 +495,8 @@ def enrich_place_labels(
         "exact_duplicates": exact_duplicates,
         "same_name_tier_duplicates": name_duplicates,
         "redundant_role_members": member_duplicates,
+        "conventional_region_candidates": conventional_candidates,
+        "conventional_region_skipped_reason": conventional_skipped_reason,
     }
     return PlaceAdminResult(tuple(output), report)
 

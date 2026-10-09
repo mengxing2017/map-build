@@ -1,3 +1,4 @@
+from copy import deepcopy
 import unittest
 
 from huavd_map_build.bootstrap import build_configuration_service, repository_root
@@ -13,6 +14,7 @@ from huavd_map_build.production.domain.place_admin import (
     point_in_multipolygon,
     population,
     enrich_place_labels,
+    PlaceAdminExecutionError,
 )
 
 
@@ -118,3 +120,132 @@ class PlaceAdminDomainTest(unittest.TestCase):
             result.report["shared_member_choices"],
         )
         self.assertTrue(all("@id" not in value["properties"] for value in result.features))
+
+    def test_conventional_region_filter_reports_only_when_no_evidence_exists(self) -> None:
+        feature = {
+            "type": "Feature",
+            "properties": {"@id": 1, "name": "Yuebei", "place": "region"},
+            "geometry": {"type": "Point", "coordinates": [20, 20]},
+        }
+        relation = AdministrativeRelation(20, 5, (None, None, "Guangdong", None), None, ())
+        report_hierarchy = deepcopy(self.hierarchy)
+        report_hierarchy["conventional_region_filter"]["action"] = "report_only"
+        result = enrich_place_labels(
+            [feature], (relation,), {}, {99: [[[[0, 0], [1, 0], [0, 0]]]]}, report_hierarchy
+        )
+        candidate = result.report["conventional_region_candidates"]
+        self.assertEqual(1, len(result.features))
+        self.assertEqual("reported", candidate[0]["outcome"])
+        self.assertEqual("no-admin-evidence", candidate[0]["reason"])
+        self.assertEqual(1, result.report["summary"]["conventional_region_candidate_count"])
+
+    def test_conventional_region_filter_keeps_a1_a2_and_a3_evidence(self) -> None:
+        def point(node_id, name, coordinates, **properties):
+            return {
+                "type": "Feature",
+                "properties": {"@id": node_id, "name": name, "place": "region", **properties},
+                "geometry": {"type": "Point", "coordinates": coordinates},
+            }
+
+        boundary = [[[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]]]
+        relations = (
+            AdministrativeRelation(20, 5, (None, None, "Qid Province", None), "Q20", ()),
+            AdministrativeRelation(21, 5, (None, None, "Tianjin City", None), None, ()),
+        )
+        result = enrich_place_labels(
+            [
+                point(1, "Different", [20, 20]),
+                point(2, "Tianjin", [2, 2]),
+                point(3, "Population Province", [20, 20], population=1),
+            ],
+            relations,
+            {1: "Q20"},
+            {20: boundary, 21: boundary},
+            self.hierarchy,
+        )
+        self.assertEqual(3, len(result.features))
+        self.assertEqual([], result.report["conventional_region_candidates"])
+
+    def test_conventional_region_filter_keeps_candidate_when_matching_boundary_missing(self) -> None:
+        feature = {
+            "type": "Feature",
+            "properties": {"@id": 1, "name": "Alpha", "place": "region"},
+            "geometry": {"type": "Point", "coordinates": [2, 2]},
+        }
+        relations = (
+            AdministrativeRelation(20, 5, (None, None, "Alpha City", None), None, ()),
+            AdministrativeRelation(21, 5, (None, None, "Other", None), None, ()),
+        )
+        result = enrich_place_labels(
+            [feature], relations, {}, {21: [[[[0, 0], [1, 0], [0, 0]]]]}, self.hierarchy
+        )
+        candidate = result.report["conventional_region_candidates"][0]
+        self.assertEqual("boundary-coverage-incomplete", candidate["reason"])
+        self.assertEqual("kept", candidate["outcome"])
+        self.assertEqual(1, len(result.features))
+
+    def test_conventional_region_filter_drops_historical_local_name_with_shared_english_name(self) -> None:
+        feature = {
+            "type": "Feature",
+            "properties": {
+                "@id": 1,
+                "name": "Tongren Prefecture",
+                "name:zh": "铜仁地区",
+                "name:en": "Tongren",
+                "place": "region",
+            },
+            "geometry": {"type": "Point", "coordinates": [2, 2]},
+        }
+        boundary = [[[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]]]
+        relation = AdministrativeRelation(
+            20, 5, ("铜仁市", "铜仁市", "铜仁市", "Tongren"), None, ()
+        )
+        result = enrich_place_labels([feature], (relation,), {}, {20: boundary}, self.hierarchy)
+        self.assertEqual((), result.features)
+        self.assertEqual(
+            "dropped", result.report["conventional_region_candidates"][0]["outcome"]
+        )
+
+    def test_conventional_region_filter_skips_empty_boundary_index_and_keep_names(self) -> None:
+        feature = {
+            "type": "Feature",
+            "properties": {"@id": 1, "name": "Yuebei", "place": "region"},
+            "geometry": {"type": "Point", "coordinates": [20, 20]},
+        }
+        skipped = enrich_place_labels([feature], (), {}, {}, self.hierarchy)
+        self.assertEqual("boundary-index-empty", skipped.report["conventional_region_skipped_reason"])
+        self.assertEqual([], skipped.report["conventional_region_candidates"])
+
+        kept_hierarchy = deepcopy(self.hierarchy)
+        kept_hierarchy["conventional_region_filter"]["keep_names"] = ["Yuebei"]
+        kept = enrich_place_labels(
+            [feature], (), {}, {99: [[[[0, 0], [1, 0], [0, 0]]]]}, kept_hierarchy
+        )
+        self.assertEqual([], kept.report["conventional_region_candidates"])
+
+    def test_conventional_region_filter_drop_demote_and_limit(self) -> None:
+        feature = {
+            "type": "Feature",
+            "properties": {"@id": 1, "name": "Yuebei", "place": "region"},
+            "geometry": {"type": "Point", "coordinates": [20, 20]},
+        }
+        boundaries = {99: [[[[0, 0], [1, 0], [0, 0]]]]}
+        drop_hierarchy = deepcopy(self.hierarchy)
+        drop_hierarchy["conventional_region_filter"]["action"] = "drop"
+        dropped = enrich_place_labels([feature], (), {}, boundaries, drop_hierarchy)
+        self.assertEqual((), dropped.features)
+        self.assertEqual(1, dropped.report["summary"]["conventional_region_dropped_count"])
+
+        demote_hierarchy = deepcopy(self.hierarchy)
+        demote_hierarchy["conventional_region_filter"]["action"] = "demote"
+        demoted = enrich_place_labels([feature], (), {}, boundaries, demote_hierarchy)
+        self.assertEqual("locality", demoted.features[0]["properties"]["label_tier"])
+        self.assertEqual({"minzoom": 11}, demoted.features[0]["tippecanoe"])
+        self.assertEqual(1, demoted.report["summary"]["conventional_region_demoted_count"])
+
+        limited_hierarchy = deepcopy(self.hierarchy)
+        limited_hierarchy["conventional_region_filter"]["max_candidates"] = 1
+        with self.assertRaises(PlaceAdminExecutionError):
+            enrich_place_labels([feature, {**feature, "properties": {
+                **feature["properties"], "@id": 2, "name": "Yuebei East",
+            }}], (), {}, boundaries, limited_hierarchy)

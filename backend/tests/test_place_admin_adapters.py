@@ -104,3 +104,14 @@ class FileSystemPlaceAdminIndexStoreTest(unittest.TestCase):
         self.assertEqual({"node_id": 8, "wikidata": "Q8"}, node_doc)
         self.assertEqual(["admin_level"], config_doc["include_tags"])
         self.assertEqual([[[[0, 0], [1, 0], [0, 0]]]], indexed[20])
+
+    def test_reads_polygon_as_single_multipolygon(self) -> None:
+        boundary = {
+            "type": "Feature", "properties": {"@id": 20},
+            "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [0, 0]]]},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            geojson = Path(directory) / "boundaries.geojsonseq"
+            geojson.write_text("\x1e" + json.dumps(boundary) + "\n", encoding="utf-8")
+            indexed = FileSystemPlaceAdminIndexStore().read_boundaries(str(geojson))
+        self.assertEqual([[[[0, 0], [1, 0], [0, 0]]]], indexed[20])

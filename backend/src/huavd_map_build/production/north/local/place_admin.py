@@ -20,7 +20,10 @@ class PlaceAdminService:
         self._store.require_file(source)
         self._store.require_file(labels)
         if not self._store.is_nonempty(labels):
-            self._store.write_empty_report(report)
+            self._store.write_empty_report(
+                report,
+                "disabled" if not hierarchy["conventional_region_filter"]["enabled"] else None,
+            )
             return report
         cache = f"{root}/cache/place-admin/{session}"
         relations_pbf, relations_index, nodes_index, export_config = self._store.prepare(cache)

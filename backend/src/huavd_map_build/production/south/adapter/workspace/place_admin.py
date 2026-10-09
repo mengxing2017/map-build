@@ -77,8 +77,11 @@ class FileSystemPlaceAdminIndexStore:
                     relation_id = int(raw_id)
                 except (json.JSONDecodeError, TypeError, ValueError, AttributeError) as error:
                     raise ValueError(f"invalid boundary GeoJSONSeq at {path}:{line_number}") from error
-                if geometry.get("type") == "MultiPolygon":
-                    boundaries[relation_id] = geometry.get("coordinates", [])
+                coordinates = geometry.get("coordinates", [])
+                if geometry.get("type") == "Polygon":
+                    boundaries[relation_id] = [coordinates]
+                elif geometry.get("type") == "MultiPolygon":
+                    boundaries[relation_id] = coordinates
         return boundaries
 
     def write_boundary_index(self, path: str, boundaries: dict[int, list[Any]]) -> None:
@@ -129,7 +132,9 @@ class FileSystemPlaceAdminIndexStore:
             temporary.unlink(missing_ok=True)
             raise
 
-    def write_empty_report(self, report_path: str) -> None:
+    def write_empty_report(
+        self, report_path: str, skipped_reason: str | None = None
+    ) -> None:
         report = {
             "schema_version": 1,
             "source": {"place_feature_count": 0, "administrative_relation_count": 0},
@@ -142,11 +147,16 @@ class FileSystemPlaceAdminIndexStore:
                 "same_name_tier_dropped_count": 0,
                 "redundant_role_member_dropped_count": 0,
                 "admin_display_name_override_count": 0,
+                "conventional_region_candidate_count": 0,
+                "conventional_region_dropped_count": 0,
+                "conventional_region_demoted_count": 0,
                 "output_feature_count": 0,
             },
             "relations": [], "shared_member_choices": [], "fallback_dropped": [],
             "exact_duplicates": [], "same_name_tier_duplicates": [],
             "redundant_role_members": [],
+            "conventional_region_candidates": [],
+            "conventional_region_skipped_reason": skipped_reason,
         }
         target = Path(report_path)
         target.parent.mkdir(parents=True, exist_ok=True)
