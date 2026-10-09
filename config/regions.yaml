@@ -11376,9 +11376,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/guizhou-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/guizhou-latest.osm.pbf.md5"
+      basename: "guizhou-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -12054,9 +12054,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/xinjiang-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/xinjiang-latest.osm.pbf.md5"
+      basename: "xinjiang-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -58394,9 +58394,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/europe/sweden-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/europe/sweden-latest.osm.pbf.md5"
+      basename: "sweden-latest.osm.pbf"
       parent_region: "europe"
       fallback: null
     huavd:
@@ -58768,9 +58768,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/europe/switzerland-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/europe/switzerland-latest.osm.pbf.md5"
+      basename: "switzerland-latest.osm.pbf"
       parent_region: "europe"
       fallback: null
     huavd:
