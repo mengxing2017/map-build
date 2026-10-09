@@ -25,3 +25,7 @@ class TippecanoeExecutionError(RuntimeError):
 
 class MissingTippecanoeToolError(TippecanoeExecutionError):
     pass
+
+
+class MissingPmtilesToolError(TippecanoeExecutionError):
+    pass
