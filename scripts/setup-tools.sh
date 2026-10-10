@@ -11,7 +11,7 @@ TIPPECANOE_SOURCE_TARBALL="${TIPPECANOE_SOURCE_TARBALL:-/tmp/tippecanoe.tar.gz}"
 PMTILES_VERSION="${PMTILES_VERSION:-v1.31.2}"
 BUILD_GLYPHS_CRATE="${BUILD_GLYPHS_CRATE:-versatiles_glyphs}"
 BUILD_GLYPHS_BINARY="${BUILD_GLYPHS_BINARY:-versatiles_glyphs}"
-BUILD_GLYPHS_VERSION="${BUILD_GLYPHS_VERSION:-0.9.1}"
+BUILD_GLYPHS_VERSION="${BUILD_GLYPHS_VERSION:-0.10.1}"
 MBGL_RENDERER_NPM_PACKAGE="${MBGL_RENDERER_NPM_PACKAGE:-mbgl-renderer@0.9.0}"
 INSTALL_PREFIX="${INSTALL_PREFIX:-$HOME/.local}"
 BIN_DIR="${BIN_DIR:-${INSTALL_PREFIX}/bin}"
@@ -614,7 +614,7 @@ if [[ "\$#" -ne 2 ]]; then
   exit 2
 fi
 
-exec ${BUILD_GLYPHS_BINARY} merge --no-families --no-index -o "\$2" "\$1"
+exec ${BUILD_GLYPHS_BINARY} merge -o "\$2/glyphs" "\$1"
 EOF
   then
     log_error "failed to write build-glyphs wrapper to ${BIN_DIR}/build-glyphs"
