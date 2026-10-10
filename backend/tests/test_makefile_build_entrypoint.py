@@ -75,6 +75,17 @@ class MakefileBuildEntrypointTest(unittest.TestCase):
         self.assertIn('--role="both"', both_raster)
         self.assertNotIn("./scripts/build.sh", both_raster)
 
+    def test_engine_defaults_are_resolved_by_catalog_and_overrides_are_forwarded(self) -> None:
+        output = self.recipe(ROLE="raster_bake", BAKE_RENDERER_ENGINE="maplibre-native-headless", BAKE_JOBS="2")
+        self.assertIn('--renderer-engine="maplibre-native-headless"', output)
+        self.assertNotIn('--renderer-command=', output)
+        self.assertIn('--jobs="2"', output)
+        default = subprocess.run(["make","--no-print-directory","-n"], cwd=self.root, text=True, capture_output=True, check=True).stdout
+        self.assertNotIn("setup-native-renderer", default)
+        self.assertNotIn('--renderer-engine=', self.recipe(ROLE="raster_bake"))
+        legacy = self.recipe(ROLE="raster_bake", BAKE_RENDERER_ENGINE="mbgl-renderer", BAKE_RENDERER_COMMAND="legacy-render")
+        self.assertIn('--renderer-command="legacy-render"', legacy)
+
     def test_vector_release_uses_python_pack_and_verification(self) -> None:
         command = [
             "make", "--no-print-directory", "-n", "release",

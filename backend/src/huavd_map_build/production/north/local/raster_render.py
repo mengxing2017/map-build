@@ -6,6 +6,7 @@ import tempfile
 
 from huavd_map_build.production.domain.raster import (
     RasterBatchExecutionError,
+    RasterNonRetryableError,
     RasterRenderResult,
     RasterRenderSettings,
     RasterTileCoordinate,
@@ -28,35 +29,58 @@ class RasterRenderService:
         planned = rendered = attempts = retried = failed = 0
         samples: list[str] = []
         coordinates = iter(self._queue.coordinates(queue_path))
+        try:
+            preflight = next(coordinates)
+        except StopIteration:
+            return RasterRenderResult(0, 0, 0, 0)
+        planned = 1
+        try:
+            tile_attempts, tile_retries = self._render_one(preflight, settings)
+        except Exception as error:
+            raise RasterBatchExecutionError(
+                1, (f"{preflight.zoom}/{preflight.x}/{preflight.y}: {error}",)
+            ) from error
+        rendered = 1
+        attempts = tile_attempts
+        retried = tile_retries
         futures: dict[Future[tuple[int, int]], RasterTileCoordinate] = {}
         with ThreadPoolExecutor(max_workers=settings.parallel_jobs) as executor:
-            exhausted = False
-            while futures or not exhausted:
-                while not exhausted and len(futures) < settings.parallel_jobs:
-                    try:
-                        coordinate = next(coordinates)
-                    except StopIteration:
-                        exhausted = True
-                        break
-                    planned += 1
-                    futures[executor.submit(self._render_one, coordinate, settings)] = coordinate
-                if not futures:
-                    continue
-                completed, _ = wait(futures, return_when=FIRST_COMPLETED)
-                for future in completed:
-                    coordinate = futures.pop(future)
-                    try:
-                        tile_attempts, tile_retries = future.result()
-                    except Exception as error:
-                        failed += 1
-                        if len(samples) < 10:
-                            samples.append(
-                                f"{coordinate.zoom}/{coordinate.x}/{coordinate.y}: {error}"
-                            )
-                    else:
-                        rendered += 1
-                        attempts += tile_attempts
-                        retried += tile_retries
+            try:
+                exhausted = False
+                while futures or not exhausted:
+                    while not exhausted and len(futures) < settings.parallel_jobs:
+                        try:
+                            coordinate = next(coordinates)
+                        except StopIteration:
+                            exhausted = True
+                            break
+                        planned += 1
+                        futures[executor.submit(self._render_one, coordinate, settings)] = coordinate
+                    if not futures:
+                        continue
+                    completed, _ = wait(futures, return_when=FIRST_COMPLETED)
+                    for future in completed:
+                        coordinate = futures.pop(future)
+                        try:
+                            tile_attempts, tile_retries = future.result()
+                        except Exception as error:
+                            failed += 1
+                            if len(samples) < 10:
+                                samples.append(
+                                    f"{coordinate.zoom}/{coordinate.x}/{coordinate.y}: {error}"
+                                )
+                        else:
+                            rendered += 1
+                            attempts += tile_attempts
+                            retried += tile_retries
+            except BaseException:
+                # Cancel before executor shutdown waits for workers.
+                cancel = getattr(self._renderer, "cancel", None)
+                if cancel is not None:
+                    cancel()
+                for future in futures:
+                    future.cancel()
+                raise
         if failed:
             raise RasterBatchExecutionError(failed, tuple(samples))
         return RasterRenderResult(planned, rendered, attempts, retried)
@@ -80,6 +104,8 @@ class RasterRenderService:
                 self._renderer.render(coordinate, settings, str(png))
                 self._encoder.encode(str(png), str(webp), settings)
                 return attempt, attempt - 1
+            except RasterNonRetryableError:
+                raise
             except Exception as error:
                 last_error = error
             finally:

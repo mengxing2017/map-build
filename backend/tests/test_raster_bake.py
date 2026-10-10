@@ -15,6 +15,8 @@ from huavd_map_build.production.domain.raster import (
     RasterCacheIdentity,
     RasterCachePreparation,
     RasterCacheScanResult,
+    RasterDisplayEndpoint,
+    RasterDisplaySettings,
     RasterExecutionError,
     RasterMvtPreflightResult,
     RasterRenderResult,
@@ -119,6 +121,19 @@ class FakeCache:
         return self.scans.pop(0)
 
 
+class FakeDisplay:
+    def __init__(self, events: list[str]) -> None:
+        self.events = events
+
+    @contextmanager
+    def open(self, settings):
+        self.events.append("display-open")
+        try:
+            yield RasterDisplayEndpoint(":73", settings.mode, 123, 1.0)
+        finally:
+            self.events.append("display-close")
+
+
 class FakeRuntime:
     def __init__(self, events: list[str]) -> None:
         self.events = events
@@ -184,7 +199,7 @@ class RasterBakeServiceTest(unittest.TestCase):
             identity, plan, str(root), str(root / "plan.json"),
             str(root / "tiles.tsv"), str(root / "missing.tsv"),
             str(root / "quarantine"), (str(root / "png"), str(root / "webp")),
-            render, runtime, assembly, str(root / "out.mbtiles"),
+            render, RasterDisplaySettings(), runtime, assembly, str(root / "out.mbtiles"),
             str(root / "out.pmtiles"),
         )
 
@@ -195,14 +210,16 @@ class RasterBakeServiceTest(unittest.TestCase):
             RasterCacheScanResult(1, 1, 0, 0, 0),
         ]
         service = RasterBakeService(
-            FakeLifecycle(events), FakeCache(events, scans), FakeRuntime(events),
+            FakeLifecycle(events), FakeCache(events, scans), FakeDisplay(events),
+            FakeRuntime(events),
             FakeRenderer(events), FakeAssembly(events), clock=SequenceClock(),
         )
         with tempfile.TemporaryDirectory() as temporary:
             result = service.bake(self.request(Path(temporary)))
         self.assertEqual(
-            ["lock", "plan", "runtime-open", "scan", "render:runtime.json",
-             "scan", "runtime-close", "assembly", "unlock"],
+            ["lock", "plan", "display-open", "runtime-open", "scan",
+             "render:runtime.json", "scan", "runtime-close", "display-close",
+             "assembly", "unlock"],
             events,
         )
         self.assertEqual(1, result.render.rendered_tiles)
@@ -218,7 +235,8 @@ class RasterBakeServiceTest(unittest.TestCase):
             RasterCacheScanResult(1, 1, 0, 0, 0),
         ]
         service = RasterBakeService(
-            FakeLifecycle(events), FakeCache(events, scans), FakeRuntime(events),
+            FakeLifecycle(events), FakeCache(events, scans), FakeDisplay(events),
+            FakeRuntime(events),
             FakeRenderer(events), FakeAssembly(events), clock=SequenceClock(),
         )
         with tempfile.TemporaryDirectory() as temporary:
@@ -233,14 +251,15 @@ class RasterBakeServiceTest(unittest.TestCase):
             RasterCacheScanResult(1, 0, 1, 0, 0),
         ]
         service = RasterBakeService(
-            FakeLifecycle(events), FakeCache(events, scans), FakeRuntime(events),
+            FakeLifecycle(events), FakeCache(events, scans), FakeDisplay(events),
+            FakeRuntime(events),
             FakeRenderer(events), FakeAssembly(events), clock=SequenceClock(),
         )
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaisesRegex(RasterExecutionError, "remains incomplete"):
                 service.bake(self.request(Path(temporary)))
         self.assertNotIn("assembly", events)
-        self.assertEqual(["runtime-close", "unlock"], events[-2:])
+        self.assertEqual(["runtime-close", "display-close", "unlock"], events[-3:])
 
 
 class RasterEvidenceTest(unittest.TestCase):
@@ -265,7 +284,8 @@ class RasterEvidenceTest(unittest.TestCase):
                 AtomicFileWriter(), FileDigestAdapter()
             )
             store.write_parameters(
-                str(parameters), request.identity, request.render_settings
+                str(parameters), request.identity, request.render_settings,
+                request.display_settings,
             )
             store.write_metrics(
                 str(metrics), result, str(mbtiles), str(pmtiles)
@@ -281,6 +301,9 @@ class RasterEvidenceTest(unittest.TestCase):
         self.assertEqual(request.identity.digest, parameter_document["cache_identity"])
         self.assertEqual(1, parameter_document["plan"]["tile_count"])
         self.assertEqual(256, parameter_document["effective"]["tile_size"])
+        self.assertEqual(
+            "managed-xvfb", parameter_document["execution"]["display"]["mode"]
+        )
         self.assertEqual(1, metrics_document["cache"]["initial_hits"])
         self.assertEqual(0, metrics_document["render"]["worker_queue_tiles"])
         self.assertEqual("not-run", metrics_document["quality"]["visual_grid_validation"])

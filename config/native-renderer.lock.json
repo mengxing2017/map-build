@@ -1,0 +1,10 @@
+{
+  "protocol_version": 1,
+  "wrapper_repository": "https://github.com/maplibre/maplibre-native-rs.git",
+  "wrapper_revision": "d5295457f5c0492c2a783becd0d38539b84545bc",
+  "core_revision": "a33d3f00fb9dbf9117ce18edd799aa0ca5bcce5b",
+  "backend": "vulkan",
+  "platform": "linux-x86_64",
+  "amalgam_sha256": "d70f3ebc5b7bf1e4a7c2cb7136dc46c27d6c9c6d74dd44bf4ca8c765182a6990",
+  "headers_sha256": "7ffbb2332ee98cda0c6a74552edcb0428004d75da3595c30682c2ac7dac65791"
+}

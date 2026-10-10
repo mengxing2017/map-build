@@ -587,6 +587,15 @@ class BuildConfigurationService:
                 resolved["max_zoom"],
             )
         bake = resolve_raster_bake(documents["bake"], "__validation__")
+        for override in [{}, *documents["bake"].get("high_density", [])]:
+            effective = {**bake, **override}
+            if effective.get("renderer_engine", "maplibre-native-headless") not in (
+                "mbgl-renderer", "maplibre-native", "maplibre-native-headless",
+            ):
+                raise ValueError("bake.yaml has invalid renderer_engine")
+            jobs = effective.get("native_parallel_jobs", 1)
+            if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs <= 0:
+                raise ValueError("bake.yaml native_parallel_jobs must be a positive integer")
         for key in ("tile_size", "min_zoom", "max_zoom", "parallel_jobs"):
             if not isinstance(bake.get(key), int) or isinstance(bake.get(key), bool):
                 raise ValueError(f"bake.yaml raster_bake.{key} must be an integer")

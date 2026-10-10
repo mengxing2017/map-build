@@ -4,6 +4,8 @@
 
 ## 功能概览
 
+Native 图片瓦片支持通过 Python 调用独立的 `huavd-native-render`，无需将静态库放入本项目或重写 Python 流水线。源码准备、离线构建、运行环境和小范围验证见 [Native 渲染操作手册](docs/operations/native-renderer-build.md)。默认引擎为 `maplibre-native-headless`，旧引擎可显式选择。
+
 - 从 `config/regions.yaml` 读取区域目录，下载并校验对应的 Geofabrik PBF 与 MD5 文件。
 - 按 `config/layers.yaml` 中的 OSM 标签规则过滤、导出和规范化 GeoJSONSeq，构建道路、铁路、水域、水系、土地利用、建筑、行政区、自然要素、山峰、休闲区和多类标注等 16 个矢量图层。
 - 使用 Tippecanoe 将矢量图层生成 gzip 压缩的 MVT PMTiles；缩放级别、密度控制和高密度区域覆盖均由 `config/tippecanoe.yaml` 配置。

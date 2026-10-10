@@ -1,0 +1,116 @@
+diff --git a/src/cpp/map_renderer.h b/src/cpp/map_renderer.h
+index 128a61c..ebcbb21 100644
+--- a/src/cpp/map_renderer.h
++++ b/src/cpp/map_renderer.h
+@@ -39,15 +39,6 @@
+ #include "resource_options.h"
+ #include "sources/sources.h"
+ 
+-#if (!defined(__APPLE__) || defined(MLN_DARWIN_USE_LIBUV)) && __has_include(<uv.h>)
+-#include <uv.h>
+-#elif !defined(__APPLE__) || defined(MLN_DARWIN_USE_LIBUV)
+-struct uv_loop_s;
+-using uv_loop_t = uv_loop_s;
+-enum uv_run_mode { UV_RUN_DEFAULT = 0, UV_RUN_ONCE, UV_RUN_NOWAIT };
+-extern "C" int uv_run(uv_loop_t*, uv_run_mode);
+-#endif
+-
+ namespace mln {
+ namespace bridge {
+ 
+@@ -86,29 +77,15 @@ inline void currentThreadRunLoopTick() {
+ }
+ 
+ // Blocks the calling thread, advancing the run loop until it is woken by pending
+-// work (e.g. a render or style-load completion), without busy-polling. The exact
+-// primitive differs by run-loop backend (see below).
++// work completes and its callback stops the core-owned loop.
+ inline void currentThreadRunLoopWait() {
+-#if defined(__APPLE__) && !defined(MLN_DARWIN_USE_LIBUV)
+-    // Darwin's RunLoop is CoreFoundation-based, not libuv-based: run until a
+-    // completion callback calls currentThreadRunLoopStop(). (May process more
+-    // than one event before stopping.)
++    // Keep both run and stop inside core: an amalgam may own a private libuv.
+     bindThreadRunLoop();
+     threadRunLoop().run();
+-#else
+-    // libuv backend: UV_RUN_ONCE blocks until at least one event is processed,
+-    // then returns. (mbgl's RunLoop::runOnce() is UV_RUN_NOWAIT, which would
+-    // busy-spin in a wait loop; UV_RUN_DEFAULT would instead wait for *all*
+-    // handles to drain, which hangs while network handles stay active.)
+-    bindThreadRunLoop();
+-    uv_run(static_cast<uv_loop_t*>(mln::util::RunLoop::getLoopHandle()), UV_RUN_ONCE);
+-#endif
+ }
+ 
+ inline void currentThreadRunLoopStop() {
+-#if defined(__APPLE__) && !defined(MLN_DARWIN_USE_LIBUV)
+     threadRunLoop().stop();
+-#endif
+ }
+ 
+ inline bool run_loop_uses_libuv() noexcept {
+@@ -418,10 +395,8 @@ inline std::unique_ptr<RenderRequest> MapRenderer::submitRender() {
+             state->image = readStillImageBytes();
+         }
+         state->ready = true;
+-#if defined(__APPLE__) && !defined(MLN_DARWIN_USE_LIBUV)
+-        // Wake a thread blocked in currentThreadRunLoopWait() (Darwin non-libuv).
++        // Release the core-owned loop after this request reaches a terminal state.
+         currentThreadRunLoopStop();
+-#endif
+     });
+ 
+     return request;
+diff --git a/src/renderer/image_renderer.rs b/src/renderer/image_renderer.rs
+index cfc6c09..dc1667d 100644
+--- a/src/renderer/image_renderer.rs
++++ b/src/renderer/image_renderer.rs
+@@ -344,8 +344,7 @@ impl<S> ImageRenderer<S> {
+                             *state = StyleLoadState::Loaded;
+                         }
+                     }
+-                    // Wakes Darwin's CoreFoundation-backed run loop. This is a
+-                    // no-op on the libuv-backed default run loop.
++                    // Wake the core-owned loop on style-load completion.
+                     RunLoopHandle::current().stop();
+                 }
+             },
+@@ -358,8 +357,7 @@ impl<S> ImageRenderer<S> {
+                             *state = StyleLoadState::Failed(StyleLoadError::new(error));
+                         }
+                     }
+-                    // Wakes Darwin's CoreFoundation-backed run loop. This is a
+-                    // no-op on the libuv-backed default run loop.
++                    // Wake the core-owned loop on style-load failure.
+                     RunLoopHandle::current().stop();
+                 }
+             },
+diff --git a/src/renderer/run_loop.rs b/src/renderer/run_loop.rs
+index 005bffa..9292faf 100644
+--- a/src/renderer/run_loop.rs
++++ b/src/renderer/run_loop.rs
+@@ -38,10 +38,8 @@ impl RunLoopHandle {
+     ///
+     /// Unlike repeatedly calling [`tick`](Self::tick), this parks the thread on
+     /// the run loop instead of busy-polling, so it does not spin a CPU core while
+-    /// waiting for asynchronous work to complete. The underlying primitive depends
+-    /// on the run-loop backend: the libuv backend processes one event turn
+-    /// (`UV_RUN_ONCE`), while the CoreFoundation (Darwin) backend runs until a
+-    /// completion calls [`stop`](Self::stop).
++    /// waiting for asynchronous work to complete. The core-owned loop runs until
++    /// a render or style-load completion calls [`stop`](Self::stop).
+     #[allow(clippy::unused_self, reason = "method syntax ties waiting to a run-loop handle")]
+     pub(crate) fn wait_for_event(&self) {
+         ffi::currentThreadRunLoopWait();
+@@ -49,9 +47,7 @@ impl RunLoopHandle {
+ 
+     /// Wakes a thread blocked in [`wait_for_event`](Self::wait_for_event).
+     ///
+-    /// Only the CoreFoundation (Darwin) backend needs this; on the libuv backend
+-    /// it is a no-op, since [`wait_for_event`](Self::wait_for_event) returns on its
+-    /// own after one event turn.
++    /// Both run and stop execute inside the same core, including its libuv instance.
+     #[allow(clippy::unused_self, reason = "method syntax ties stopping to a run-loop handle")]
+     pub(crate) fn stop(&self) {
+         ffi::currentThreadRunLoopStop();

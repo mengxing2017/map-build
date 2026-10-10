@@ -7,6 +7,7 @@ from huavd_map_build.production.domain.raster import (
     RasterAssemblySettings,
     RasterBakeResult,
     RasterCacheIdentity,
+    RasterDisplaySettings,
     RasterExecutionError,
     RasterRenderSettings,
     RasterStageTiming,
@@ -24,6 +25,7 @@ from huavd_map_build.production.north.local.raster_runtime import (
 from huavd_map_build.production.south.port.raster import (
     RasterCacheLifecycle,
     RasterCacheStore,
+    RasterDisplaySession,
     RasterEvidenceStore,
 )
 
@@ -39,6 +41,7 @@ class RasterBakeRequest:
     quarantine_directory: str
     invalidation_paths: tuple[str, ...]
     render_settings: RasterRenderSettings
+    display_settings: RasterDisplaySettings
     runtime_request: RasterRuntimeRequest
     assembly_settings: RasterAssemblySettings
     mbtiles_path: str
@@ -50,19 +53,21 @@ class RasterBakeRequest:
 class RasterBakeService:
     def __init__(
         self, lifecycle: RasterCacheLifecycle, cache: RasterCacheStore,
-        runtime: RasterRuntimeService, renderer: RasterRenderService,
+        display: RasterDisplaySession, runtime: RasterRuntimeService,
+        renderer: RasterRenderService,
         assembly: RasterAssemblyService, evidence: RasterEvidenceStore | None = None,
         clock=time.perf_counter,
     ) -> None:
         self._lifecycle, self._cache = lifecycle, cache
-        self._runtime, self._renderer = runtime, renderer
+        self._display, self._runtime, self._renderer = display, runtime, renderer
         self._assembly, self._evidence, self._clock = assembly, evidence, clock
 
     def bake(self, request: RasterBakeRequest) -> RasterBakeResult:
         timings: list[RasterStageTiming] = []
         if self._evidence is not None and request.parameters_path is not None:
             self._evidence.write_parameters(
-                request.parameters_path, request.identity, request.render_settings
+                request.parameters_path, request.identity, request.render_settings,
+                request.display_settings,
             )
         with self._lifecycle.open(
             request.identity.digest, request.workspace, request.invalidation_paths
@@ -73,36 +78,38 @@ class RasterBakeService:
                     request.plan, request.plan_path, request.tiles_path
                 ),
             )
-            with self._runtime.open(request.runtime_request) as runtime:
-                initial = self._timed(
-                    "cache-scan-initial", timings,
-                    lambda: self._cache.scan(
-                        request.plan, request.render_settings.webp_directory,
-                        request.missing_path, request.quarantine_directory,
-                        request.render_settings.tile_size,
-                    ),
-                )
-                render_result = None
-                if initial.missing_tiles:
-                    settings = replace(
-                        request.render_settings, style_path=runtime.style_path
+            with self._display.open(request.display_settings) as display:
+                with self._runtime.open(request.runtime_request) as runtime:
+                    initial = self._timed(
+                        "cache-scan-initial", timings,
+                        lambda: self._cache.scan(
+                            request.plan, request.render_settings.webp_directory,
+                            request.missing_path, request.quarantine_directory,
+                            request.render_settings.tile_size,
+                        ),
                     )
-                    render_result = self._timed(
-                        "render", timings,
-                        lambda: self._renderer.render(request.missing_path, settings),
+                    render_result = None
+                    if initial.missing_tiles:
+                        settings = replace(
+                            request.render_settings, style_path=runtime.style_path,
+                            display=display.display,
+                        )
+                        render_result = self._timed(
+                            "render", timings,
+                            lambda: self._renderer.render(request.missing_path, settings),
+                        )
+                    final = self._timed(
+                        "cache-scan-final", timings,
+                        lambda: self._cache.scan(
+                            request.plan, request.render_settings.webp_directory,
+                            request.missing_path, request.quarantine_directory,
+                            request.render_settings.tile_size,
+                        ),
                     )
-                final = self._timed(
-                    "cache-scan-final", timings,
-                    lambda: self._cache.scan(
-                        request.plan, request.render_settings.webp_directory,
-                        request.missing_path, request.quarantine_directory,
-                        request.render_settings.tile_size,
-                    ),
-                )
-                if final.missing_tiles:
-                    raise RasterExecutionError(
-                        f"raster cache remains incomplete: {final.missing_tiles} tile(s)"
-                    )
+                    if final.missing_tiles:
+                        raise RasterExecutionError(
+                            f"raster cache remains incomplete: {final.missing_tiles} tile(s)"
+                        )
             assembly_result = self._timed(
                 "assembly", timings,
                 lambda: self._assembly.assemble(RasterAssemblyRequest(

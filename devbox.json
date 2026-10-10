@@ -5,7 +5,7 @@
     "pnpm":                        "latest",
     "nodejs":                      "22",
     "python312Packages.fonttools": "latest",
-    "python312Packages.pyyaml":  "latest",
+    "python312Packages.pyyaml":    "latest",
     "jq":                          "1.7.1",
     "wget":                        "1.21.4",
     "zip":                         "3.0",
@@ -13,14 +13,47 @@
     "gnused":                      "4.9",
     "coreutils":                   "latest",
     "findutils":                   "latest",
-    "libwebp":                     "1.6.0",
+    "libwebp": {
+      "version": "1.6.0",
+      "outputs": ["out"]
+    },
+    "openssl": {
+      "version": "latest",
+      "outputs": ["out", "dev"]
+    },
+    "fontconfig": {
+      "version": "latest",
+      "outputs": ["out", "dev"]
+    },
+    "glslang":                     "latest",
+    "spirv-tools":                 "latest",
+    "vulkan-loader": {
+      "version": "latest",
+      "outputs": ["out", "dev"]
+    },
+    "vulkan-headers":              "latest",
     "libglvnd":                    "1.7.0",
-    "libjpeg8":                    "3.1.4.1",
-    "curl":                        "8.17.0",
-    "icu":                         "latest",
+    "libjpeg8": {
+      "version": "3.1.4.1",
+      "outputs": ["out", "dev"]
+    },
+    "curl": {
+      "version": "8.17.0",
+      "outputs": ["out", "dev"]
+    },
+    "icu": {
+      "version": "latest",
+      "outputs": ["out", "dev"]
+    },
     "icu74":                       "74.2",
-    "libpng":                      "1.6.43",
-    "libuv":                       "1.52.1",
+    "libpng": {
+      "version": "1.6.43",
+      "outputs": ["out", "dev"]
+    },
+    "libuv": {
+      "version": "1.52.1",
+      "outputs": ["out", "dev"]
+    },
     "mesa":                        "26.2.0",
     "xorg.libX11":                 "1.8.12",
     "xorg.libXext":                "1.3.6",
@@ -41,9 +74,9 @@
     "git":                 "latest",
     "gcc":                 "latest",
     "yq-go":               "latest",
-    "python3":             "latest",
     "yq":                  "latest",
     "libyaml":             "latest",
+    "python3":             "latest",
     "python3Packages.pip": ""
   },
   "shell": {

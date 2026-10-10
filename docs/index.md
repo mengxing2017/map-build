@@ -26,6 +26,8 @@ features:
 
 ## 文档定位
 
+Native 图片渲染工具的源码迁出、构建与 Python 接入见 [操作手册](./operations/native-renderer-build.md)。
+
 本目录是 `huavd-map-build` 的项目内文档，用于说明当前代码的构建入口、目录职责、配置关系、运行方式和常见故障。
 
 产品契约、跨服务边界和长期演进仍以 HUAVD 总体文档为真值源。本项目文档只解释当前构建工具链如何把 OSM 数据加工成离线地图产物。

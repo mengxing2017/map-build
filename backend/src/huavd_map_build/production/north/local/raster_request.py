@@ -9,6 +9,7 @@ from huavd_map_build.delivery.south.port.digest import DigestPort
 from huavd_map_build.production.domain.raster import (
     RasterAssemblySettings,
     RasterCacheIdentity,
+    RasterDisplaySettings,
     RasterRenderSettings,
     RasterTilePlan,
 )
@@ -26,6 +27,7 @@ class RasterBakeOverrides:
     retries: int | None = None
     timeout_seconds: int | None = None
     extract_pmtiles: bool | None = None
+    display_mode: str | None = None
 
 
 class RasterBakeRequestFactory:
@@ -54,6 +56,13 @@ class RasterBakeRequestFactory:
         webp = cache / "webp"
         png = cache / "png"
         cwebp = settings.get("cwebp", {})
+        display = settings.get("display", {})
+        native = overrides.renderer_engine == "maplibre-native-headless"
+        display_mode = overrides.display_mode or (
+            "headless" if native else str(display.get("mode", "managed-xvfb"))
+        )
+        if native != (display_mode == "headless"):
+            raise ValueError("headless display requires maplibre-native-headless and vice versa")
         render = RasterRenderSettings(
             str(style), str(png), str(webp), int(settings.get("tile_size", 256)),
             overrides.renderer_engine, overrides.renderer_command,
@@ -61,7 +70,7 @@ class RasterBakeRequestFactory:
             str(cwebp.get("metadata", "none")),
             int(settings.get("tile_timeout_seconds", 120))
             if overrides.timeout_seconds is None else overrides.timeout_seconds,
-            int(settings.get("parallel_jobs", 8))
+            (int(settings.get("native_parallel_jobs", 1)) if native else int(settings.get("parallel_jobs", 8)))
             if overrides.parallel_jobs is None else overrides.parallel_jobs,
             settings.get("retries", 2) if overrides.retries is None else overrides.retries,
         )
@@ -81,15 +90,21 @@ class RasterBakeRequestFactory:
             next(plan.coordinates()),
             str(cache / "base-bake-subset.pmtiles") if extract else None,
             ",".join(str(value) for value in plan.bounds.as_list()) if extract else None,
-            plan.min_zoom, plan.max_zoom,
+            plan.min_zoom, plan.max_zoom, validate_mvt=native,
         )
         stem = f"{region.slug}-{build_date.value}.raster_bake"
+        display_settings = RasterDisplaySettings(
+            display_mode,
+            str(display.get("screen", "1024x768x24")),
+            float(display.get("startup_timeout_seconds", 10)),
+            str(cache / "xvfb.log"),
+        )
         return RasterBakeRequest(
             identity, plan, str(cache), str(cache / "plan.json"),
             str(cache / "tiles.tsv"), str(cache / "missing.tsv"),
             str(cache / "quarantine"),
             (str(png), str(webp), str(cache / "raster_bake.mbtiles")),
-            render, runtime,
+            render, display_settings, runtime,
             RasterAssemblySettings(
                 stem, plan.bounds, plan.min_zoom, plan.max_zoom, str(webp),
                 render.tile_size,

@@ -8,6 +8,7 @@ from huavd_map_build.delivery.south.port.digest import DigestPort
 from huavd_map_build.production.domain.raster import (
     RasterBakeResult,
     RasterCacheIdentity,
+    RasterDisplaySettings,
     RasterRenderSettings,
     raster_metrics_document,
     raster_parameters_document,
@@ -20,9 +21,9 @@ class FileSystemRasterEvidenceStore:
 
     def write_parameters(
         self, path: str, identity: RasterCacheIdentity,
-        settings: RasterRenderSettings,
+        settings: RasterRenderSettings, display: RasterDisplaySettings,
     ) -> None:
-        self._write(path, raster_parameters_document(identity, settings))
+        self._write(path, raster_parameters_document(identity, settings, display))
 
     def write_metrics(
         self, path: str, result: RasterBakeResult,

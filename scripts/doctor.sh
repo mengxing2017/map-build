@@ -84,7 +84,9 @@ check_mbgl_render_cli() {
   fi
 }
 
-check_mbgl_render_cli
+if [[ "${INSTALL_LEGACY_RENDERER:-0}" == 1 ]]; then
+  check_mbgl_render_cli
+fi
 
 check_mbgl_native_deps() {
   command -v npm >/dev/null 2>&1 || return 0
@@ -118,7 +120,17 @@ check_mbgl_native_deps() {
   fi
 }
 
-check_mbgl_native_deps
+if [[ "${INSTALL_LEGACY_RENDERER:-0}" == 1 ]]; then
+  check_mbgl_native_deps
+fi
+
+if PYTHONPATH="${REPO_ROOT}/backend/src" "${REPO_ROOT}/.venv/bin/python" -m \
+    huavd_map_build.production.south.adapter.process.native_tools check; then
+  printf 'OK   Native       checksum, protocol and real render self-test\n'
+else
+  printf 'FAIL Native       run make setup; see Native tool source configuration\n'
+  FAILURES=$((FAILURES + 1))
+fi
 
 if command -v pmtiles >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
   printf 'OK   %-12s %s\n' "raster-bake" "PMTiles convert path available"

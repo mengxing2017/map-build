@@ -25,6 +25,7 @@ class RasterRuntimeRequest:
     subset_bounds: str | None = None
     min_zoom: int = 0
     max_zoom: int = 14
+    validate_mvt: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,9 +58,14 @@ class RasterRuntimeService:
             )
             served_archive = request.subset_path
         with self._server.open(served_archive) as endpoint:
-            preflight = self._client.fetch(
-                endpoint.tile_url, request.preflight_coordinate
-            )
+            if request.validate_mvt:
+                preflight = self._client.fetch(
+                    endpoint.tile_url, request.preflight_coordinate, validate=True
+                )
+            else:
+                preflight = self._client.fetch(
+                    endpoint.tile_url, request.preflight_coordinate
+                )
             self._styles.write(
                 request.style_path, request.runtime_style_path, endpoint.tile_url
             )

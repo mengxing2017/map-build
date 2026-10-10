@@ -9,6 +9,8 @@ from huavd_map_build.production.domain.raster import (
     RasterCacheIdentity,
     RasterAssemblyResult,
     RasterAssemblySettings,
+    RasterDisplayEndpoint,
+    RasterDisplaySettings,
     RasterRenderSettings,
     RasterMvtPreflightResult,
     RasterTileServerEndpoint,
@@ -35,6 +37,12 @@ class RasterTileRenderer(Protocol):
         self, coordinate: RasterTileCoordinate, settings: RasterRenderSettings,
         output_path: str,
     ) -> None: ...
+
+
+class RasterDisplaySession(Protocol):
+    def open(
+        self, settings: RasterDisplaySettings,
+    ) -> AbstractContextManager[RasterDisplayEndpoint]: ...
 
 
 class RasterTileEncoder(Protocol):
@@ -67,6 +75,7 @@ class RasterTileServer(Protocol):
 class RasterMvtClient(Protocol):
     def fetch(
         self, tile_url: str, coordinate: RasterTileCoordinate,
+        validate: bool = False,
     ) -> RasterMvtPreflightResult: ...
 
 
@@ -83,7 +92,7 @@ class RasterCacheLifecycle(Protocol):
 class RasterEvidenceStore(Protocol):
     def write_parameters(
         self, path: str, identity: RasterCacheIdentity,
-        settings: RasterRenderSettings,
+        settings: RasterRenderSettings, display: RasterDisplaySettings,
     ) -> None: ...
 
     def write_metrics(

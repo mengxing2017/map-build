@@ -55,6 +55,10 @@ devbox run doctor
 
 它也会安装并检查 glyph 相关工具，其中 `versatiles_glyphs` 通过 cargo 安装，并由 setup 写入 `build-glyphs` wrapper：
 
+图片构建默认使用 Native 渲染器。团队须先配置完整 Native 安装或可信本地运行包，
+setup 自动校验并创建固定入口，doctor 执行真实渲染自检。
+安装来源配置和两条命令生成图片 ZIP 的流程见 [图片地图操作](../operations/native-renderer-build.md)。
+
 | 命令 | 用途 | 缺失影响 |
 | :--- | :--- | :--- |
 | `fonttools` | 检查或调试字体文件 | 不影响默认 PMTiles 构建 |
@@ -267,7 +271,7 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 
 | 脚本 | 用法 |
 | :--- | :--- |
-| `./scripts/setup-tools.sh` | 安装工具链；通过 `TIPPECANOE_VERSION`、`TIPPECANOE_SOURCE_TARBALL`、`TIPPECANOE_BINARY_URL`、`PMTILES_VERSION`、`MBGL_RENDERER_NPM_PACKAGE`、`INSTALL_PREFIX` 等环境变量控制；默认固定 `mbgl-renderer@0.9.0`，构建参数会记录实际 renderer 版本 |
+| `./scripts/setup-tools.sh` | 安装工具链并校验 Native 安装；Native 来源使用 `HUAVD_NATIVE_INSTALLATION` 或 `HUAVD_NATIVE_PACKAGE` 与可信摘要配置。仅在 `INSTALL_LEGACY_RENDERER=1` 时安装旧 npm renderer |
 | `./scripts/doctor.sh` | 检查命令和配置是否可用 |
 | `./scripts/fetch.sh` | `--region=<id> [--workdir=<path>] [--limit-rate=10m]` |
 | `./scripts/fetch-dem.sh` | `--region=<id> --session=<session> [--source=<id>] [--input=<path>] [--workdir=<path>]`；只接收已授权本地或内网 DEM 输入 |
@@ -442,9 +446,12 @@ PYTHONPATH=backend/src python -m huavd_map_build build raster-bake \
 
 `--no-publish` 只在 `cache/bake/${SESSION}/` 保留候选 PMTiles，不写正式 outputs 或 ready marker。默认不传该参数时会执行 metadata、manifest、attribution、PMTiles/WebP 抽样、消费者资源闭合和 ready-last 发布。
 
-默认 npm `mbgl-renderer` 需要可用的图形显示环境。在无 DISPLAY 的构建机上，应提供经过验证的 `maplibre-native` renderer，或先在目标构建机验证 renderer 能实际输出 PNG；`doctor` 的 CLI/动态库检查不等同于真实渲染成功。
+默认引擎由 `config/bake.yaml` 选择，当前为 `maplibre-native-headless`。
+它自动使用 devbox Vulkan 软件渲染，不需要 DISPLAY 或 Xvfb；doctor 会执行真实渲染自检。
+自检通过仍不等于地图视觉与客户端验收通过。旧 npm `mbgl-renderer` 需要图形显示环境，
+仅在显式覆盖引擎时使用，不再作为默认安装和检查项目。
 
-直接使用 maplibre-native renderer 时：
+兼容旧 `maplibre-native` 命令协议（不是默认 Native XYZ 协议）时：
 
 ```bash
 PYTHONPATH=backend/src python -m huavd_map_build build raster-bake \

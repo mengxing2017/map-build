@@ -3,13 +3,15 @@ description: "Raster bake defaults for non-label OSM base map rendering."
 
 defaults:
   raster_bake:
+    renderer_engine: "maplibre-native-headless"
+    native_parallel_jobs: 2
     tile_size: 256
     min_zoom: 0
     max_zoom: 14
     pixel_ratio: 1
     parallel_jobs: 8
     bbox_padding_tiles: 1
-    max_tiles: null
+    max_tiles: 200000
     retries: 2
     tile_timeout_seconds: 120
     visual_grid_max_channel_difference: 8
@@ -18,6 +20,10 @@ defaults:
     skip_existing: true
     png_cache_retention: 0
     encoding: "webp"
+    display:
+      mode: "managed-xvfb"
+      screen: "1024x768x24"
+      startup_timeout_seconds: 10
     cwebp:
       lossless: true
       method: 6

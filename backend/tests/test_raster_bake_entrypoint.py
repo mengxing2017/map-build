@@ -60,6 +60,33 @@ class RasterBakeRequestFactoryTest(unittest.TestCase):
         self.assertEqual(str(cache / "base-bake-subset.pmtiles"), request.runtime_request.subset_path)
         self.assertEqual(str(cache / "parameters.json"), request.parameters_path)
 
+    def test_native_automatically_uses_headless_and_conservative_parallelism(self) -> None:
+        root = repository_root(Path(__file__))
+        with tempfile.TemporaryDirectory() as temporary:
+            workdir = Path(temporary)
+            session = "china-guangxi-20261004"
+            outputs, cache = workdir / "outputs", workdir / "cache/bake" / session
+            outputs.mkdir(parents=True)
+            cache.mkdir(parents=True)
+            (outputs / f"{session}.base.pmtiles").write_bytes(b"base")
+            (cache / "style-render.json").write_text("{}")
+            factory = RasterBakeRequestFactory(
+                build_configuration_service(root), FileDigestAdapter(), str(root / "config/bake.yaml")
+            )
+            plan = create_raster_tile_plan(RasterBounds(0,0,1,1), 0,0,0)
+            request = factory.create(
+                RegionId("china/guangxi"), BuildDate("20261004"), temporary, plan,
+                RasterBakeOverrides(renderer_engine="maplibre-native-headless"),
+            )
+            self.assertEqual("headless", request.display_settings.mode)
+            self.assertEqual(2, request.render_settings.parallel_jobs)
+            self.assertTrue(request.runtime_request.validate_mvt)
+            with self.assertRaisesRegex(ValueError, "headless display"):
+                factory.create(
+                    RegionId("china/guangxi"), BuildDate("20261004"), temporary, plan,
+                    RasterBakeOverrides(renderer_engine="maplibre-native-headless", display_mode="managed-xvfb"),
+                )
+
     def test_missing_base_or_style_is_rejected_before_bake(self) -> None:
         root = repository_root(Path(__file__))
         with tempfile.TemporaryDirectory() as temporary:
@@ -141,6 +168,7 @@ class RasterBakeEntrypointTest(unittest.TestCase):
             "--bbox", "0,0,1,1", "--min-zoom", "0", "--max-zoom", "0",
             "--jobs", "3", "--retries", "1", "--timeout-seconds", "9",
             "--extract-pmtiles", "--renderer-command", "renderer", "--no-publish",
+            "--renderer-engine", "mbgl-renderer",
         ]
         output = io.StringIO()
         with patch.object(cli, "raster_planning_service", return_value=planning), patch.object(
@@ -149,6 +177,9 @@ class RasterBakeEntrypointTest(unittest.TestCase):
             "huavd_map_build.delivery.south.adapter.process.tool_versions."
             "ProcessToolVersionReader.versions",
             return_value={"renderer": "renderer 1"},
+        ), patch(
+            "huavd_map_build.production.south.adapter.process.raster_preview.write_preview",
+            return_value={"visual_acceptance": "not-run"},
         ), redirect_stdout(output):
             status = cli.run(arguments)
         document = json.loads(output.getvalue())

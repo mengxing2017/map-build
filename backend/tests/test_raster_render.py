@@ -56,12 +56,15 @@ class RasterProcessAdapterTest(unittest.TestCase):
                 "subprocess.run", side_effect=run
             ):
                 ProcessRasterTileRenderer().render(
-                    RasterTileCoordinate(1, 1, 0), self.settings(root), str(output)
+                    RasterTileCoordinate(1, 1, 0),
+                    self.settings(root, display=":73"), str(output)
                 )
         self.assertEqual("/tools/mbgl-render", calls[0][0][0])
         self.assertEqual(["256", "256", "-b"], calls[0][0][3:6])
         self.assertNotIn("shell", calls[0][1])
         self.assertEqual(120, calls[0][1]["timeout"])
+        self.assertEqual(":73", calls[0][1]["env"]["DISPLAY"])
+        self.assertNotIn("HTTP_PROXY", calls[0][1]["env"])
 
     def test_maplibre_renderer_uses_named_arguments(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -152,6 +155,23 @@ class FakeEncoder:
 
 
 class RasterRenderServiceTest(unittest.TestCase):
+    def test_preflight_failure_stops_before_worker_pool(self) -> None:
+        coordinates = [RasterTileCoordinate(2, index, 0) for index in range(3)]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            queue = root / "tiles.tsv"
+            queue.write_text("".join(item.tsv() for item in coordinates), encoding="utf-8")
+            renderer = TrackingRenderer(coordinates[0])
+            settings = RasterRenderSettings(
+                str(root / "style.json"), str(root / "png"), str(root / "webp"),
+                retries=0,
+            )
+            with self.assertRaises(RasterBatchExecutionError):
+                RasterRenderService(
+                    FileSystemRasterWorkQueue(), renderer, FakeEncoder()
+                ).render(str(queue), settings)
+        self.assertEqual({coordinates[0]: 1}, renderer.calls)
+
     def test_streams_with_bounded_workers_and_retries_only_failure(self) -> None:
         coordinates = [RasterTileCoordinate(3, index, 0) for index in range(6)]
         with tempfile.TemporaryDirectory() as temporary:

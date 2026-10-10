@@ -1,4 +1,5 @@
 WORKDIR        ?= /tmp/huavd-map-build
+.DEFAULT_GOAL := init
 REGION         ?= china/guangxi
 YYYYMMDD       ?= $(shell date -u +%Y%m%d)
 SESSION        ?= $(shell echo $(REGION) | tr '/' '-')-$(YYYYMMDD)
@@ -20,6 +21,22 @@ DERIVED_MAP    ?= china-base
 ASSET          ?= china-regional-osm
 HUAVD_MAP_BUILD_MACHINE_HOME ?= /opt/huavd-map-build
 PYTHON         ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+BAKE_RENDERER_ENGINE ?=
+BAKE_RENDERER_COMMAND ?=
+NATIVE_RENDERER_COMMAND ?=
+BAKE_RENDERER_FLAGS = $(if $(BAKE_RENDERER_ENGINE),--renderer-engine="$(BAKE_RENDERER_ENGINE)",) $(if $(BAKE_RENDERER_COMMAND),--renderer-command="$(BAKE_RENDERER_COMMAND)",) $(if $(BAKE_DISPLAY_MODE),--display-mode="$(BAKE_DISPLAY_MODE)",) $(if $(BAKE_JOBS),--jobs="$(BAKE_JOBS)",)
+
+.PHONY: setup-native-renderer check-native-renderer
+setup-native-renderer:
+	WORKDIR="$(WORKDIR)" bash scripts/setup-native-renderer.sh $(NATIVE_RENDERER_SETUP_ARGS)
+
+check-native-renderer:
+ifeq ($(strip $(NATIVE_RENDERER_COMMAND)),)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build.production.south.adapter.process.native_tools check
+else
+	NATIVE_RENDERER_COMMAND="$(NATIVE_RENDERER_COMMAND)" PYTHONPATH=backend/src bash scripts/native-renderer-env.sh $(PYTHON) -c 'import os; from huavd_map_build.production.south.adapter.process.raster_native import native_renderer_identity; print(native_renderer_identity(os.environ["NATIVE_RENDERER_COMMAND"]))'
+	bash scripts/native-renderer-env.sh "$(NATIVE_RENDERER_COMMAND)" --self-test
+endif
 
 .PHONY: init init-workdir python-workspace-init install-config init-build-machine-workdir install-build-machine-config setup doctor python-doctor catalog python-catalog-validate python-catalog-shadow python-build-plan python-artifact-paths python-test fetch fetch-dem build build-dem build-overview raster-estimate source-inventory derived-inventory adapter-run compose-layers build-derived-map glyph sprite style verify verify-dem verify-overview verify-derived-map pack pack-overview pack-derived-map pack-tar pack-zip prepare-import prepare-import-all prepare-import-release prepare-import-release-all prepare-derived-import clean all release release-tar release-zip release-import release-import-all lint diff-products
 
@@ -100,6 +117,7 @@ else ifneq ($(filter $(ROLE),base_raster both_raster),)
 	  $(if $(INPUT),--input="$(INPUT)",) $(if $(filter 1,$(FORCE)),--force,) \
 	  $(if $(filter 1,$(FORCE_BUILDING)),--force-building,)
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build raster-bake \
+	  $(BAKE_RENDERER_FLAGS) \
 	  --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --workdir="$(WORKDIR)" \
 	  $(if $(BAKE_BBOX),--bbox="$(BAKE_BBOX)",) \
 	  $(if $(BAKE_MIN_ZOOM),--min-zoom="$(BAKE_MIN_ZOOM)",) \
@@ -107,6 +125,7 @@ else ifneq ($(filter $(ROLE),base_raster both_raster),)
 	  $(if $(BAKE_MAX_TILES),--max-tiles="$(BAKE_MAX_TILES)",)
 else ifeq ($(ROLE),raster_bake)
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build raster-bake \
+	  $(BAKE_RENDERER_FLAGS) \
 	  --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --workdir="$(WORKDIR)" \
 	  $(if $(BAKE_BBOX),--bbox="$(BAKE_BBOX)",) \
 	  $(if $(BAKE_MIN_ZOOM),--min-zoom="$(BAKE_MIN_ZOOM)",) \

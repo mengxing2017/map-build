@@ -1168,11 +1168,13 @@ main() {
   if ! install_build_glyphs; then
     failed=1
   fi
-  if ! install_mbgl_render; then
-    failed=1
-  fi
-  if ! install_maplibre_native_mbgl_render; then
-    failed=1
+  if [[ "${INSTALL_LEGACY_RENDERER:-0}" == 1 ]]; then
+    if ! install_mbgl_render; then
+      failed=1
+    fi
+    if ! install_maplibre_native_mbgl_render; then
+      failed=1
+    fi
   fi
   if ! check_glyph_tooling; then
     failed=1
@@ -1181,6 +1183,10 @@ main() {
     failed=1
   fi
   if ! write_pip_wrapper "${VENV_PYTHON}"; then
+    failed=1
+  fi
+  if ! PYTHONPATH="${REPO_ROOT}/backend/src" "${VENV_PYTHON}" -m \
+      huavd_map_build.production.south.adapter.process.native_tools setup; then
     failed=1
   fi
 

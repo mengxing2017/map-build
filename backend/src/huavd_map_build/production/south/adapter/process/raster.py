@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from huavd_map_build.production.domain.raster import (
@@ -16,9 +17,12 @@ from huavd_map_build.production.domain.raster import (
 )
 
 
-def _environment() -> dict[str, str]:
+def _environment(extra: dict[str, str] | None = None) -> dict[str, str]:
     allowed = ("HOME", "LANG", "LC_ALL", "PATH", "TMPDIR")
-    return {key: os.environ[key] for key in allowed if key in os.environ}
+    environment = {key: os.environ[key] for key in allowed if key in os.environ}
+    if extra is not None:
+        environment.update(extra)
+    return environment
 
 
 def _executable(command: str) -> str:
@@ -28,10 +32,14 @@ def _executable(command: str) -> str:
     return executable
 
 
-def _run(arguments: list[str], timeout_seconds: int | None, label: str) -> None:
+def _run(
+    arguments: list[str], timeout_seconds: int | None, label: str,
+    environment: dict[str, str] | None = None,
+) -> None:
     try:
         result = subprocess.run(
-            arguments, env=_environment(), check=False, timeout=timeout_seconds,
+            arguments, env=_environment(environment), check=False, timeout=timeout_seconds,
+            stdout=sys.stderr,
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         raise RasterExecutionError(f"failed to execute {label}: {error}") from error
@@ -42,6 +50,14 @@ def _run(arguments: list[str], timeout_seconds: int | None, label: str) -> None:
 
 
 class ProcessRasterTileRenderer:
+    def __init__(self) -> None:
+        from huavd_map_build.production.south.adapter.process.raster_native import NativeProcessRegistry
+
+        self._native_processes = NativeProcessRegistry()
+
+    def cancel(self) -> None:
+        self._native_processes.cancel()
+
     def render(
         self, coordinate: RasterTileCoordinate, settings: RasterRenderSettings,
         output_path: str,
@@ -53,13 +69,30 @@ class ProcessRasterTileRenderer:
             arguments = [
                 executable, settings.style_path, output_path, size, size, "-b", bounds,
             ]
+        elif settings.renderer_engine == "maplibre-native-headless":
+            from huavd_map_build.production.south.adapter.process.raster_native import (
+                run_native, validate_native_png,
+            )
+
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            run_native([
+                executable, "--style", settings.style_path,
+                "--z", str(coordinate.zoom), "--x", str(coordinate.x),
+                "--y", str(coordinate.y), "--width", size, "--height", size,
+                "--output", output_path,
+            ], settings.timeout_seconds, registry=self._native_processes)
+            validate_native_png(output_path, settings.tile_size)
+            return
         else:
             arguments = [
                 executable, "--style", settings.style_path, "--bounds", bounds,
                 "--width", size, "--height", size, "--output", output_path,
             ]
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        _run(arguments, settings.timeout_seconds, settings.renderer_command)
+        environment = {"DISPLAY": settings.display} if settings.display else None
+        _run(
+            arguments, settings.timeout_seconds, settings.renderer_command, environment
+        )
         if not Path(output_path).is_file():
             raise RasterExecutionError(
                 f"renderer did not create output for {coordinate.zoom}/{coordinate.x}/{coordinate.y}"

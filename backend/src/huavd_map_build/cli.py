@@ -223,13 +223,16 @@ def _parser() -> argparse.ArgumentParser:
     raster_bake.add_argument("--max-zoom", type=int)
     raster_bake.add_argument("--max-tiles", type=int)
     raster_bake.add_argument(
-        "--renderer-engine", choices=["mbgl-renderer", "maplibre-native"],
-        default="mbgl-renderer",
+        "--renderer-engine", choices=["mbgl-renderer", "maplibre-native", "maplibre-native-headless"],
+        default=None,
     )
-    raster_bake.add_argument("--renderer-command", default="mbgl-render")
+    raster_bake.add_argument("--renderer-command", help="renderer executable; defaults to the selected engine's command")
     raster_bake.add_argument("--jobs", type=int)
     raster_bake.add_argument("--retries", type=int)
     raster_bake.add_argument("--timeout-seconds", type=int)
+    raster_bake.add_argument(
+        "--display-mode", choices=["managed-xvfb", "external-x11", "headless"]
+    )
     raster_bake.add_argument("--extract-pmtiles", action=argparse.BooleanOptionalAction)
     raster_bake.add_argument(
         "--publish", action=argparse.BooleanOptionalAction, default=True,
@@ -861,20 +864,41 @@ def run(arguments: list[str] | None = None) -> int:
             region, build_date, args.workdir, bounds, args.min_zoom,
             args.max_zoom, args.max_tiles,
         ))
-        renderer_identity = ProcessToolVersionReader().versions(
-            (args.renderer_command,)
-        )[args.renderer_command]
+        bake_settings = build_configuration_service(root).raster_bake(args.region)
+        args.renderer_engine = args.renderer_engine or bake_settings.get("renderer_engine", "maplibre-native-headless")
+        if args.renderer_command is None:
+            if args.renderer_engine == "maplibre-native-headless":
+                from huavd_map_build.production.south.adapter.process.native_tools import resolve_renderer
+
+                args.renderer_command = resolve_renderer()
+            else:
+                args.renderer_command = "mbgl-render"
+        if args.renderer_engine == "maplibre-native-headless":
+            from huavd_map_build.production.south.adapter.process.raster_native import (
+                native_renderer_identity,
+            )
+
+            renderer_identity = native_renderer_identity(args.renderer_command)
+        else:
+            renderer_identity = ProcessToolVersionReader().versions(
+                (args.renderer_command,)
+            )[args.renderer_command]
         request = raster_bake_request_factory(root).create(
             region, build_date, args.workdir, plan,
             RasterBakeOverrides(
                 args.renderer_engine, args.renderer_command, renderer_identity,
                 args.jobs, args.retries, args.timeout_seconds,
-                args.extract_pmtiles,
+                args.extract_pmtiles, args.display_mode,
             ),
         )
         result = raster_bake_service().bake(request)
         document = result.as_dict()
         document["candidate_pmtiles"] = request.pmtiles_path
+        from huavd_map_build.production.south.adapter.process.raster_preview import write_preview
+
+        document["inspection"] = write_preview(
+            Path(args.workdir) / "cache/bake" / f"{region.slug}-{build_date.value}", plan
+        )
         if args.publish:
             from huavd_map_build.production.north.local.raster_finalize import (
                 RasterFinalizationRequest,

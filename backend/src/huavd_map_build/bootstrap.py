@@ -110,6 +110,9 @@ from huavd_map_build.production.south.adapter.process.raster_server import (
     ProcessRasterTileServer,
     UrlLibRasterMvtClient,
 )
+from huavd_map_build.production.south.adapter.process.raster_display import (
+    ProcessRasterDisplaySession,
+)
 from huavd_map_build.production.south.adapter.workspace.raster import (
     FileSystemRasterCacheStore,
 )
@@ -252,6 +255,7 @@ def raster_bake_service() -> RasterBakeService:
     return RasterBakeService(
         FileSystemRasterCacheLifecycle(),
         FileSystemRasterCacheStore(),
+        ProcessRasterDisplaySession(),
         RasterRuntimeService(
             archive, ProcessRasterTileServer(), UrlLibRasterMvtClient(),
             FileSystemRasterRuntimeStyleStore(),

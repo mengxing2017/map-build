@@ -5,6 +5,7 @@ from pathlib import Path
 import socket
 import subprocess
 import time
+import zlib
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -93,16 +94,36 @@ class UrlLibRasterMvtClient:
 
     def fetch(
         self, tile_url: str, coordinate: RasterTileCoordinate,
+        validate: bool = False,
     ) -> RasterMvtPreflightResult:
         url = tile_url.format(z=coordinate.zoom, x=coordinate.x, y=coordinate.y)
         started = time.perf_counter()
         try:
             with urlopen(url, timeout=self._timeout_seconds) as response:
-                payload = response.read()
+                payload = response.read(16 * 1024 * 1024 + 1) if validate else response.read()
+                content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip()
+                status = response.status
         except (OSError, URLError) as error:
             raise RasterExecutionError(f"failed to fetch MVT preflight tile {url}: {error}") from error
-        if not payload:
+        if not payload and not (validate and (status == 204 or content_type in (
+            "application/vnd.mapbox-vector-tile", "application/x-protobuf",
+        ))):
             raise RasterExecutionError(f"empty MVT preflight response: {url}")
+        if validate and payload:
+            try:
+                if len(payload) > 16 * 1024 * 1024:
+                    raise ValueError("MVT exceeds size limit")
+                decoded = payload
+                if payload.startswith(b"\x1f\x8b"):
+                    decoder = zlib.decompressobj(16 + zlib.MAX_WBITS)
+                    decoded = decoder.decompress(payload, 16 * 1024 * 1024 + 1)
+                    if not decoder.eof or decoder.unused_data or len(decoded) > 16 * 1024 * 1024:
+                        raise ValueError("invalid or oversized gzip MVT")
+                import mapbox_vector_tile
+
+                mapbox_vector_tile.decode(decoded)
+            except Exception as error:
+                raise RasterExecutionError(f"invalid MVT preflight response {url}: {error}") from error
         return RasterMvtPreflightResult(
             url, len(payload), round((time.perf_counter() - started) * 1000, 3)
         )

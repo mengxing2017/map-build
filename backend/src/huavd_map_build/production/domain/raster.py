@@ -20,6 +20,10 @@ class RasterExecutionError(RuntimeError):
     pass
 
 
+class RasterNonRetryableError(RasterExecutionError):
+    """A fixed input or installation error cannot improve by retrying a tile."""
+
+
 class RasterBatchExecutionError(RasterExecutionError):
     def __init__(self, failed_tiles: int, samples: tuple[str, ...]) -> None:
         detail = "; ".join(samples)
@@ -137,9 +141,10 @@ class RasterRenderSettings:
     timeout_seconds: int = 120
     parallel_jobs: int = 1
     retries: int = 0
+    display: str | None = None
 
     def __post_init__(self) -> None:
-        if self.renderer_engine not in ("mbgl-renderer", "maplibre-native"):
+        if self.renderer_engine not in ("mbgl-renderer", "maplibre-native", "maplibre-native-headless"):
             raise ValueError(f"unsupported raster renderer: {self.renderer_engine}")
         if not self.style_path or not self.renderer_command:
             raise ValueError("raster style and renderer command must not be empty")
@@ -149,6 +154,33 @@ class RasterRenderSettings:
             raise ValueError("raster WebP method must be between 0 and 6")
         if self.parallel_jobs <= 0 or self.retries < 0:
             raise ValueError("raster parallel jobs must be positive and retries non-negative")
+        if self.renderer_engine == "maplibre-native-headless":
+            if self.tile_size not in (256, 512):
+                raise ValueError("native headless tile size must be 256 or 512")
+            if self.display:
+                raise ValueError("native headless renderer cannot use DISPLAY")
+
+
+@dataclass(frozen=True, slots=True)
+class RasterDisplaySettings:
+    mode: str = "managed-xvfb"
+    screen: str = "1024x768x24"
+    startup_timeout_seconds: float = 10.0
+    log_path: str = "xvfb.log"
+
+    def __post_init__(self) -> None:
+        if self.mode not in ("managed-xvfb", "external-x11", "headless"):
+            raise ValueError(f"unsupported raster display mode: {self.mode}")
+        if not self.screen or self.startup_timeout_seconds <= 0:
+            raise ValueError("raster display screen and startup timeout must be valid")
+
+
+@dataclass(frozen=True, slots=True)
+class RasterDisplayEndpoint:
+    display: str
+    mode: str
+    server_pid: int | None
+    startup_ms: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,6 +274,7 @@ class RasterBakeResult:
 
 def raster_parameters_document(
     identity: RasterCacheIdentity, settings: RasterRenderSettings,
+    display: RasterDisplaySettings,
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -256,6 +289,11 @@ def raster_parameters_document(
         "execution": {
             "parallel_jobs": settings.parallel_jobs,
             "retries": settings.retries,
+            "display": {
+                "mode": display.mode,
+                "screen": display.screen,
+                "startup_timeout_seconds": display.startup_timeout_seconds,
+            },
         },
         "effective": {
             "bounds": ",".join(str(value) for value in identity.plan.bounds.as_list()),
