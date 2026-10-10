@@ -59,6 +59,28 @@ class GlyphPlanTest(unittest.TestCase):
 
 
 class ProcessGlyphGeneratorTest(unittest.TestCase):
+    def test_finds_installed_wrapper_without_user_directories_on_path(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            wrapper = home / ".local/bin/build-glyphs"
+            wrapper.parent.mkdir(parents=True)
+            wrapper.write_text("#!/bin/sh\nexit 0\n")
+            wrapper.chmod(0o755)
+            cargo = home / "custom-cargo/bin"
+            cargo.mkdir(parents=True)
+            (cargo / "versatiles_glyphs").touch()
+            with patch.dict("os.environ", {
+                "HOME": directory, "PATH": "/usr/bin:/bin",
+                "CARGO_HOME": str(cargo.parent),
+            }, clear=True), patch(
+                "subprocess.run", return_value=Mock(returncode=0)
+            ) as run:
+                ProcessGlyphGenerator().generate("build-glyphs", "font", "output")
+            self.assertEqual(str(wrapper), run.call_args.args[0][0])
+            self.assertEqual(
+                f"{cargo}:/usr/bin:/bin", run.call_args.kwargs["env"]["PATH"]
+            )
+
     def test_executes_argument_vector_with_restricted_environment(self) -> None:
         completed = Mock(returncode=0)
         with patch("shutil.which", return_value="/tools/build-glyphs"), patch(
