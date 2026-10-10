@@ -58,3 +58,12 @@ class RegionFetchServiceTest(unittest.TestCase):
                 self._service(downloader).fetch(
                     FetchRequest(RegionId("china/guangxi"), directory)
                 )
+
+    def test_local_extract_never_downloads_parent_as_district(self) -> None:
+        downloader = RecordingDownloader(b"parent-pbf")
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "local administrative polygon extract"):
+                self._service(downloader).fetch(FetchRequest(
+                    RegionId("china/guangxi/guilin/qixing"), directory
+                ))
+        self.assertEqual([], downloader.calls)

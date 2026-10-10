@@ -12013,6 +12013,46 @@ regions:
       style_id: "osm-dev"
       package_version_template: null
       region_id: "cn-45-base"
+  - id: "china/guangxi/guilin"
+    slug: "china-guangxi-guilin"
+    display_name: "Guilin"
+    display_name_zh: "桂林市"
+    priority: "local-extract-parent"
+    direct_tippecanoe: false
+    geofabrik:
+      pbf_url: null
+      md5_url: null
+      basename: null
+      parent_region: "china/guangxi"
+      fallback: null
+    huavd:
+      region_id: "cn-450300-base"
+      source_id: null
+      mapping_status: "not-direct-pmtiles"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
+  - id: "china/guangxi/guilin/qixing"
+    slug: "china-guangxi-guilin-qixing"
+    display_name: "Qixing District"
+    display_name_zh: "桂林市七星区"
+    priority: "local-extract"
+    direct_tippecanoe: true
+    geofabrik:
+      pbf_url: "https://download.geofabrik.de/asia/china/guangxi-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/guangxi-latest.osm.pbf.md5"
+      basename: "qixing-local.osm.pbf"
+      parent_region: "china/guangxi/guilin"
+      fallback: null
+    huavd:
+      region_id: "cn-450305-base"
+      source_id: null
+      mapping_status: "defined"
+      asset_role: "base-vector"
+      source_type: "osm-pbf"
+      style_id: "osm-dev"
+      package_version_template: null
   - id: "china/nei-monggol"
     slug: "china-nei-monggol"
     display_name: "Nei Monggol"

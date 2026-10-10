@@ -34,8 +34,8 @@ class CatalogSnapshotTest(unittest.TestCase):
         ).encode()
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual(
-            "689015ae02d17a21693d7528bca7b424497bf3bcdc813dde780d9354f342bcb1a"
-            "539aa892f5a7ec75ad4bf2e5d0446e3ffa33fef838a09ffc3499fbf3728388e",
+            "710d0e7880470eae7792ee643b3cd6c0b966788bc03ec735f6bf3b802a8cdb0dd2"
+            "89e97bcf6b2d60721233629c65d0cb3c3c43ee10e08f253cc299aa09afb94e",
             hashlib.sha512(canonical).hexdigest(),
         )
 
@@ -55,6 +55,8 @@ class CatalogSnapshotTest(unittest.TestCase):
             )
             snapshot = json.loads(output.read_text(encoding="utf-8"))
         guangxi = next(item for item in snapshot["regions"] if item["id"] == "china/guangxi")
-        self.assertEqual(4056, len(snapshot["regions"]))
+        # Guilin and Qixing are explicitly configured local-extract regions.
+        self.assertEqual(4058, len(snapshot["regions"]))
+        self.assertTrue(any(item["id"] == "china/guangxi/guilin/qixing" for item in snapshot["regions"]))
         self.assertEqual("广西壮族自治区", guangxi["display_name_zh"])
         self.assertEqual("cn-45-base", guangxi["region_id"])
