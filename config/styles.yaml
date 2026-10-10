@@ -226,6 +226,24 @@ paint_layers:
           default: "#334155"
       text-halo-color: "#ffffff"
       text-halo-width: 1
+  - id: "landuse-fill"
+    source_layer: "landuse"
+    type: "fill"
+    filter: ["==", ["geometry-type"], "Polygon"]
+    paint:
+      fill-color: ["match", ["get", "landuse"], ["forest", "grass", "meadow", "orchard"], "#d8e5ce", ["residential", "commercial", "industrial"], "#e8e4df", "#eee9d5"]
+  - id: "natural-fill"
+    source_layer: "natural_a"
+    type: "fill"
+    filter: ["==", ["geometry-type"], "Polygon"]
+    paint:
+      fill-color: ["match", ["get", "natural"], ["wood", "scrub", "grassland"], "#d0e0c3", "sand", "#f0e5c5", "#e3e5d3"]
+  - id: "leisure-fill"
+    source_layer: "leisure_a"
+    type: "fill"
+    filter: ["==", ["geometry-type"], "Polygon"]
+    paint:
+      fill-color: "#d5e8cd"
   - id: "water"
     source_layer: "water"
     type: "fill"
@@ -249,6 +267,36 @@ paint_layers:
       circle-color: "#f2efe9"
       circle-stroke-color: "#a8a29e"
       circle-stroke-width: 1
+  - id: "waterway-line"
+    source_layer: "waterway"
+    type: "line"
+    minzoom: 9
+    filter: ["==", ["geometry-type"], "LineString"]
+    paint:
+      line-color: "#a8d3df"
+      line-width: ["interpolate", ["linear"], ["zoom"], 9, 0.6, 14, 2.0]
+  - id: "road-casing"
+    source_layer: "road"
+    type: "line"
+    minzoom: 8
+    filter: ["==", ["geometry-type"], "LineString"]
+    layout:
+      line-cap: "round"
+      line-join: "round"
+    paint:
+      line-color: "#c9c3b8"
+      line-width: ["interpolate", ["linear"], ["zoom"], 8, 0.6, 12, 2.5, 14, 5.0]
+  - id: "road-line"
+    source_layer: "road"
+    type: "line"
+    minzoom: 8
+    filter: ["==", ["geometry-type"], "LineString"]
+    layout:
+      line-cap: "round"
+      line-join: "round"
+    paint:
+      line-color: ["match", ["get", "highway"], ["motorway", "trunk", "primary"], "#f4cc88", "#ffffff"]
+      line-width: ["interpolate", ["linear"], ["zoom"], 8, 0.3, 12, 1.5, 14, 3.5]
   - id: "railway"
     source_layer: "railway"
     type: "line"

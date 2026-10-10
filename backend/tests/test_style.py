@@ -69,6 +69,17 @@ class StyleCompilerTest(unittest.TestCase):
         self.assertEqual(256, raster["sources"]["raster-bake"]["tileSize"])
         self.assertEqual("raster-baked", raster["metadata"]["huavd:asset-role"])
 
+    def test_bake_contains_roads_and_land_cover_below_water(self) -> None:
+        layers = self.documents.bake["layers"]
+        ids = [layer["id"] for layer in layers]
+        for layer_id in ("landuse-fill", "natural-fill", "leisure-fill"):
+            self.assertLess(ids.index(layer_id), ids.index("water"))
+        self.assertLess(ids.index("water"), ids.index("road-casing"))
+        self.assertLess(ids.index("road-casing"), ids.index("road-line"))
+        road = next(layer for layer in layers if layer["id"] == "road-line")
+        self.assertEqual("road", road["source-layer"])
+        self.assertEqual(["==", ["geometry-type"], "LineString"], road["filter"])
+
     def test_locale_and_pmtiles_url_overrides(self) -> None:
         resolved = self.configuration.style("china/guangxi", "en")
         vector = compile_styles(
