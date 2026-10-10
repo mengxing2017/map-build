@@ -19,14 +19,13 @@ make doctor
 ## 2. 选择地区与日期
 
 ```bash
-export REGION=china/guangxi/guilin/qixing
+export REGION=china/guangxi
 export YYYYMMDD=20261003
 ```
 
 填写自己数据对应的已配置地区和日期。
 默认工作目录为 `/tmp/huavd-map-build`，数据需要持久保存时先设置自己的 `WORKDIR`。
 输入默认按地区配置读取 `WORKDIR/mirror`；不会自动下载 PBF。
-七星区须使用提取好的七星区输入，不能直接替换成广西全域 PBF。
 
 ## 3. 构建和打包
 
@@ -35,7 +34,7 @@ make build ROLE=base_raster
 make pack ROLE=base_raster FORMAT=zip
 ```
 
-使用其他本地 PBF 时，在第一条命令后添加 `INPUT=./input/qixing.osm.pbf`，
+使用其他本地 PBF 时，在第一条命令后添加 `INPUT=./input/guangxi.osm.pbf`，
 路径相对仓库根目录；文件须与选择地区对应。
 任一步失败就停止，按错误提示修复后重跑，不交付残留旧 ZIP。
 已有完整成果重建时须显式加 `FORCE=1`；它会重建当前会话的矢量成果。
@@ -89,7 +88,7 @@ tar 包根目录直接包含上述安装文件；不接受链接、特殊文件�
 | --- | --- |
 | Native missing / source lock mismatch | 由维护者准备匹配安装，重跑 setup、doctor |
 | Vulkan 或动态库错误 | 重新进入 devbox，检查工具包与目标环境是否匹配 |
-| 输入不存在 | 检查地区、WORKDIR 和 INPUT；本地提取地区先准备对应 PBF |
+| 输入不存在 | 检查已配置地区、WORKDIR 和 INPUT，准备对应 PBF |
 | 字体或 build-glyphs 缺失 | 准备配置字体并运行 setup，不创建空资源替代 |
 | 超过瓦片上限 | 检查地区和层级配置，先核算预算，不直接取消限制 |
 | 发布失败 | 查看 finalization 失败项，补齐资源后重跑 |
