@@ -460,7 +460,7 @@ def style_quality_gate(root: Path | None = None) -> StyleQualityGate:
 
 def vector_tile_sampling_gate() -> VectorTileSamplingGate:
     return VectorTileSamplingGate(
-        FileSystemStagedLayerReader(), ProcessVectorTileReader()
+        FileSystemStagedLayerReader(), ProcessVectorTileReader(), FileSystemPmtilesHeaderReader()
     )
 
 

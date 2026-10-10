@@ -172,3 +172,21 @@ class ProcessVectorTileReaderTest(unittest.TestCase):
                 ProcessVectorTileReader().decode(
                     "/tmp/map.pmtiles", TileCoordinate(10, 824, 438)
                 )
+
+
+class HighZoomTileSamplingTest(unittest.TestCase):
+    def test_z19_header_without_content_fails(self):
+        from types import SimpleNamespace
+        class Headers:
+            def read(self, path):
+                return SimpleNamespace(max_zoom=19)
+        point = feature({"highway": "service"}, [[110.3, 25.3], [110.31, 25.31]], "LineString")
+        staged = MemoryStagedReader({"road": (point,)})
+        coordinate = lonlat_to_tile(110.3, 25.3, 19)
+        arguments = dict(region=RegionId("china/guangxi"), build_date=BuildDate("20261003"), workdir="/tmp/maps")
+        failed = VectorTileSamplingGate(staged, MemoryTileReader({}), Headers()).verify(**arguments)
+        self.assertFalse(failed.passed)
+        self.assertIn("tile-high-zoom-empty", [finding.code for finding in failed.findings])
+        passed = VectorTileSamplingGate(staged, MemoryTileReader({coordinate: decoded_layer("road", {"highway": "service"})}), Headers()).verify(**arguments)
+        self.assertTrue(passed.passed, passed.as_dict())
+        self.assertIn(coordinate, passed.sampled_tiles)
