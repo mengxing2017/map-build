@@ -1,6 +1,7 @@
 import hashlib
 import json
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -115,6 +116,7 @@ class MetadataAdapterTest(unittest.TestCase):
             ["/tools/pmtiles", "edit", "map.pmtiles", "--metadata=metadata.json"],
             run.call_args.args[0],
         )
+        self.assertIs(sys.stderr, run.call_args.kwargs["stdout"])
         with patch("shutil.which", return_value=None):
             with self.assertRaises(MissingPmtilesToolError):
                 ProcessPmtilesMetadataEditor().edit("map", "metadata")

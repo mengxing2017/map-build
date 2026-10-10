@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 
 from huavd_map_build.delivery.domain.metadata import (
     MetadataEditError,
@@ -20,7 +21,7 @@ class ProcessPmtilesMetadataEditor:
         try:
             result = subprocess.run(
                 [executable, "edit", pmtiles_path, f"--metadata={metadata_path}"],
-                env=environment, check=False,
+                env=environment, check=False, stdout=sys.stderr,
             )
         except OSError as error:
             raise MetadataEditError(f"failed to start pmtiles: {error}") from error
