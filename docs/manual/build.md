@@ -44,6 +44,30 @@ make release-zip
 make all
 ```
 
+## z19 标准矢量配置
+
+构建工具支持通过 base 专属覆盖与 `standard-z19` 图层策略启用真实 z0–19。目前公共区域目录未启用该策略；合成局部提取区域仅用于测试。广西全域和其他 region 仍使用各自既有配置，独立 building、DEM 和 overview 不受影响。
+
+使用前须先配置自己的局部提取区域，并在 Tippecanoe 区域覆盖中设置 `roles: [base]`、`max_zoom: 19`、`layer_zoom_profile: standard-z19` 和 `extend_zooms_if_still_dropping: false`。没有独立 Geofabrik 下载端点的局部区域必须提供已按行政边界提取并核验的本地 PBF，不能用父区域 PBF 冒充区域输入：
+
+```bash
+export REGION=your/configured/local-region
+export YYYYMMDD=20261003
+export ROLE=base
+export WORKDIR=/data/huavd-qixing-vector-z19
+export INPUT=/path/to/verified/qixing/source.osm.pbf
+unset SESSION
+
+make python-catalog-validate
+make python-catalog-shadow
+make build
+make verify
+```
+
+配置按 defaults、高密度基线、角色设置、区域与角色覆盖、显式 tier profile 的顺序解析；局部区域通过 `layer_zoom_profile=standard-z19` 启用高层级图层策略。admin 和行政线仍保留各自截止层级，高等级地名保留既有 label tier 规则。
+
+z19 深度校验会从 staged 道路、建筑和水体位置抽样解码最高层 MVT；仅把 header 改为 19 不能通过验收。构建后还需完成样式资源闭合、打包与客户端联调。HMI 的 source.maxzoom、图层显示上限和相机 zoom 是不同约束；包内有 z19 数据不代表目标设备已验收。
+
 ### 分步操作
 
 需要单独控制每一步时，继续复用同一组环境变量：
