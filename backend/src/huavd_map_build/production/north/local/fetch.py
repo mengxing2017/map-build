@@ -20,11 +20,6 @@ class RegionFetchService:
         self._digest = digest
 
     def fetch(self, request: FetchRequest) -> str:
-        if self._catalog.region(request.region).priority == "local-extract":
-            raise ValueError(
-                "region requires a local administrative polygon extract; "
-                "use scripts/extract-admin-region.py and build --input"
-            )
         pbf_url = self._catalog.pbf_url(request.region)
         md5_url = self._catalog.md5_url(request.region)
         basename = self._catalog.pbf_basename(request.region)
