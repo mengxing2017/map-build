@@ -5,6 +5,7 @@ from huavd_map_build.catalog.domain.configuration import (
     ConfigurationFinding,
     apply_tier_profile,
     inspect_layer_export_contracts,
+    layer_zoom_profile,
     resolve_raster_bake,
     resolve_tippecanoe,
     resolve_vector_layers,
@@ -153,13 +154,17 @@ class BuildConfigurationService:
     def profile_transform(self, region: str) -> dict[str, Any] | None:
         tiers = self._repository.load("tier-profiles")
         entry = tiers.get("regions", {}).get(region)
-        if not isinstance(entry, dict) or not entry.get("build_profile"):
-            return None
-        name = entry["build_profile"]
-        profile = tiers.get("profiles", {}).get(name)
-        if not isinstance(profile, dict):
-            raise ValueError(f"unknown tier profile: {name}")
         settings = self.tippecanoe(region, "base")
+        if isinstance(entry, dict) and entry.get("build_profile"):
+            name = entry["build_profile"]
+            profile = tiers.get("profiles", {}).get(name)
+            if not isinstance(profile, dict):
+                raise ValueError(f"unknown tier profile: {name}")
+        elif settings.get("layer_zoom_profile"):
+            name = settings["layer_zoom_profile"]
+            profile = {}
+        else:
+            return None
         vector_layers = self.vector_layers(region, "base", settings["max_zoom"])
         feature_rules = profile.get("feature_rules", {})
         return {
@@ -576,16 +581,19 @@ class BuildConfigurationService:
                 resolved["max_zoom"],
             )
 
-        for role in ("base", "building"):
-            resolved = resolve_tippecanoe(documents["tippecanoe"], "__validation__", role)
-            resolve_vector_layers(
-                resolved,
-                documents["tier-profiles"],
-                documents["layers"],
-                "__validation__",
-                role,
-                resolved["max_zoom"],
-            )
+        for name in documents["layers"].get("zoom_profiles", {}):
+            layer_zoom_profile(documents["layers"], name)
+        # Validate every override even if no catalog/profile region currently selects it.
+        for region in ["__validation__", *(
+            item.get("region_match", "")
+            for item in documents["tippecanoe"].get("high_density", [])
+        )]:
+            for role in ("base", "building"):
+                resolved = resolve_tippecanoe(documents["tippecanoe"], region, role)
+                resolve_vector_layers(
+                    resolved, documents["tier-profiles"], documents["layers"],
+                    region, role, resolved["max_zoom"],
+                )
         bake = resolve_raster_bake(documents["bake"], "__validation__")
         for override in [{}, *documents["bake"].get("high_density", [])]:
             effective = {**bake, **override}

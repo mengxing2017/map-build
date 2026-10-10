@@ -213,16 +213,26 @@ def resolve_tippecanoe(
 
     for override in _array(document, "high_density"):
         pattern = str(override.get("region_match", ""))
-        if _shell_pattern_matches(region, pattern):
+        roles = override.get("roles", ["base", "building"])
+        if (not isinstance(roles, list) or not roles
+            or any(not isinstance(value, str) or value not in {"base", "building"} for value in roles)
+            or len(set(roles)) != len(roles)):
+            raise BuildConfigurationError("tippecanoe override roles must be unique base/building values")
+        if _shell_pattern_matches(region, pattern) and role in roles:
             resolved.update(
                 deepcopy(
                     {
                         key: value
                         for key, value in override.items()
-                        if key not in {"region_match", "building_height_derivation"}
+                        if key not in {"region_match", "roles", "building_height_derivation"}
                     }
                 )
             )
+    minimum, maximum = resolved.get("min_zoom"), resolved.get("max_zoom")
+    if (not isinstance(minimum, int) or isinstance(minimum, bool)
+        or not isinstance(maximum, int) or isinstance(maximum, bool)
+        or not 0 <= minimum <= maximum <= 24):
+        raise BuildConfigurationError("tippecanoe zooms must satisfy 0 <= min_zoom <= max_zoom <= 24")
     return resolved
 
 
@@ -263,6 +273,8 @@ def apply_tier_profile(
     _validate_tier_profile(profile_name, profile, layers_document)
 
     result = deepcopy(resolved)
+    # Explicit product profiles have precedence over region layer-zoom overrides.
+    result.pop("layer_zoom_profile", None)
     for key in (
         "min_zoom",
         "max_zoom",
@@ -292,6 +304,7 @@ def resolve_vector_layers(
     profile = _tier_profile(tier_document, region, role)
     feature_rules = profile.get("feature_rules", {}) if profile else {}
 
+    zoom_layers = layer_zoom_profile(layers_document, tippecanoe.get("layer_zoom_profile"))
     result: list[dict[str, Any]] = []
     for layer in source_layers:
         definition = known_layers.get(layer)
@@ -307,6 +320,9 @@ def resolve_vector_layers(
         else:
             min_zoom = _layer_min_zoom(layer)
             max_zoom = _layer_max_zoom(layer, role, tile_max)
+            if role == "base" and layer in zoom_layers:
+                min_zoom = zoom_layers[layer].get("minzoom", min_zoom)
+                max_zoom = zoom_layers[layer]["maxzoom"]
         result.append(
             {
                 "id": layer,
@@ -316,6 +332,27 @@ def resolve_vector_layers(
             }
         )
     return result
+
+
+def layer_zoom_profile(document: dict[str, Any], name: Any) -> dict[str, Any]:
+    if name is None:
+        return {}
+    profiles = document.get("zoom_profiles", {})
+    if not isinstance(name, str) or not isinstance(profiles, dict) or name not in profiles:
+        raise BuildConfigurationError(f"unknown layer zoom profile: {name}")
+    value = profiles[name]
+    if not isinstance(value, dict) or not value:
+        raise BuildConfigurationError(f"invalid layer zoom profile: {name}")
+    known = _object(document, "source_layers")
+    for layer, zoom in value.items():
+        if layer not in known or not isinstance(zoom, dict) or set(zoom) - {"minzoom", "maxzoom"}:
+            raise BuildConfigurationError(f"invalid layer zoom profile entry: {name}.{layer}")
+        minimum, maximum = zoom.get("minzoom", _layer_min_zoom(layer)), zoom.get("maxzoom")
+        if (not isinstance(minimum, int) or isinstance(minimum, bool)
+            or not isinstance(maximum, int) or isinstance(maximum, bool)
+            or not 0 <= minimum <= maximum <= 24):
+            raise BuildConfigurationError(f"invalid layer zoom profile range: {name}.{layer}")
+    return value
 
 
 def _shell_pattern_matches(value: str, pattern: str) -> bool:

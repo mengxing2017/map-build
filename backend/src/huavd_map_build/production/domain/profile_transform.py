@@ -41,8 +41,19 @@ def transform_profile_feature(
             tippecanoe = {}
         if not isinstance(tippecanoe, dict):
             raise ValueError("feature tippecanoe member must be an object")
+        minimum, maximum = policy.min_zoom, policy.max_zoom
+        if policy.layer in {"place_label", "admin_line"}:
+            minimum = max(minimum, tippecanoe.get("minzoom", minimum))
+            maximum = min(maximum, tippecanoe.get("maxzoom", maximum))
+            if minimum > maximum:
+                return None
+            # An omitted hierarchy maxzoom deliberately means the archive ceiling.
+            feature["tippecanoe"] = {**tippecanoe, "minzoom": minimum}
+            if "maxzoom" in tippecanoe:
+                feature["tippecanoe"]["maxzoom"] = maximum
+            return feature
         feature["tippecanoe"] = {
-            **tippecanoe, "minzoom": policy.min_zoom, "maxzoom": policy.max_zoom
+            **tippecanoe, "minzoom": minimum, "maxzoom": maximum
         }
         return feature
     selected = next(

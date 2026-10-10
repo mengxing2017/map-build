@@ -107,3 +107,14 @@ class ProfileTransformServiceTest(unittest.TestCase):
                     "/does/not/exist", "railway,road",
                 )
             )
+
+
+class StandardZ19FeatureTest(unittest.TestCase):
+    def test_high_detail_profile_preserves_hierarchy_and_local_labels(self):
+        policy = LayerProfilePolicy("place_label", 2, 19, None)
+        city = transform_profile_feature(feature({"label_tier": "prefecture"}, {"minzoom": 5, "maxzoom": 11}), policy)
+        village = transform_profile_feature(feature({"label_tier": "locality"}, {"minzoom": 11}), policy)
+        self.assertEqual({"minzoom": 5, "maxzoom": 11}, city["tippecanoe"])
+        self.assertEqual({"minzoom": 11}, village["tippecanoe"])
+        road = transform_profile_feature(feature({"highway": "service"}), LayerProfilePolicy("road", 0, 19, None))
+        self.assertEqual(19, road["tippecanoe"]["maxzoom"])

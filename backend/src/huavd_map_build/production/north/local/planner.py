@@ -19,6 +19,9 @@ class BuildPlanner:
         workdir: Path,
         input_path: Path | None = None,
     ) -> BuildPlan:
+        entry = self._catalog.region(region)
+        if entry.priority == "local-extract" and input_path is None:
+            raise ValueError(f"local extract {region} requires explicit INPUT; it cannot use the parent PBF")
         roles = expand_roles(role)
         session = SessionId.for_build(region, build_date)
         source = input_path or workdir / "mirror" / self._catalog.pbf_basename(region)

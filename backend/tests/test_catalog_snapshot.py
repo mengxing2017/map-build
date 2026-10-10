@@ -56,6 +56,6 @@ class CatalogSnapshotTest(unittest.TestCase):
             snapshot = json.loads(output.read_text(encoding="utf-8"))
         guangxi = next(item for item in snapshot["regions"] if item["id"] == "china/guangxi")
         self.assertEqual(4056, len(snapshot["regions"]))
-        self.assertFalse(any(item["id"].startswith("china/guangxi/guilin") for item in snapshot["regions"]))
+        self.assertNotIn("china/guangxi/guilin/qixing", {item["id"] for item in snapshot["regions"]})
         self.assertEqual("广西壮族自治区", guangxi["display_name_zh"])
         self.assertEqual("cn-45-base", guangxi["region_id"])

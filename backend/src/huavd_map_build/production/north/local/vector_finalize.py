@@ -78,7 +78,7 @@ class VectorFinalizationService:
         self._attribution.write(
             paths,
             AttributionDocument.geofabrik_osm(
-                self._catalog.pbf_url(request.region)
+                self._catalog.source_pbf_url(request.region)
             ),
         )
         semantic = self._quality.verify(

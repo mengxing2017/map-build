@@ -44,7 +44,7 @@ metadata:
   data_license: "ODbL-1.0"
   tile_type: "MVT"
   tile_compression: "gzip"
-  vector_layer_count: 16
+  vector_layer_count: 17
 
 raster_bake:
   tile_type: 4

@@ -203,6 +203,15 @@ if [[ " ${vector_roles[*]} " == *" base "* ]] && [[ " ${preprocess_layers[*]} " 
   "${SCRIPT_DIR}/place-admin-enrich.sh" --input="${source_link}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 fi
 
+if [[ " ${preprocess_layers[*]} " == *" admin_line "* ]]; then
+  "${SCRIPT_DIR}/admin-line-tier.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
+fi
+
+if [[ " ${vector_roles[*]} " == *" base "* ]] && [[ -n "$(effective_build_profile "${REGION}" base)" || -n "$(effective_tippecanoe_resolve "${REGION}" base | jq -r ' .layer_zoom_profile // empty')" ]]; then
+  base_layers_csv="$(effective_role_layers "${REGION}" base | paste -sd, -)"
+  "${SCRIPT_DIR}/profile-transform.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${base_layers_csv}"
+fi
+
 if [[ " ${preprocess_layers[*]} " == *" island "* ]] && [[ " ${preprocess_layers[*]} " == *" water "* ]]; then
   "${SCRIPT_DIR}/island-water-flag.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 fi
@@ -211,14 +220,6 @@ if [[ " ${preprocess_layers[*]} " == *" island "* ]]; then
   "${SCRIPT_DIR}/island-anchor.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
 fi
 
-if [[ " ${preprocess_layers[*]} " == *" admin_line "* ]]; then
-  "${SCRIPT_DIR}/admin-line-tier.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}"
-fi
-
-if [[ " ${vector_roles[*]} " == *" base "* ]] && [[ -n "$(effective_build_profile "${REGION}" base)" ]]; then
-  base_layers_csv="$(effective_role_layers "${REGION}" base | paste -sd, -)"
-  "${SCRIPT_DIR}/profile-transform.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --workdir="${WORKDIR}" --layers="${base_layers_csv}"
-fi
 
 for role in "${vector_roles[@]}"; do
   "${SCRIPT_DIR}/tippecanoe.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role="${role}" --workdir="${WORKDIR}"

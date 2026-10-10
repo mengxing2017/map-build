@@ -566,6 +566,7 @@ def run(arguments: list[str] | None = None) -> int:
         build = build_planner(repository_root()).plan(
             region=RegionId(args.region), build_date=BuildDate(args.yyyymmdd),
             role="base", workdir=Path(args.workdir),
+            input_path=Path(args.workdir) / "staging" / f"{RegionId(args.region).slug}-{args.yyyymmdd}" / "source.osm.pbf",
         )
         report = base_deep_quality_gate(repository_root()).inspect(build)
         print(json.dumps(report.as_dict(), ensure_ascii=True, indent=2, sort_keys=True))
@@ -642,7 +643,7 @@ def run(arguments: list[str] | None = None) -> int:
         root = repository_root()
         catalog = catalog_service(root)
         document = artifact_query().attribution(
-            pbf_url=catalog.pbf_url(RegionId(args.region))
+            pbf_url=catalog.source_pbf_url(RegionId(args.region))
         )
         print(
             json.dumps(
@@ -660,7 +661,7 @@ def run(arguments: list[str] | None = None) -> int:
             role=Role(args.role),
             workdir=args.workdir,
         )
-        document = artifact_query().attribution(pbf_url=catalog.pbf_url(region))
+        document = artifact_query().attribution(pbf_url=catalog.source_pbf_url(region))
         output = attribution_writer_service().write(paths, document)
         print(
             json.dumps(

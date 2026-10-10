@@ -81,7 +81,7 @@ class VectorQualityGate:
                 output_path=f"outputs/{stem}.pmtiles",
                 min_zoom=int(tippecanoe["min_zoom"]),
                 max_zoom=int(tippecanoe["max_zoom"]),
-                source_url=self._catalog.pbf_url(region),
+                source_url=self._catalog.source_pbf_url(region),
                 source_id=str(settings.get("source_id") or ""),
                 offline_map_id=str(settings.get("region_id") or ""),
                 package_version=str(settings.get("package_version") or ""),

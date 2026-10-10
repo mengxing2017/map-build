@@ -1,3 +1,4 @@
+from local_extract_fixture import local_extract_repository
 from copy import deepcopy
 import unittest
 from pathlib import Path
@@ -7,6 +8,8 @@ from huavd_map_build.catalog.domain.configuration import (
     BuildConfigurationError,
     apply_tier_profile,
     inspect_layer_export_contracts,
+    resolve_tippecanoe,
+    resolve_vector_layers,
 )
 from huavd_map_build.catalog.south.adapter.yaml.loader import (
     PyYamlConfigurationRepository,
@@ -145,3 +148,88 @@ class BuildConfigurationTest(unittest.TestCase):
         self.assertFalse(japan["admin_display_name"]["enabled"])
         self.assertEqual("drop", china["conventional_region_filter"]["action"])
         self.assertEqual([2, 4, 5, 6], china["conventional_region_filter"]["admin_evidence_levels"])
+
+
+class StandardZ19ConfigurationTest(unittest.TestCase):
+    def setUp(self):
+        self.root = self.enterContext(local_extract_repository(repository_root(Path(__file__))))
+        self.configuration = build_configuration_service(self.root)
+        self.repository = PyYamlConfigurationRepository(self.root / "config")
+
+    def test_pilot_role_isolation_and_legacy_profiles(self):
+        pilot = "china/guangxi/test-extract"
+        base = self.configuration.tippecanoe(pilot, "base")
+        self.assertEqual(19, base["max_zoom"])
+        self.assertFalse(base["extend_zooms_if_still_dropping"])
+        self.assertNotIn("roles", base)
+        self.assertEqual(18, self.configuration.tippecanoe(pilot, "building")["max_zoom"])
+        self.assertEqual(14, self.configuration.tippecanoe("china/guangxi", "base")["max_zoom"])
+        self.assertEqual(10, self.configuration.tippecanoe("china", "base")["max_zoom"])
+        self.assertEqual(14, self.configuration.tippecanoe("china/shanghai", "base")["max_zoom"])
+        layers = {layer["id"]: layer for layer in self.configuration.vector_layers(pilot, "base")}
+        for name in ("road", "building", "water", "waterway", "island", "place_label"):
+            self.assertEqual(19, layers[name]["maxzoom"])
+        self.assertEqual(8, layers["admin"]["maxzoom"])
+        self.assertEqual(15, layers["admin_line"]["maxzoom"])
+        self.assertEqual("standard-z19", self.configuration.profile_transform(pilot)["name"])
+
+    def test_override_validation_and_order(self):
+        original = self.repository.load("tippecanoe")
+        for roles in ([], ["dem"], "base", ["base", "base"], [True]):
+            document = deepcopy(original)
+            document["high_density"][0]["roles"] = roles
+            with self.subTest(roles=roles), self.assertRaises(BuildConfigurationError):
+                resolve_tippecanoe(document, "unmatched", "base")
+        for zoom in (-1, 25, True, 19.5):
+            document = deepcopy(original)
+            document["high_density"][0]["max_zoom"] = zoom
+            with self.subTest(zoom=zoom), self.assertRaises(BuildConfigurationError):
+                resolve_tippecanoe(document, "china/guangxi/test-extract", "base")
+        original["high_density"].append({"region_match": "china/guangxi/*", "roles": ["base"], "max_zoom": 18})
+        self.assertEqual(18, resolve_tippecanoe(original, "china/guangxi/test-extract", "base")["max_zoom"])
+
+    def test_zoom_profile_rejects_unknown_layer_or_range(self):
+        tippecanoe = self.configuration.tippecanoe("china/guangxi/test-extract", "base")
+        layers = self.repository.load("layers")
+        for value in ({"missing": {"maxzoom": 19}}, {"road": {"maxzoom": True}}, {"road": {"maxzoom": 25}}, {"road": {"maxzoom": 1, "minzoom": 2}}):
+            changed = deepcopy(layers)
+            changed["zoom_profiles"]["standard-z19"] = value
+            with self.subTest(value=value), self.assertRaises(BuildConfigurationError):
+                resolve_vector_layers(tippecanoe, self.repository.load("tier-profiles"), changed, "china/guangxi/test-extract", "base", 19)
+
+
+    def test_local_extract_requires_explicit_input_and_retains_parent_provenance(self):
+        from huavd_map_build.bootstrap import build_planner, catalog_service
+        from huavd_map_build.shared.kernel import RegionId, BuildDate
+        region = RegionId("china/guangxi/test-extract")
+        catalog = catalog_service(self.root)
+        self.assertIn("guangxi-latest.osm.pbf", catalog.source_pbf_url(region))
+        with self.assertRaisesRegex(ValueError, "lacks geofabrik.pbf_url"):
+            catalog.pbf_url(region)
+        with self.assertRaisesRegex(ValueError, "requires explicit INPUT"):
+            build_planner(self.root).plan(region=region, build_date=BuildDate("20261003"), role="base", workdir=Path("/tmp/maps"))
+
+
+    def test_shell_resolver_matches_python_with_locked_jq(self):
+        import json
+        import os
+        import subprocess
+        import tempfile
+        cases = [("china/guangxi/test-extract", "base"), ("china/guangxi/test-extract", "building"), ("china/guangxi", "base"), ("china", "base"), ("china/shanghai", "base")]
+        commands = ["source scripts/lib/config.sh"]
+        commands.extend(f"effective_tippecanoe_resolve {region} {role}" for region, role in cases)
+        commands.append("effective_vector_layers_json china/guangxi/test-extract base 19")
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(["bash", "-c", "\n".join(commands)], cwd=self.root,
+                env={**os.environ, "WORKDIR": directory, "PATH": f"{self.root}/.devbox/nix/profile/default/bin:" + os.environ["PATH"]},
+                text=True, capture_output=True, check=True, timeout=90)
+        decoder = json.JSONDecoder()
+        documents = []
+        output = result.stdout.lstrip()
+        while output:
+            document, end = decoder.raw_decode(output)
+            documents.append(document)
+            output = output[end:].lstrip()
+        for (region, role), actual in zip(cases, documents, strict=False):
+            self.assertEqual(self.configuration.tippecanoe(region, role), actual)
+        self.assertEqual(self.configuration.vector_layers(cases[0][0], "base", 19), documents[-1])

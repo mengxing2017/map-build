@@ -88,7 +88,7 @@ class RasterFinalizationService:
             self._manifest.run(manifest_request)
             self._attribution.write(
                 staged,
-                AttributionDocument.geofabrik_osm(self._catalog.pbf_url(request.region)),
+                AttributionDocument.geofabrik_osm(self._catalog.source_pbf_url(request.region)),
             )
             semantic = self._quality.verify(manifest_request)
             staged_integrity = self._integrity.verify(staged)

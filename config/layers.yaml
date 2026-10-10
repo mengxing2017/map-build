@@ -18,6 +18,27 @@ global:
     uid: false
     user: false
 
+# Selected only by a base-vector region override; existing regions retain legacy zooms.
+zoom_profiles:
+  standard-z19:
+    road: {maxzoom: 19}
+    railway: {maxzoom: 19}
+    water: {maxzoom: 19}
+    waterway: {maxzoom: 19}
+    landuse: {maxzoom: 19}
+    building: {maxzoom: 19}
+    natural_a: {maxzoom: 19}
+    natural_line: {maxzoom: 19}
+    peak: {maxzoom: 19}
+    leisure_a: {maxzoom: 19}
+    place_label: {maxzoom: 19}
+    poi_label: {maxzoom: 19}
+    transport_label: {maxzoom: 19}
+    highway_point: {maxzoom: 19}
+    island: {maxzoom: 19}
+    admin: {maxzoom: 8}
+    admin_line: {maxzoom: 15}
+
 source_layers:
   road:
     order: 1

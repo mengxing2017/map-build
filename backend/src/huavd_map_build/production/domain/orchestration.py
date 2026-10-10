@@ -184,14 +184,15 @@ def create_execution_plan(
         stages.extend(("source-link", "tags-filter", "export", "normalize"))
         if Role.BASE in vector_roles and "place_label" in layers:
             stages.append("place-admin-enrich")
-        if "island" in layers and "water" in layers:
-            stages.append("island-water-flag")
-        if "island" in layers:
-            stages.append("island-anchor")
         if "admin_line" in layers:
             stages.append("admin-line-tier")
         if Role.BASE in vector_roles and has_profile:
             stages.append("profile-transform")
+        # Derivation reports fingerprint the final water input, including zoom policy.
+        if "island" in layers and "water" in layers:
+            stages.append("island-water-flag")
+        if "island" in layers:
+            stages.append("island-anchor")
         for role in vector_roles:
             stages.extend((
                 f"tippecanoe:{role.value}",

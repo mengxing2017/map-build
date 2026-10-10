@@ -686,19 +686,21 @@ effective_role_layers() {
 }
 
 effective_layer_min_zoom() {
-  local region="$1" role="$2" layer="$3" profile
+  local region="$1" role="$2" layer="$3" profile configured
+  configured="$(configured_layer_zoom "${region}" "${role}" "${layer}")"
   profile="$(effective_build_profile "${region}" "${role}")"
   if [[ -n "${profile}" ]]; then
     tier_profile_json "${profile}" | jq -r --arg layer "${layer}" --argjson fallback "$(layer_min_zoom "${layer}")" '
       .feature_rules[$layer].rules // [] | if length == 0 then $fallback else map(.min_zoom) | min end
     '
   else
-    layer_min_zoom "${layer}"
+    jq -r --argjson fallback "$(layer_min_zoom "${layer}")" '.minzoom // $fallback' <<< "${configured}"
   fi
 }
 
 effective_layer_max_zoom() {
-  local region="$1" role="$2" layer="$3" tile_max="$4" profile max_zoom
+  local region="$1" role="$2" layer="$3" tile_max="$4" profile max_zoom configured
+  configured="$(configured_layer_zoom "${region}" "${role}" "${layer}")"
   profile="$(effective_build_profile "${region}" "${role}")"
   if [[ -n "${profile}" ]]; then
     max_zoom="$(tier_profile_json "${profile}" | jq -r --arg layer "${layer}" --argjson fallback "${tile_max}" '
@@ -710,8 +712,32 @@ effective_layer_max_zoom() {
     (( max_zoom > tile_max )) && max_zoom="${tile_max}"
     printf '%s\n' "${max_zoom}"
   else
-    layer_effective_max_zoom "${layer}" "${role}" "${tile_max}"
+    jq -r --argjson fallback "$(layer_effective_max_zoom "${layer}" "${role}" "${tile_max}")" --argjson tile_max "${tile_max}" \
+      '[.maxzoom // $fallback, $tile_max] | min' <<< "${configured}"
   fi
+}
+
+configured_layer_zoom() {
+  local region="$1" role="$2" layer="$3" profile
+  profile="$(effective_tippecanoe_resolve "${region}" "${role}" | jq -r '.layer_zoom_profile // empty')"
+  if [[ "${role}" != "base" || -z "${profile}" ]]; then
+    printf '{}\n'
+    return
+  fi
+  jq -e --arg profile "${profile}" '
+    .source_layers as $known | .zoom_profiles[$profile] as $zooms
+    | ($zooms | type == "object" and length > 0)
+      and all($zooms | to_entries[];
+        .key as $layer | .value as $zoom
+        | ($known[$layer] != null)
+          and ($zoom | type == "object")
+          and (($zoom | keys - ["minzoom", "maxzoom"] | length) == 0)
+          and ($zoom.maxzoom | type == "number" and floor == . and . >= 0 and . <= 24)
+          and (if $zoom | has("minzoom") then
+            ($zoom.minzoom | type == "number" and floor == . and . >= 0 and . <= $zoom.maxzoom)
+            else true end))' "$(layers_json)" >/dev/null \
+    || die "${HUAVD_EXIT_INPUT}" "invalid layer zoom profile: ${profile}"
+  jq -c --arg profile "${profile}" --arg layer "${layer}" '.zoom_profiles[$profile][$layer] // {}' "$(layers_json)"
 }
 
 effective_vector_layers_json() {
@@ -823,6 +849,10 @@ tippecanoe_resolve() {
   local tip_json
   tip_json="$(tippecanoe_json)"
   local resolved baseline
+  jq -e 'all(.high_density[]?;
+    (has("roles") | not) or (.roles | type == "array" and length > 0
+      and (length == (unique | length)) and all(.[]; . == "base" or . == "building")))' "${tip_json}" >/dev/null \
+    || die "${HUAVD_EXIT_INPUT}" "tippecanoe override roles must be unique base/building values"
   resolved="$(jq -c '.defaults' "${tip_json}")"
 
   if baseline="$(jq -c '.defaults.high_density_baseline // empty' "${tip_json}")" \
@@ -844,12 +874,16 @@ tippecanoe_resolve() {
     local pattern
     pattern="$(jq -r '.region_match' <<< "${override}")"
     local shell_pattern="${pattern//\*\*/\*}"
-    if [[ "${region}" == ${shell_pattern} ]]; then
+    if [[ "${region}" == ${shell_pattern} ]] && jq -e --arg role "${role}" '(.roles // ["base", "building"]) | index($role) != null' <<< "${override}" >/dev/null; then
       local clean_override
-      clean_override="$(jq -c 'del(.region_match, .building_height_derivation)' <<< "${override}")"
+      clean_override="$(jq -c 'del(.region_match, .roles, .building_height_derivation)' <<< "${override}")"
       resolved="$(jq -c -s '.[0] + .[1]' <(printf '%s\n' "${resolved}") <(printf '%s\n' "${clean_override}"))"
     fi
   done < <(jq -c '.high_density[]?' "${tip_json}")
 
+  jq -e '.min_zoom as $min | .max_zoom as $max
+    | ($min | type == "number" and floor == . and . >= 0)
+      and ($max | type == "number" and floor == . and . >= $min and . <= 24)' <<< "${resolved}" >/dev/null \
+    || die "${HUAVD_EXIT_INPUT}" "invalid tippecanoe zoom range"
   printf '%s\n' "${resolved}" | jq -c '.'
 }

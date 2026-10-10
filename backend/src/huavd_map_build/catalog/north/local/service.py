@@ -46,6 +46,16 @@ class CatalogService:
             raise ValueError(f"region lacks geofabrik.pbf_url: {region}")
         return url
 
+    def source_pbf_url(self, region: RegionId) -> str:
+        """Original provider provenance, not a download URL for a local extract."""
+        current = self._catalog().get(region)
+        while current.geofabrik.pbf_url is None:
+            parent = current.geofabrik.parent_region
+            if parent is None:
+                raise ValueError(f"region lacks source PBF provenance: {region}")
+            current = self._catalog().get(parent)
+        return current.geofabrik.pbf_url
+
     def md5_url(self, region: RegionId) -> str:
         url = self._catalog().get(region).geofabrik.md5_url
         if url is None:

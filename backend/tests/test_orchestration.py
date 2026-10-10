@@ -1,3 +1,4 @@
+from local_extract_fixture import local_extract_repository
 import unittest
 from pathlib import Path
 
@@ -117,3 +118,19 @@ class BuildJobTest(unittest.TestCase):
         self.assertEqual("osmium failed", job.events[-1].message)
         with self.assertRaisesRegex(ValueError, "cannot start"):
             job.start_next("t3")
+
+
+class HighDetailStageOrderTest(unittest.TestCase):
+    def test_zoom_policy_precedes_water_derivation(self):
+        from huavd_map_build.bootstrap import build_planner, repository_root
+        from pathlib import Path
+        from huavd_map_build.shared.kernel import BuildDate, RegionId
+        from huavd_map_build.production.domain.orchestration import create_execution_plan
+        fixture_root = self.enterContext(local_extract_repository(repository_root(Path(__file__))))
+        build = build_planner(fixture_root).plan(
+            region=RegionId("china/guangxi/test-extract"), build_date=BuildDate("20261003"),
+            role="base", workdir=Path("/tmp/maps"), input_path=Path("/tmp/source.osm.pbf"))
+        plan = create_execution_plan(build, ("road", "water", "island", "admin_line", "place_label"), False, True, ())
+        stages = [stage.id for stage in plan.stages]
+        self.assertLess(stages.index("admin-line-tier"), stages.index("profile-transform"))
+        self.assertLess(stages.index("profile-transform"), stages.index("island-water-flag"))
