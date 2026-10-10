@@ -83,6 +83,11 @@ def compile_styles(
             "huavd:viewport": viewport or {},
         },
     }
+    if viewport:
+        for key in ("min_zoom", "max_zoom"):
+            value = viewport.get(key)
+            if isinstance(value, int) and not isinstance(value, bool):
+                vector["sources"][source_id][key.replace("_", "")] = value
     if sprite_url not in (None, "", "null"):
         vector["sprite"] = sprite_url
     return StyleDocuments(vector, _compile_bake(vector, config), _compile_raster(vector, config))

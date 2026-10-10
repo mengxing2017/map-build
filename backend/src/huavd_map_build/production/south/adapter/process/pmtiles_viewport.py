@@ -13,6 +13,12 @@ from huavd_map_build.production.domain.style import default_zoom
 class PmtilesViewportReader:
     def read(self, path: str) -> dict[str, Any]:
         bounds = self._bounds(path)
+        with Path(path).open("rb") as stream:
+            stream.seek(100)
+            zoom = stream.read(2)
+        if len(zoom) != 2 or zoom[0] > zoom[1] or zoom[1] > 24:
+            raise ValueError(f"invalid PMTiles zoom range: {path}")
+        minimum, maximum = zoom
         center = self._bounds_center(bounds)
         executable = shutil.which("pmtiles")
         decoder = self._decoder()
@@ -20,7 +26,8 @@ class PmtilesViewportReader:
             center = self._label_center(executable, path, bounds, decoder)
         return {
             "center": [round(center[0], 6), round(center[1], 6)],
-            "default_zoom": default_zoom(bounds), "min_zoom": 0, "max_zoom": 18,
+            "default_zoom": min(max(default_zoom(bounds), minimum), maximum),
+            "min_zoom": minimum, "max_zoom": maximum,
         }
 
     @staticmethod

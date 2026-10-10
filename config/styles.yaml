@@ -267,6 +267,20 @@ paint_layers:
       circle-color: "#f2efe9"
       circle-stroke-color: "#a8a29e"
       circle-stroke-width: 1
+  - id: "building-fill"
+    source_layer: "building"
+    type: "fill"
+    minzoom: 12
+    paint:
+      fill-color: "#d4cec7"
+      fill-opacity: ["interpolate", ["linear"], ["zoom"], 12, 0.25, 14, 0.72]
+  - id: "building-outline"
+    source_layer: "building"
+    type: "line"
+    minzoom: 13
+    paint:
+      line-color: "#b8b0a6"
+      line-width: ["interpolate", ["linear"], ["zoom"], 13, 0.1, 17, 0.7, 19, 1.0]
   - id: "waterway-line"
     source_layer: "waterway"
     type: "line"
@@ -285,7 +299,7 @@ paint_layers:
       line-join: "round"
     paint:
       line-color: "#c9c3b8"
-      line-width: ["interpolate", ["linear"], ["zoom"], 8, 0.6, 12, 2.5, 14, 5.0]
+      line-width: ["interpolate", ["linear"], ["zoom"], 8, 0.6, 12, 2.5, 14, 5.0, 17, ["+", ["match", ["get", "highway"], "motorway", 18, "trunk", 16, "primary", 14, "secondary", 12, "tertiary", 10, "residential", 8, "service", 5, "footway", 2, "path", 1.5, 4], 2], 19, ["+", ["match", ["get", "highway"], "motorway", 32, "trunk", 28, "primary", 24, "secondary", 20, "tertiary", 16, "residential", 12, "living_street", 12, "unclassified", 12, "service", 8, "footway", 3, "path", 2.5, "steps", 3, 5], 2]]
   - id: "road-line"
     source_layer: "road"
     type: "line"
@@ -296,7 +310,7 @@ paint_layers:
       line-join: "round"
     paint:
       line-color: ["match", ["get", "highway"], ["motorway", "trunk", "primary"], "#f4cc88", "#ffffff"]
-      line-width: ["interpolate", ["linear"], ["zoom"], 8, 0.3, 12, 1.5, 14, 3.5]
+      line-width: ["interpolate", ["linear"], ["zoom"], 8, 0.3, 12, 1.5, 14, 3.5, 17, ["match", ["get", "highway"], "motorway", 18, "trunk", 16, "primary", 14, "secondary", 12, "tertiary", 10, "residential", 8, "service", 5, "footway", 2, "path", 1.5, 4], 19, ["match", ["get", "highway"], "motorway", 32, "trunk", 28, "primary", 24, "secondary", 20, "tertiary", 16, "residential", 12, "living_street", 12, "unclassified", 12, "service", 8, "footway", 3, "path", 2.5, "steps", 3, 5]]
   - id: "railway"
     source_layer: "railway"
     type: "line"

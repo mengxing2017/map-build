@@ -134,6 +134,7 @@ class StyleCompilerTest(unittest.TestCase):
 
     def test_viewport_reads_header_and_falls_back_to_bounds_center(self) -> None:
         header = bytearray(127)
+        header[100:102] = bytes((0, 19))
         import struct
         struct.pack_into("<iiii", header, 102, 100_000_000, 200_000_000,
                          120_000_000, 240_000_000)
@@ -147,4 +148,4 @@ class StyleCompilerTest(unittest.TestCase):
         self.assertEqual([11.0, 22.0], viewport["center"])
         self.assertEqual(default_zoom((10.0, 20.0, 12.0, 24.0)), viewport["default_zoom"])
         self.assertEqual(0, viewport["min_zoom"])
-        self.assertEqual(18, viewport["max_zoom"])
+        self.assertEqual(19, viewport["max_zoom"])
