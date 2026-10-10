@@ -26,6 +26,19 @@ export default defineConfig({
         ],
       },
       {
+        text: '安装与使用手册',
+        items: [
+          { text: '手册目录', link: '/manual/' },
+          { text: '环境安装与渲染资源', link: '/manual/installation' },
+          { text: '命令与变量参考', link: '/manual/commands' },
+          { text: '标准地图构建', link: '/manual/build' },
+          { text: '版本管理与 CI 发布', link: '/manual/versioning' },
+          { text: '图片地图构建', link: '/manual/raster' },
+          { text: '产物、打包与导入', link: '/manual/delivery' },
+          { text: 'DEM 高程地图', link: '/manual/dem' },
+        ],
+      },
+      {
         text: '工程说明',
         items: [
           { text: '配置索引', link: '/configuration/' },
