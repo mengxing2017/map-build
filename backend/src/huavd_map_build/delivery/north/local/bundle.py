@@ -211,7 +211,7 @@ class BundleService:
             (package / name).write_text("".join(lines), encoding="ascii")
 
     def _archives(self, outputs: Path, package: Path, session: str, format: str) -> dict:
-        result: dict[str, int | None] = {"tar_bytes": None, "zip_bytes": None}
+        result: dict[str, object] = {"tar_bytes": None, "zip_bytes": None}
         if format in {"tar", "both"}:
             path = outputs / f"{session}.bundle.tar.gz"
             with tarfile.open(path, "w:gz") as archive:
@@ -223,7 +223,13 @@ class BundleService:
             with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
                 for child in sorted(package.rglob("*")):
                     if child.is_file(): archive.write(child, child.relative_to(package).as_posix())
+            with zipfile.ZipFile(path) as archive:
+                damaged = archive.testzip()
+                if damaged is not None:
+                    raise ValueError(f"Bundle ZIP CRC validation failed: {damaged}")
             self._write_sidecar(path); result["zip_bytes"] = path.stat().st_size
+            result["zip_path"] = str(path.resolve())
+            result["zip_sha512"] = self._digest(path, "sha512")
         return result
 
     def _verify_ready(self, paths: ArtifactPaths) -> None:
