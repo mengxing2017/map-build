@@ -18,7 +18,13 @@ class FileSystemPlaceAdminIndexStore:
         return str(candidate.resolve()) if candidate.exists() else str(Path(workdir) / path)
 
     def require_file(self, path: str) -> None:
-        if not Path(path).is_file():
+        candidate = Path(path)
+        if candidate.is_symlink() and not candidate.exists():
+            raise ValueError(
+                f"required input has a broken symbolic link: {path} -> {candidate.readlink()}; "
+                "restore the original PBF or rerun the build with --input pointing to an existing PBF"
+            )
+        if not candidate.is_file():
             raise ValueError(f"required file does not exist: {path}")
 
     def is_nonempty(self, path: str) -> bool:

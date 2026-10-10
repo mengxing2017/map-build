@@ -26,6 +26,14 @@ class FailingTool:
 
 
 class PlaceAdminServiceTest(unittest.TestCase):
+    def test_missing_symlink_target_reports_original_input(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source.osm.pbf"
+            original = Path(directory) / "moved-input.osm.pbf"
+            source.symlink_to(original)
+            with self.assertRaisesRegex(ValueError, "broken symbolic link.*moved-input.osm.pbf"):
+                FileSystemPlaceAdminIndexStore().require_file(str(source))
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.root = repository_root(Path(__file__))
