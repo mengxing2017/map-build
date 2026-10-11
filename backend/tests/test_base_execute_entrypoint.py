@@ -4,11 +4,12 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from huavd_map_build import cli
 from huavd_map_build.production.domain.orchestration import BuildJob, BuildStatus
 from huavd_map_build.production.north.local.execution import BuildExecutionError
+from huavd_map_build.quality.domain.base import BaseDeepQualityError
 
 
 class StubExecutionService:
@@ -137,6 +138,21 @@ class ExecuteBaseEntrypointTest(unittest.TestCase):
             status, document = self.invoke(Path(temporary), service)
         self.assertEqual(2, status)
         self.assertEqual("failed", document["status"])
+
+    def test_deep_quality_failure_includes_detailed_report(self) -> None:
+        details = {"status": "failed", "tiles": {"findings": [
+            {"code": "tile-decode", "detail": "cannot decode 10/818/448"}
+        ]}}
+        report = Mock()
+        report.as_dict.return_value = details
+        with tempfile.TemporaryDirectory() as temporary:
+            service = StubExecutionService(
+                BuildJob("china-guangxi-20261003", (), BuildStatus.FAILED),
+                BaseDeepQualityError(report),
+            )
+            status, document = self.invoke(Path(temporary), service)
+        self.assertEqual(3, status)
+        self.assertEqual(details, document["quality"])
 
     def test_removes_existing_partial_artifact_before_execution(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

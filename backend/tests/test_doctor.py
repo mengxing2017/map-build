@@ -1,4 +1,7 @@
 import unittest
+import io
+from contextlib import redirect_stdout
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -8,6 +11,7 @@ from huavd_map_build.quality.domain.doctor import (
 )
 from huavd_map_build.quality.north.local.doctor import DoctorQuery
 from huavd_map_build.quality.south.adapter.process.tool_probe import ProcessToolProbe
+from huavd_map_build import cli
 
 
 class _CatalogStub:
@@ -31,6 +35,12 @@ class _ToolProbeStub:
 
 
 class DoctorQueryTest(unittest.TestCase):
+    def test_strict_cli_rejects_unavailable_dependencies(self) -> None:
+        query = DoctorQuery(_ToolProbeStub("mvt-decode"), _CatalogStub())
+        with patch.object(cli, "doctor_query", return_value=query), redirect_stdout(io.StringIO()):
+            self.assertEqual(0, cli.run(["doctor"]))
+            self.assertEqual(3, cli.run(["doctor", "--strict"]))
+
     def test_all_required_tools_and_catalog_produce_healthy_report(self) -> None:
         report = DoctorQuery(_ToolProbeStub(), _CatalogStub()).execute()
         self.assertTrue(report.healthy)

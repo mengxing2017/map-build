@@ -359,7 +359,8 @@ def _parser() -> argparse.ArgumentParser:
     glyph.add_argument("--locales", default="all")
     glyph.add_argument("--force", action="store_true")
 
-    commands.add_parser("doctor", help="probe core tools and validate the catalog")
+    doctor = commands.add_parser("doctor", help="probe core tools and validate the catalog")
+    doctor.add_argument("--strict", action="store_true", help="fail if any required tool is unavailable")
 
     quality = commands.add_parser("quality", help="artifact semantic quality gates")
     quality_commands = quality.add_subparsers(dest="command", required=True)
@@ -510,7 +511,7 @@ def run(arguments: list[str] | None = None) -> int:
         root = repository_root()
         report = doctor_query(root).execute()
         print(json.dumps(report.as_dict(), ensure_ascii=True, indent=2, sort_keys=True))
-        return 0 if report.passed else 3
+        return 0 if (report.healthy if args.strict else report.passed) else 3
     if args.context == "quality" and args.command == "vector":
         report = vector_quality_gate(repository_root()).verify(
             region=RegionId(args.region), build_date=BuildDate(args.yyyymmdd),
@@ -955,8 +956,11 @@ def run(arguments: list[str] | None = None) -> int:
 
             job = vector_build_execution_service(root, report_stage).run(execution)
         except BuildExecutionError as error:
+            document = error.job.as_dict()
+            if isinstance(error.cause, BaseDeepQualityError):
+                document["quality"] = error.cause.report.as_dict()
             print(json.dumps(
-                error.job.as_dict(), ensure_ascii=True, indent=2, sort_keys=True
+                document, ensure_ascii=True, indent=2, sort_keys=True
             ))
             return _build_failure_exit_code(error.cause)
         print(json.dumps(job.as_dict(), ensure_ascii=True, indent=2, sort_keys=True))

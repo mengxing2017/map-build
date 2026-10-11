@@ -74,7 +74,7 @@ doctor:
 	WORKDIR="$(WORKDIR)" ./scripts/doctor.sh
 
 python-doctor:
-	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build doctor
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build doctor --strict
 
 catalog:
 	./scripts/manifest-catalog.sh
@@ -103,7 +103,7 @@ fetch: init-workdir
 fetch-dem: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/fetch-dem.sh --region="$(REGION)" --session="$(SESSION)" --source="$(DEM_SOURCE)" $(if $(DEM_INPUT),--input="$(DEM_INPUT)",)
 
-build: python-workspace-init
+build: python-doctor python-workspace-init
 ifneq ($(filter $(ROLE),base building both),)
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build execute-vector \
 	  --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --workdir="$(WORKDIR)" \

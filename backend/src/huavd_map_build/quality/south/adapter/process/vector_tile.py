@@ -28,7 +28,10 @@ class ProcessVectorTileReader:
         try:
             import mapbox_vector_tile
         except ImportError as error:
-            raise RuntimeError("mapbox_vector_tile is required for tile sampling") from error
+            raise RuntimeError(
+                f"mapbox_vector_tile cannot be loaded for tile sampling: {error}; "
+                "run inside devbox and check make python-doctor"
+            ) from error
         payload = result.stdout
         if payload.startswith(b"\x1f\x8b"):
             try:

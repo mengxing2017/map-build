@@ -99,3 +99,20 @@ class MakefileBuildEntrypointTest(unittest.TestCase):
         self.assertIn("quality release", output)
         self.assertNotIn("scripts/pack.sh", output)
         self.assertNotIn("scripts/verify.sh", output)
+
+    def test_raster_release_checks_environment_and_inherits_output_directory(self) -> None:
+        for directory, expected in (
+            ("WORKDIR_ROOT=/tmp/maps", "/tmp/maps/china-guangxi-20260818"),
+            ("RELEASE_WORKDIR=/tmp/custom-map", "/tmp/custom-map"),
+        ):
+            with self.subTest(directory=directory):
+                output = subprocess.run([
+                    "make", "--no-print-directory", "-n", "release",
+                    "ROLE=base_raster", "FORMAT=zip", "REGION=china/guangxi",
+                    "YYYYMMDD=20260818", "INPUT=/data/manual.osm.pbf", directory,
+                ], cwd=self.root, text=True, capture_output=True, check=True).stdout
+                self.assertLess(output.index("huavd_map_build doctor"),
+                                output.index("build execute-vector"))
+                for line in output.splitlines():
+                    if "--workdir=" in line:
+                        self.assertIn(f'--workdir="{expected}"', line)
