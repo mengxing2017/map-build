@@ -14,20 +14,21 @@ class PmtilesViewportReader:
     def read(self, path: str) -> dict[str, Any]:
         bounds = self._bounds(path)
         with Path(path).open("rb") as stream:
-            stream.seek(100)
+            stream.seek(99)
+            tile_type = stream.read(1)
             zoom = stream.read(2)
         if len(zoom) != 2 or zoom[0] > zoom[1] or zoom[1] > 24:
             raise ValueError(f"invalid PMTiles zoom range: {path}")
         minimum, maximum = zoom
         center = self._bounds_center(bounds)
         executable = shutil.which("pmtiles")
-        decoder = self._decoder()
+        decoder = self._decoder() if tile_type == bytes((1,)) else None
         if executable is not None and decoder is not None:
             center = self._label_center(executable, path, bounds, decoder)
         return {
             "center": [round(center[0], 6), round(center[1], 6)],
             "default_zoom": min(max(default_zoom(bounds), minimum), maximum),
-            "min_zoom": minimum, "max_zoom": maximum,
+            "min_zoom": minimum, "max_zoom": maximum, "bounds": list(bounds),
         }
 
     @staticmethod

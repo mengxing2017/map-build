@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from huavd_map_build.delivery.domain.metadata import PmtilesHeader
 import json
 from pathlib import Path
 import shutil
@@ -12,6 +13,8 @@ from unittest.mock import MagicMock, patch
 
 from huavd_map_build.production.domain.raster import (
     RasterExecutionError,
+    RasterSourceMetadata,
+    RasterSourceProbe,
     RasterMvtPreflightResult,
     RasterTileCoordinate,
     RasterTileServerEndpoint,
@@ -76,7 +79,8 @@ class RasterRuntimeStyleTest(unittest.TestCase):
                 "layers": [],
             }), encoding="utf-8")
             FileSystemRasterRuntimeStyleStore().write(
-                str(source), str(target), "http://tiles/{z}/{x}/{y}.mvt"
+                str(source), str(target), "http://tiles/{z}/{x}/{y}.mvt",
+                RasterSourceMetadata(2, 18, (1, 2, 3, 4))
             )
             document = json.loads(target.read_text(encoding="utf-8"))
         self.assertEqual(
@@ -94,7 +98,8 @@ class RasterServerProcessTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             archive = Path(temporary) / "base.pmtiles"
             archive.write_bytes(b"PMTiles")
-            with patch.object(
+            with patch("huavd_map_build.production.south.adapter.process.raster_server.ThreadingHTTPServer",
+                       return_value=MagicMock(server_address=("127.0.0.1",12346))), patch.object(
                 ProcessRasterTileServer, "_available_port", return_value=12345
             ), patch("shutil.which", return_value="/tools/pmtiles"), patch(
                 "subprocess.Popen", return_value=process
@@ -117,7 +122,8 @@ class RasterServerProcessTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             archive = Path(temporary) / "base.pmtiles"
             archive.write_bytes(b"PMTiles")
-            with patch.object(
+            with patch("huavd_map_build.production.south.adapter.process.raster_server.ThreadingHTTPServer",
+                       return_value=MagicMock(server_address=("127.0.0.1",12346))), patch.object(
                 ProcessRasterTileServer, "_available_port", return_value=12345
             ), patch("shutil.which", return_value="/tools/pmtiles"), patch(
                 "subprocess.Popen", return_value=process
@@ -164,7 +170,7 @@ class FakeStyles:
     def __init__(self, events: list[str]) -> None:
         self.events = events
 
-    def write(self, source_path, output_path, tile_url):
+    def write(self, source_path, output_path, tile_url, metadata):
         self.events.append("style")
 
 
@@ -172,7 +178,8 @@ class RasterRuntimeServiceTest(unittest.TestCase):
     def test_subset_preflight_style_and_cleanup_have_fixed_order(self) -> None:
         events: list[str] = []
         service = RasterRuntimeService(
-            FakeSubsetter(events), FakeServer(events), FakeClient(events), FakeStyles(events)
+            FakeSubsetter(events), FakeServer(events), FakeClient(events), FakeStyles(events),
+            MagicMock(read=MagicMock(return_value=PmtilesHeader(1, 2, 0, 4, (1, 2, 3, 4))))
         )
         request = RasterRuntimeRequest(
             "base.pmtiles", "style.json", "runtime.json",
@@ -223,3 +230,68 @@ class RasterServerIntegrationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RasterSourceContractTest(unittest.TestCase):
+    def test_replaces_stale_source_metadata_without_mutating_style(self):
+        document = {"sources": {"base": {"type": "vector", "url": "old", "maxzoom": 14}}}
+        metadata = RasterSourceMetadata(2, 19, (110, 25, 111, 26))
+        rewritten = rewrite_bake_source(document, tile_url="local", metadata=metadata)
+        self.assertEqual(14, document["sources"]["base"]["maxzoom"])
+        self.assertEqual(19, rewritten["sources"]["base"]["maxzoom"])
+        self.assertEqual([110, 25, 111, 26], rewritten["sources"]["base"]["bounds"])
+
+    def test_rejects_invalid_headers_and_clamps_parent_coordinate(self):
+        for minimum, maximum in ((True, 19), (0, 25), (19, 18)):
+            with self.assertRaises(ValueError):
+                RasterSourceMetadata(minimum, maximum, (1, 2, 3, 4))
+        with self.assertRaises(ValueError):
+            RasterSourceMetadata(0, 19, (3, 2, 1, 4))
+        source = RasterSourceMetadata(0, 18, (1, 2, 3, 4))
+        self.assertEqual(RasterTileCoordinate(18, 123, 234), source.coordinate(RasterTileCoordinate(19, 247, 469)))
+
+    def test_subset_clamps_zooms_and_reads_served_header(self):
+        source = PmtilesHeader(1, 2, 0, 18, (1, 2, 3, 4))
+        subset = PmtilesHeader(1, 2, 15, 18, (1.1, 2.1, 2.9, 3.9))
+        headers = MagicMock()
+        headers.read.side_effect = [source, subset]
+        subsetter, client, styles = MagicMock(), MagicMock(), MagicMock()
+        client.fetch.return_value = RasterMvtPreflightResult("url", 1, 0)
+        service = RasterRuntimeService(subsetter, FakeServer([]), client, styles, headers)
+        request = RasterRuntimeRequest("base", "style", "runtime", RasterTileCoordinate(19, 247, 469),
+                                       "subset", "1,2,3,4", 15, 19)
+        with service.open(request) as result:
+            self.assertEqual(subset.bounds, result.source_metadata.bounds)
+        subsetter.extract.assert_called_once_with("base", "subset", "1,2,3,4", 15, 18)
+        self.assertEqual(RasterTileCoordinate(18, 123, 234), client.fetch.call_args.args[1])
+        self.assertEqual(15, styles.write.call_args.args[3].min_zoom)
+
+    def test_empty_subset_zoom_intersection_fails_before_server(self):
+        headers = MagicMock(read=MagicMock(return_value=PmtilesHeader(1, 2, 0, 14, (1,2,3,4))))
+        server, subsetter = MagicMock(), MagicMock()
+        service = RasterRuntimeService(subsetter, server, MagicMock(), MagicMock(), headers)
+        request = RasterRuntimeRequest("base", "style", "runtime", RasterTileCoordinate(19,0,0),
+                                       "subset", "1,2,3,4", 19,19)
+        with self.assertRaisesRegex(ValueError, "no zoom intersection"):
+            with service.open(request):
+                pass
+        subsetter.extract.assert_not_called()
+        server.open.assert_not_called()
+
+
+class RasterKnownContentTest(unittest.TestCase):
+    def test_known_content_missing_fails_even_when_http_response_is_valid(self):
+        headers = MagicMock(read=MagicMock(return_value=PmtilesHeader(1,2,0,18,(0,0,1,1))))
+        client = MagicMock()
+        client.fetch.return_value = RasterMvtPreflightResult("url", 0, 1)
+        request = RasterRuntimeRequest("base", "style", "runtime", RasterTileCoordinate(0,0,0),
+            probes=(RasterSourceProbe(RasterTileCoordinate(19,1,1), "road"),))
+        service = RasterRuntimeService(MagicMock(), FakeServer([]), client, MagicMock(), headers)
+        with self.assertRaisesRegex(ValueError, "no road content"):
+            with service.open(request):
+                pass
+        client.fetch.return_value = RasterMvtPreflightResult("url", 100, 1, ("road",))
+        with service.open(request) as result:
+            self.assertEqual([18,0,0], result.evidence[0]["source_xyz"])
+            self.assertEqual([19,1,1], result.evidence[0]["output_xyz"])
+            self.assertEqual("road", result.evidence[0]["expected_layer"])

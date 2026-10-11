@@ -149,3 +149,42 @@ class StyleCompilerTest(unittest.TestCase):
         self.assertEqual(default_zoom((10.0, 20.0, 12.0, 24.0)), viewport["default_zoom"])
         self.assertEqual(0, viewport["min_zoom"])
         self.assertEqual(19, viewport["max_zoom"])
+
+
+class RasterStyleBindingTest(unittest.TestCase):
+    def test_raster_range_comes_from_its_header_not_the_vector_source(self):
+        from unittest.mock import MagicMock
+        from huavd_map_build.delivery.domain.metadata import PmtilesHeader
+        from huavd_map_build.delivery.south.adapter.filesystem.atomic_writer import AtomicFileWriter
+        from huavd_map_build.delivery.south.adapter.filesystem.digest import FileDigestAdapter
+        from huavd_map_build.production.south.adapter.workspace.style import FileSystemRasterClientStyleBinder
+        resolved = build_configuration_service(repository_root()).style("china/guangxi", "zh-Hans")
+        document = compile_styles(resolved["config"], resolved["locale"], resolved["effective_base_layers"],
+                                 {"min_zoom":0,"max_zoom":14}).raster
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/"style-raster.json"
+            path.write_text(json.dumps(document))
+            headers=MagicMock(read=MagicMock(return_value=PmtilesHeader(4,1,0,19,(110,25,111,26))))
+            FileSystemRasterClientStyleBinder(headers,AtomicFileWriter(),FileDigestAdapter()).bind("raster",str(path),256)
+            bound=json.loads(path.read_text())
+            self.assertEqual(19,bound["sources"]["raster-bake"]["maxzoom"])
+            self.assertEqual(19,bound["metadata"]["huavd:viewport"]["max_zoom"])
+            self.assertEqual([110,25,111,26],bound["sources"]["raster-bake"]["bounds"])
+            self.assertEqual(14,bound["sources"]["huavd-offline"]["maxzoom"])
+            self.assertIn(hashlib.sha512(path.read_bytes()).hexdigest(),Path(str(path)+".sha512").read_text())
+
+    def test_recompiling_style_keeps_distinct_vector_and_raster_zooms(self):
+        resolved = build_configuration_service(repository_root()).style("china/guangxi", "zh-Hans")
+        docs = compile_styles(resolved["config"],resolved["locale"],resolved["effective_base_layers"],
+            {"min_zoom":0,"max_zoom":14},raster_viewport={"min_zoom":2,"max_zoom":19,"bounds":[110,25,111,26]})
+        self.assertEqual(14,docs.vector["sources"]["huavd-offline"]["maxzoom"])
+        self.assertEqual(19,docs.raster["sources"]["raster-bake"]["maxzoom"])
+        self.assertEqual(2,docs.raster["sources"]["raster-bake"]["minzoom"])
+
+    def test_building_and_road_high_zoom_draw_order(self):
+        resolved = build_configuration_service(repository_root()).style("china/guangxi", "zh-Hans")
+        docs = compile_styles(resolved["config"],resolved["locale"],resolved["effective_base_layers"])
+        ids=[layer['id'] for layer in docs.bake['layers']]
+        self.assertLess(ids.index('building-fill'),ids.index('building-outline'))
+        self.assertLess(ids.index('building-outline'),ids.index('road-casing'))
+        self.assertLess(ids.index('road-casing'),ids.index('road-line'))

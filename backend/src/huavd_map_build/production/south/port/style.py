@@ -12,3 +12,7 @@ class StyleStore(Protocol):
 
     def publish(self, vector_path: str, bake_path: str, raster_path: str,
                 documents: StyleDocuments) -> tuple[str, str, str]: ...
+
+
+class RasterClientStyleBinder(Protocol):
+    def bind(self, archive_path: str, style_path: str, tile_size: int) -> None: ...

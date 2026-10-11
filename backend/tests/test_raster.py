@@ -157,3 +157,17 @@ class RasterCacheStoreTest(unittest.TestCase):
         self.assertEqual(plan.tile_count - 1, result.missing_tiles)
         self.assertEqual(result.missing_tiles, len(missing_lines))
         self.assertEqual(1, len(quarantined))
+
+
+class RuntimeCacheIdentityTest(unittest.TestCase):
+    def test_runtime_policy_source_bounds_and_subset_change_identity(self):
+        from dataclasses import replace
+        from huavd_map_build.production.domain.raster import RasterSourceMetadata
+        plan = create_raster_tile_plan(RasterBounds(0, 0, 1, 1), 0, 0, 0)
+        identity = RasterCacheIdentity("a"*128, "b"*128, "c"*128, plan, 256, 1,
+                                       True, 6, "none", "native", "binary")
+        source = RasterSourceMetadata(0, 18, (0,0,1,1))
+        for changed in (replace(identity, source_metadata=source),
+                        replace(identity, runtime_source_policy="next"),
+                        replace(identity, subset_bounds="0,0,1,1", subset_zooms=(0,18))):
+            self.assertNotEqual(identity.digest, changed.digest)

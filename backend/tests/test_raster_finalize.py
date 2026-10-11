@@ -17,6 +17,9 @@ class RecordingComponent:
     def __init__(self, calls, name, result=None):
         self.calls, self.name, self.result = calls, name, result
 
+    def bind(self, *args):
+        self.calls.append(self.name)
+
     def run(self, request):
         self.calls.append(self.name)
         return self.result
@@ -99,6 +102,7 @@ class RasterFinalizationServiceTest(unittest.TestCase):
             RecordingComponent(calls, "quality", RasterQualityReport(())),
             RecordingComponent(calls, "integrity", [passed, passed]),
             RecordingCandidates(calls, staged), RecordingComponent(calls, "publish"),
+            styles=RecordingComponent(calls, "style-bind"),
         )
         result = service.run(RasterFinalizationRequest(
             identity.region, identity.build_date, SessionId("china-guangxi-20261003"),
@@ -107,5 +111,5 @@ class RasterFinalizationServiceTest(unittest.TestCase):
         self.assertTrue(result.published)
         self.assertEqual(
             ["stage", "metadata", "manifest", "attribution", "quality",
-             "integrity", "promote", "publish", "integrity", "discard"], calls,
+             "integrity", "promote", "style-bind", "publish", "integrity", "discard"], calls,
         )

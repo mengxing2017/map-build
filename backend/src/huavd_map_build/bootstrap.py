@@ -36,6 +36,7 @@ from huavd_map_build.production.north.local.glyph import GlyphService
 from huavd_map_build.production.north.local.raster import RasterPlanningService
 from huavd_map_build.production.north.local.raster_bake import RasterBakeService
 from huavd_map_build.production.north.local.raster_finalize import RasterFinalizationService
+from huavd_map_build.production.south.adapter.process.raster_readback import ProcessRasterArchiveVerifier
 from huavd_map_build.production.north.local.raster_request import RasterBakeRequestFactory
 from huavd_map_build.production.north.local.raster_render import RasterRenderService
 from huavd_map_build.production.north.local.raster_runtime import RasterRuntimeService
@@ -95,7 +96,7 @@ from huavd_map_build.production.south.adapter.workspace.build_source import (
 from huavd_map_build.production.south.adapter.workspace.recovery import (
     FileSystemBuildArtifactStore,
 )
-from huavd_map_build.production.south.adapter.workspace.style import FileSystemStyleStore
+from huavd_map_build.production.south.adapter.workspace.style import FileSystemStyleStore, FileSystemRasterClientStyleBinder
 from huavd_map_build.production.south.adapter.workspace.sprite import FileSystemSpriteStore
 from huavd_map_build.production.south.adapter.workspace.glyph import FileSystemGlyphWorkspace
 from huavd_map_build.production.south.adapter.process.glyph import ProcessGlyphGenerator
@@ -258,13 +259,13 @@ def raster_bake_service() -> RasterBakeService:
         ProcessRasterDisplaySession(),
         RasterRuntimeService(
             archive, ProcessRasterTileServer(), UrlLibRasterMvtClient(),
-            FileSystemRasterRuntimeStyleStore(),
+            FileSystemRasterRuntimeStyleStore(), FileSystemPmtilesHeaderReader(),
         ),
         RasterRenderService(
             FileSystemRasterWorkQueue(), ProcessRasterTileRenderer(),
             ProcessWebpEncoder(),
         ),
-        RasterAssemblyService(SqliteRasterTileArchiveAssembler(), archive),
+        RasterAssemblyService(SqliteRasterTileArchiveAssembler(), archive, ProcessRasterArchiveVerifier()),
         FileSystemRasterEvidenceStore(AtomicFileWriter(), FileDigestAdapter()),
     )
 
@@ -275,7 +276,7 @@ def raster_bake_request_factory(
     resolved_root = root or repository_root()
     return RasterBakeRequestFactory(
         build_configuration_service(resolved_root), FileDigestAdapter(),
-        str(resolved_root / "config/bake.yaml"),
+        str(resolved_root / "config/bake.yaml"), FileSystemPmtilesHeaderReader(),
     )
 
 
@@ -300,6 +301,7 @@ def raster_finalization_service(
         raster_manifest_service(resolved_root), attribution_writer_service(),
         raster_quality_gate(resolved_root), artifact_file_verifier(),
         FileSystemRasterCandidatePublisher(), artifact_publication_service(),
+        FileSystemRasterClientStyleBinder(FileSystemPmtilesHeaderReader(), AtomicFileWriter(), FileDigestAdapter()),
     )
 
 

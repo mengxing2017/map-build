@@ -24,7 +24,7 @@ PYTHON         ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 BAKE_RENDERER_ENGINE ?=
 BAKE_RENDERER_COMMAND ?=
 NATIVE_RENDERER_COMMAND ?=
-BAKE_RENDERER_FLAGS = $(if $(BAKE_RENDERER_ENGINE),--renderer-engine="$(BAKE_RENDERER_ENGINE)",) $(if $(BAKE_RENDERER_COMMAND),--renderer-command="$(BAKE_RENDERER_COMMAND)",) $(if $(BAKE_DISPLAY_MODE),--display-mode="$(BAKE_DISPLAY_MODE)",) $(if $(BAKE_JOBS),--jobs="$(BAKE_JOBS)",)
+BAKE_RENDERER_FLAGS = $(if $(BAKE_RENDERER_ENGINE),--renderer-engine="$(BAKE_RENDERER_ENGINE)",) $(if $(BAKE_RENDERER_COMMAND),--renderer-command="$(BAKE_RENDERER_COMMAND)",) $(if $(BAKE_DISPLAY_MODE),--display-mode="$(BAKE_DISPLAY_MODE)",) $(if $(BAKE_JOBS),--jobs="$(BAKE_JOBS)",) $(foreach sample,$(BAKE_SAMPLES),--sample="$(sample)")
 
 .PHONY: setup-native-renderer check-native-renderer
 setup-native-renderer:

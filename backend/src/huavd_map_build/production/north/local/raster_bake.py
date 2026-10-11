@@ -64,14 +64,14 @@ class RasterBakeService:
 
     def bake(self, request: RasterBakeRequest) -> RasterBakeResult:
         timings: list[RasterStageTiming] = []
-        if self._evidence is not None and request.parameters_path is not None:
-            self._evidence.write_parameters(
-                request.parameters_path, request.identity, request.render_settings,
-                request.display_settings,
-            )
         with self._lifecycle.open(
             request.identity.digest, request.workspace, request.invalidation_paths
         ) as preparation:
+            if self._evidence is not None and request.parameters_path is not None:
+                self._evidence.write_parameters(
+                    request.parameters_path, request.identity, request.render_settings,
+                    request.display_settings,
+                )
             self._timed(
                 "plan", timings,
                 lambda: self._cache.write_plan(
@@ -119,7 +119,7 @@ class RasterBakeService:
             )
         result = RasterBakeResult(
             preparation, initial, final, render_result, assembly_result,
-            runtime.preflight, tuple(timings),
+            runtime.preflight, tuple(timings), runtime.evidence, runtime.source_metadata,
         )
         if self._evidence is not None and request.metrics_path is not None:
             self._evidence.write_metrics(

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from huavd_map_build.delivery.south.port.metadata import PmtilesHeaderReader
+
 from huavd_map_build.catalog.north.local.configuration import BuildConfigurationService
 from huavd_map_build.delivery.domain.artifact import ArtifactIdentity, ArtifactPaths
 from huavd_map_build.delivery.south.port.digest import DigestPort
@@ -12,6 +14,10 @@ from huavd_map_build.production.domain.raster import (
     RasterDisplaySettings,
     RasterRenderSettings,
     RasterTilePlan,
+    RasterSourceMetadata,
+    RasterSourceProbe,
+    RasterContentSample,
+    RasterTileCoordinate,
 )
 from huavd_map_build.production.north.local.raster_bake import RasterBakeRequest
 from huavd_map_build.production.north.local.raster_runtime import RasterRuntimeRequest
@@ -28,16 +34,18 @@ class RasterBakeOverrides:
     timeout_seconds: int | None = None
     extract_pmtiles: bool | None = None
     display_mode: str | None = None
+    content_samples: tuple[RasterContentSample, ...] = ()
 
 
 class RasterBakeRequestFactory:
     def __init__(
         self, configuration: BuildConfigurationService, digest: DigestPort,
-        bake_configuration_path: str,
+        bake_configuration_path: str, headers: PmtilesHeaderReader,
     ) -> None:
         self._configuration = configuration
         self._digest = digest
         self._bake_configuration_path = bake_configuration_path
+        self._headers = headers
 
     def create(
         self, region: RegionId, build_date: BuildDate, workdir: str,
@@ -58,6 +66,8 @@ class RasterBakeRequestFactory:
         cwebp = settings.get("cwebp", {})
         display = settings.get("display", {})
         native = overrides.renderer_engine == "maplibre-native-headless"
+        if native and plan.max_zoom > 24:
+            raise ValueError("native renderer only supports zooms 0..24")
         display_mode = overrides.display_mode or (
             "headless" if native else str(display.get("mode", "managed-xvfb"))
         )
@@ -74,23 +84,46 @@ class RasterBakeRequestFactory:
             if overrides.parallel_jobs is None else overrides.parallel_jobs,
             settings.get("retries", 2) if overrides.retries is None else overrides.retries,
         )
+        source = RasterSourceMetadata.from_header(self._headers.read(base.pmtiles))
+        extract = (
+            bool(settings.get("pmtiles_extract", False))
+            if overrides.extract_pmtiles is None else overrides.extract_pmtiles
+        )
+        minimum, maximum = max(plan.min_zoom, source.min_zoom), min(plan.max_zoom, source.max_zoom)
+        if extract and minimum > maximum:
+            raise ValueError("raster subset has no zoom intersection with source")
+        subset_bounds = ",".join(str(value) for value in plan.bounds.as_list()) if extract else None
         identity = RasterCacheIdentity(
             self._digest.sha512(base.pmtiles), self._digest.sha512(str(style)),
             self._digest.sha512(self._bake_configuration_path), plan,
             render.tile_size, int(settings.get("pixel_ratio", 1)),
             render.webp_lossless, render.webp_method, render.webp_metadata,
-            render.renderer_engine, overrides.renderer_identity,
+            render.renderer_engine, overrides.renderer_identity, source,
+            subset_bounds, (minimum, maximum) if extract else None,
         )
-        extract = (
-            bool(settings.get("pmtiles_extract", False))
-            if overrides.extract_pmtiles is None else overrides.extract_pmtiles
-        )
+        if native and plan.max_zoom >= 19 and not overrides.content_samples:
+            raise ValueError("z19 native raster bake requires at least one --sample=LAYER,LON,LAT known feature")
+        probes: list[RasterSourceProbe] = []
+        if native:
+            high = plan.ranges[-1]
+            # Include high-zoom center and all padded corners; emptiness is legal here.
+            for x, y in (((high.x_min + high.x_max)//2, (high.y_min + high.y_max)//2),
+                         (high.x_min, high.y_min), (high.x_max, high.y_min),
+                         (high.x_min, high.y_max), (high.x_max, high.y_max)):
+                probe = RasterSourceProbe(RasterTileCoordinate(high.zoom, x, y))
+                if probe not in probes:
+                    probes.append(probe)
+        for sample in overrides.content_samples:
+            if not (plan.bounds.west <= sample.longitude <= plan.bounds.east
+                    and plan.bounds.south <= sample.latitude <= plan.bounds.north):
+                raise ValueError("known feature sample is outside raster bounds")
+            probes.append(RasterSourceProbe(sample.coordinate(plan.max_zoom), sample.layer))
         runtime = RasterRuntimeRequest(
             base.pmtiles, str(style), str(cache / "style-render-runtime.json"),
             next(plan.coordinates()),
             str(cache / "base-bake-subset.pmtiles") if extract else None,
-            ",".join(str(value) for value in plan.bounds.as_list()) if extract else None,
-            plan.min_zoom, plan.max_zoom, validate_mvt=native,
+            subset_bounds,
+            plan.min_zoom, plan.max_zoom, validate_mvt=native, probes=tuple(probes),
         )
         stem = f"{region.slug}-{build_date.value}.raster_bake"
         display_settings = RasterDisplaySettings(

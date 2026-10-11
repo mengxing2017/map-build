@@ -16,9 +16,11 @@ class StyleService:
         root, session = request.workdir.rstrip("/"), request.session.value
         base = f"{root}/outputs/{session}.base.pmtiles"
         viewport = self._viewport.read(base) if self._store.is_file(base) else {}
+        raster = f"{root}/outputs/{session}.raster_bake.pmtiles"
+        raster_viewport = self._viewport.read(raster) if self._store.is_file(raster) else None
         documents = compile_styles(
             resolved["config"], resolved["locale"], resolved["effective_base_layers"],
-            viewport, request.pmtiles_url,
+            viewport, request.pmtiles_url, raster_viewport,
         )
         return self._store.publish(
             f"{root}/outputs/{session}.style.json",

@@ -7,7 +7,8 @@ from types import SimpleNamespace
 import tempfile
 import unittest
 from contextlib import redirect_stdout
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+from huavd_map_build.delivery.domain.metadata import PmtilesHeader
 
 from huavd_map_build import cli
 from huavd_map_build.bootstrap import (
@@ -44,6 +45,7 @@ class RasterBakeRequestFactoryTest(unittest.TestCase):
             factory = RasterBakeRequestFactory(
                 build_configuration_service(root), FileDigestAdapter(),
                 str(root / "config/bake.yaml"),
+                MagicMock(read=MagicMock(return_value=PmtilesHeader(1, 2, 0, 18, (0,0,1,1)))),
             )
             request = factory.create(
                 RegionId("china/guangxi"), BuildDate("20261004"), str(workdir),
@@ -71,7 +73,8 @@ class RasterBakeRequestFactoryTest(unittest.TestCase):
             (outputs / f"{session}.base.pmtiles").write_bytes(b"base")
             (cache / "style-render.json").write_text("{}")
             factory = RasterBakeRequestFactory(
-                build_configuration_service(root), FileDigestAdapter(), str(root / "config/bake.yaml")
+                build_configuration_service(root), FileDigestAdapter(), str(root / "config/bake.yaml"),
+                MagicMock(read=MagicMock(return_value=PmtilesHeader(1, 2, 0, 18, (0,0,1,1))))
             )
             plan = create_raster_tile_plan(RasterBounds(0,0,1,1), 0,0,0)
             request = factory.create(
@@ -94,6 +97,7 @@ class RasterBakeRequestFactoryTest(unittest.TestCase):
             factory = RasterBakeRequestFactory(
                 build_configuration_service(root), FileDigestAdapter(),
                 str(root / "config/bake.yaml"),
+                MagicMock(read=MagicMock(return_value=PmtilesHeader(1, 2, 0, 18, (0,0,1,1)))),
             )
             with self.assertRaisesRegex(ValueError, "required raster bake input"):
                 factory.create(
@@ -114,6 +118,7 @@ class RasterBakeRequestFactoryTest(unittest.TestCase):
             factory = RasterBakeRequestFactory(
                 build_configuration_service(root), FileDigestAdapter(),
                 str(root / "config/bake.yaml"),
+                MagicMock(read=MagicMock(return_value=PmtilesHeader(1, 2, 0, 18, (0,0,1,1)))),
             )
             with self.assertRaisesRegex(ValueError, "parallel jobs"):
                 factory.create(
@@ -121,6 +126,42 @@ class RasterBakeRequestFactoryTest(unittest.TestCase):
                     create_raster_tile_plan(RasterBounds(0, 0, 1, 1), 0, 0, 0),
                     RasterBakeOverrides(parallel_jobs=0),
                 )
+
+    def test_native_rejects_z25_before_reading_source_header(self):
+        root=repository_root(Path(__file__))
+        with tempfile.TemporaryDirectory() as directory:
+            workdir=Path(directory)
+            base=workdir/'outputs/china-guangxi-20261004.base.pmtiles'
+            style=workdir/'cache/bake/china-guangxi-20261004/style-render.json'
+            base.parent.mkdir(parents=True);style.parent.mkdir(parents=True)
+            base.write_bytes(b'base');style.write_text('{}')
+            headers=MagicMock()
+            factory=RasterBakeRequestFactory(build_configuration_service(root),FileDigestAdapter(),
+                str(root/'config/bake.yaml'),headers)
+            tiny=RasterBounds(110.3,25.3,110.30000001,25.30000001)
+            plan=create_raster_tile_plan(tiny,25,25,0)
+            with self.assertRaisesRegex(ValueError,'0..24'):
+                factory.create(RegionId('china/guangxi'),BuildDate('20261004'),directory,plan,
+                    RasterBakeOverrides(renderer_engine='maplibre-native-headless'))
+            headers.read.assert_not_called()
+
+
+    def test_z19_native_requires_a_known_feature_instead_of_accepting_all_background(self):
+        root=repository_root(Path(__file__))
+        with tempfile.TemporaryDirectory() as directory:
+            workdir=Path(directory)
+            base=workdir/'outputs/china-guangxi-20261004.base.pmtiles'
+            style=workdir/'cache/bake/china-guangxi-20261004/style-render.json'
+            base.parent.mkdir(parents=True);style.parent.mkdir(parents=True)
+            base.write_bytes(b'base');style.write_text('{}')
+            headers=MagicMock(read=MagicMock(return_value=PmtilesHeader(1,2,0,19,(110,25,111,26))))
+            factory=RasterBakeRequestFactory(build_configuration_service(root),FileDigestAdapter(),
+                str(root/'config/bake.yaml'),headers)
+            plan=create_raster_tile_plan(RasterBounds(110.3,25.3,110.30000001,25.30000001),19,19,0)
+            with self.assertRaisesRegex(ValueError,'known feature'):
+                factory.create(RegionId('china/guangxi'),BuildDate('20261004'),directory,plan,
+                    RasterBakeOverrides(renderer_engine='maplibre-native-headless'))
+
 
 
 class StubPlanningService:

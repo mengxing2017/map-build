@@ -16,7 +16,8 @@ class RasterPreviewTest(unittest.TestCase):
         ) as run:
             result = write_preview(Path(temporary), plan)
             page = Path(result["preview"]).read_text()
-            self.assertEqual(12, run.call_count)
+            self.assertEqual(20, run.call_count)
+            self.assertIn("padding", page)
             self.assertIn("XYZ z14", page)
             self.assertEqual("not-run", result["visual_acceptance"])
             first, neighbor = run.call_args_list[:2]

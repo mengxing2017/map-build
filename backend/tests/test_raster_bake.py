@@ -13,6 +13,7 @@ from huavd_map_build.production.domain.raster import (
     RasterAssemblySettings,
     RasterBounds,
     RasterCacheIdentity,
+    RasterSourceMetadata,
     RasterCachePreparation,
     RasterCacheScanResult,
     RasterDisplayEndpoint,
@@ -145,7 +146,7 @@ class FakeRuntime:
             yield RasterRuntimeResult(
                 "runtime.json", "http://tiles/{z}/{x}/{y}.mvt",
                 RasterMvtPreflightResult("http://tiles/0/0/0.mvt", 2, 1.0),
-                "base.pmtiles",
+                "base.pmtiles", RasterSourceMetadata(0, 14, (0, 0, 1, 1)),
             )
         finally:
             self.events.append("runtime-close")

@@ -216,6 +216,7 @@ class RasterAssemblyResult:
     expected_tiles: int
     inserted_tiles: int
     tile_bytes: int
+    verified_tiles: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +230,7 @@ class RasterMvtPreflightResult:
     url: str
     payload_bytes: int
     elapsed_ms: float
+    layers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,6 +254,8 @@ class RasterBakeResult:
     assembly: RasterAssemblyResult
     preflight: RasterMvtPreflightResult
     timings: tuple[RasterStageTiming, ...]
+    runtime_evidence: tuple[dict[str, Any], ...] = ()
+    source_metadata: RasterSourceMetadata | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -263,11 +267,14 @@ class RasterBakeResult:
             "rendered_tiles": 0 if self.render is None else self.render.rendered_tiles,
             "final_cache_hits": self.final_scan.cache_hits,
             "assembled_tiles": self.assembly.inserted_tiles,
+            "readback_tiles": self.assembly.verified_tiles,
             "preflight": {
                 "url": self.preflight.url,
                 "bytes": self.preflight.payload_bytes,
                 "elapsed_ms": self.preflight.elapsed_ms,
             },
+            "runtime_source": None if self.source_metadata is None else self.source_metadata.as_dict(),
+            "preflight_samples": list(self.runtime_evidence),
             "phases_ms": {item.stage: item.elapsed_ms for item in self.timings},
         }
 
@@ -279,6 +286,7 @@ def raster_parameters_document(
     return {
         "schema_version": 1,
         "cache_identity": identity.digest,
+        "runtime_source": identity.runtime_document(),
         "plan": identity.plan.as_dict(),
         "renderer": {
             "engine": settings.renderer_engine,
@@ -358,8 +366,11 @@ def raster_metrics_document(
             "inserted_tiles": result.assembly.inserted_tiles,
             "tile_bytes": result.assembly.tile_bytes,
         },
+        "runtime_source": None if result.source_metadata is None else result.source_metadata.as_dict(),
+        "preflight_samples": list(result.runtime_evidence),
         "phases_ms": {item.stage: item.elapsed_ms for item in result.timings},
-        "quality": {"visual_grid_validation": "not-run"},
+        "quality": {"visual_grid_validation": "not-run",
+                    "readback_tiles": result.assembly.verified_tiles},
         "artifacts": {
             "mbtiles_bytes": mbtiles_bytes,
             "pmtiles_bytes": pmtiles_bytes,
@@ -370,6 +381,7 @@ def raster_metrics_document(
 def rewrite_bake_source(
     document: dict[str, Any], tile_url: str | None = None,
     archive_path: str | None = None,
+    metadata: RasterSourceMetadata | None = None,
 ) -> dict[str, Any]:
     if (tile_url is None) == (archive_path is None):
         raise ValueError("exactly one raster runtime source must be provided")
@@ -387,7 +399,76 @@ def rewrite_bake_source(
     else:
         runtime_source.pop("tiles", None)
         runtime_source["url"] = f"pmtiles://{archive_path}"
+    if metadata is not None:
+        runtime_source.update(metadata.as_dict())
     return result
+
+
+@dataclass(frozen=True, slots=True)
+class RasterContentSample:
+    layer: str
+    longitude: float
+    latitude: float
+
+    def __post_init__(self) -> None:
+        if (not self.layer or not math.isfinite(self.longitude) or not math.isfinite(self.latitude)
+            or not -180 <= self.longitude < 180 or not -WEB_MERCATOR_LIMIT < self.latitude < WEB_MERCATOR_LIMIT):
+            raise ValueError("sample requires LAYER,LON,LAT within Web Mercator bounds")
+
+    def coordinate(self, zoom: int) -> RasterTileCoordinate:
+        size = 1 << zoom
+        x = int((self.longitude + 180) / 360 * size)
+        y = int((1 - math.asinh(math.tan(math.radians(self.latitude))) / math.pi) / 2 * size)
+        return RasterTileCoordinate(zoom, min(size-1, max(0, x)), min(size-1, max(0, y)))
+
+
+@dataclass(frozen=True, slots=True)
+class RasterSourceProbe:
+    output_coordinate: RasterTileCoordinate
+    expected_layer: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RasterSourceMetadata:
+    min_zoom: int
+    max_zoom: int
+    bounds: tuple[float, float, float, float]
+
+    def __post_init__(self) -> None:
+        if (isinstance(self.min_zoom, bool) or not isinstance(self.min_zoom, int)
+            or isinstance(self.max_zoom, bool) or not isinstance(self.max_zoom, int)
+            or not 0 <= self.min_zoom <= self.max_zoom <= 24):
+            raise ValueError("source zooms must satisfy 0 <= min_zoom <= max_zoom <= 24")
+        if len(self.bounds) != 4 or any(
+            isinstance(value, bool) or not isinstance(value, (int, float))
+            or not math.isfinite(value) for value in self.bounds
+        ):
+            raise ValueError("source bounds must contain four finite numbers")
+        west, south, east, north = self.bounds
+        # PMTiles e7 header coordinates round the Mercator limit to 85.0511288.
+        if not (-180 <= west < east <= 180 and -85.051129 <= south < north <= 85.051129):
+            raise ValueError("source bounds exceed ordered Web Mercator extent")
+
+    @classmethod
+    def from_header(cls, header) -> RasterSourceMetadata:
+        if header.tile_type != 1:
+            raise ValueError("raster source archive must contain MVT tiles")
+        return cls(header.min_zoom, header.max_zoom, tuple(header.bounds))
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"minzoom": self.min_zoom, "maxzoom": self.max_zoom,
+                "bounds": list(self.bounds), "scheme": "xyz"}
+
+    def coordinate(self, coordinate: RasterTileCoordinate) -> RasterTileCoordinate:
+        zoom = min(max(coordinate.zoom, self.min_zoom), self.max_zoom)
+        if zoom <= coordinate.zoom:
+            shift = coordinate.zoom - zoom
+            return RasterTileCoordinate(zoom, coordinate.x >> shift, coordinate.y >> shift)
+        longitude, latitude = coordinate.center
+        size = 1 << zoom
+        x = int((longitude + 180) / 360 * size)
+        y = int((1 - math.asinh(math.tan(math.radians(latitude))) / math.pi) / 2 * size)
+        return RasterTileCoordinate(zoom, min(size - 1, max(0, x)), min(size - 1, max(0, y)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -445,6 +526,10 @@ class RasterCacheIdentity:
     webp_metadata: str
     renderer_engine: str
     renderer_identity: str
+    source_metadata: RasterSourceMetadata | None = None
+    subset_bounds: str | None = None
+    subset_zooms: tuple[int, int] | None = None
+    runtime_source_policy: str = "served-archive-v2"
 
     def __post_init__(self) -> None:
         for name in ("base_sha512", "style_sha512", "configuration_sha512"):
@@ -457,6 +542,14 @@ class RasterCacheIdentity:
             raise ValueError("raster WebP method must be between 0 and 6")
         if not self.renderer_engine or not self.renderer_identity:
             raise ValueError("raster renderer identity must not be empty")
+
+    def runtime_document(self) -> dict[str, Any]:
+        return {
+            "policy": self.runtime_source_policy,
+            "source": None if self.source_metadata is None else self.source_metadata.as_dict(),
+            "subset_bounds": self.subset_bounds,
+            "subset_zooms": self.subset_zooms,
+        }
 
     @property
     def digest(self) -> str:
@@ -478,6 +571,7 @@ class RasterCacheIdentity:
                 "identity": self.renderer_identity,
             },
             "tile_bounds_contract": "tile-bounds-v1",
+            "runtime_source": self.runtime_document(),
         }
         payload = json.dumps(
             document, ensure_ascii=True, sort_keys=True, separators=(",", ":")

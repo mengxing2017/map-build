@@ -17,6 +17,7 @@ from huavd_map_build.delivery.north.local.verification import ArtifactFileVerifi
 from huavd_map_build.delivery.south.port.raster_publication import RasterCandidatePublisher
 from huavd_map_build.quality.domain.raster import RasterQualityReport
 from huavd_map_build.quality.north.local.raster import RasterQualityGate
+from huavd_map_build.production.south.port.style import RasterClientStyleBinder
 from huavd_map_build.shared.kernel import BuildDate, RegionId, Role, SessionId
 
 
@@ -63,10 +64,11 @@ class RasterFinalizationService:
         manifest: RasterManifestService, attribution: AttributionWriterService,
         quality: RasterQualityGate, integrity: ArtifactFileVerifier,
         candidates: RasterCandidatePublisher, publication: ArtifactPublicationService,
+        styles: RasterClientStyleBinder | None = None,
     ) -> None:
         self._catalog, self._metadata, self._manifest = catalog, metadata, manifest
         self._attribution, self._quality, self._integrity = attribution, quality, integrity
-        self._candidates, self._publication = candidates, publication
+        self._candidates, self._publication, self._styles = candidates, publication, styles
 
     def run(self, request: RasterFinalizationRequest) -> RasterFinalizationResult:
         identity = ArtifactIdentity(request.region, request.build_date, Role.RASTER_BAKE)
@@ -97,6 +99,9 @@ class RasterFinalizationService:
                     final, metadata_path, semantic, staged_integrity, False
                 )
             self._candidates.promote(staged, final)
+            if self._styles is not None:
+                self._styles.bind(final.pmtiles,
+                    f"{request.workdir.rstrip('/')}/outputs/{request.session.value}.style-raster.json", request.tile_size)
             published_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             self._publication.publish_integrity_metadata(final, published_at=published_at)
             integrity = self._integrity.verify(

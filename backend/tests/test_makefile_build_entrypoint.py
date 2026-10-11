@@ -80,6 +80,9 @@ class MakefileBuildEntrypointTest(unittest.TestCase):
         self.assertIn('--renderer-engine="maplibre-native-headless"', output)
         self.assertNotIn('--renderer-command=', output)
         self.assertIn('--jobs="2"', output)
+        samples = self.recipe(ROLE="raster_bake", BAKE_SAMPLES="road,110.3,25.3 water,110.31,25.31")
+        self.assertIn('--sample="road,110.3,25.3"', samples)
+        self.assertIn('--sample="water,110.31,25.31"', samples)
         default = subprocess.run(["make","--no-print-directory","-n"], cwd=self.root, text=True, capture_output=True, check=True).stdout
         self.assertNotIn("setup-native-renderer", default)
         self.assertNotIn('--renderer-engine=', self.recipe(ROLE="raster_bake"))

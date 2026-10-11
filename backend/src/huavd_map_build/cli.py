@@ -227,6 +227,8 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
     )
     raster_bake.add_argument("--renderer-command", help="renderer executable; defaults to the selected engine's command")
+    raster_bake.add_argument("--sample", action="append", default=[], metavar="LAYER,LON,LAT",
+                             help="known feature at highest output zoom; repeat for content preflight and preview")
     raster_bake.add_argument("--jobs", type=int)
     raster_bake.add_argument("--retries", type=int)
     raster_bake.add_argument("--timeout-seconds", type=int)
@@ -885,12 +887,20 @@ def run(arguments: list[str] | None = None) -> int:
             renderer_identity = ProcessToolVersionReader().versions(
                 (args.renderer_command,)
             )[args.renderer_command]
+        from huavd_map_build.production.domain.raster import RasterContentSample
+
+        samples = []
+        for value in args.sample:
+            parts = value.split(",")
+            if len(parts) != 3:
+                raise ValueError("sample requires LAYER,LON,LAT")
+            samples.append(RasterContentSample(parts[0], float(parts[1]), float(parts[2])))
         request = raster_bake_request_factory(root).create(
             region, build_date, args.workdir, plan,
             RasterBakeOverrides(
                 args.renderer_engine, args.renderer_command, renderer_identity,
                 args.jobs, args.retries, args.timeout_seconds,
-                args.extract_pmtiles, args.display_mode,
+                args.extract_pmtiles, args.display_mode, tuple(samples),
             ),
         )
         result = raster_bake_service().bake(request)
@@ -899,7 +909,7 @@ def run(arguments: list[str] | None = None) -> int:
         from huavd_map_build.production.south.adapter.process.raster_preview import write_preview
 
         document["inspection"] = write_preview(
-            Path(args.workdir) / "cache/bake" / f"{region.slug}-{build_date.value}", plan
+            Path(args.workdir) / "cache/bake" / f"{region.slug}-{build_date.value}", plan, tuple(samples)
         )
         if args.publish:
             from huavd_map_build.production.north.local.raster_finalize import (

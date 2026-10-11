@@ -173,6 +173,18 @@ class StandardZ19ConfigurationTest(unittest.TestCase):
         self.assertEqual(15, layers["admin_line"]["maxzoom"])
         self.assertEqual("standard-z19", self.configuration.profile_transform(pilot)["name"])
 
+    def test_local_raster_override_keeps_other_regions_at_legacy_zoom(self):
+        from huavd_map_build.production.domain.raster import RasterBounds, create_raster_tile_plan
+        settings = self.configuration.raster_bake("china/guangxi/test-extract")
+        self.assertEqual(19, settings["max_zoom"])
+        self.assertEqual(2, settings["native_parallel_jobs"])
+        self.assertEqual(40000, settings["max_tiles"])
+        self.assertEqual(14, self.configuration.raster_bake("china/guangxi")["max_zoom"])
+        bounds = RasterBounds(110.2877168,25.214619,110.3996555,25.309026)
+        plan = create_raster_tile_plan(bounds, settings["min_zoom"], settings["max_zoom"],
+                                       settings["bbox_padding_tiles"], settings["max_tiles"])
+        self.assertEqual(35060, plan.tile_count)
+
     def test_override_validation_and_order(self):
         original = self.repository.load("tippecanoe")
         for roles in ([], ["dem"], "base", ["base", "base"], [True]):

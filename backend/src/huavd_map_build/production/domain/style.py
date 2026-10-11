@@ -40,6 +40,7 @@ def default_zoom(bounds: tuple[float, float, float, float]) -> int:
 def compile_styles(
     config: dict[str, Any], locale: str, effective_layers: list[str],
     viewport: dict[str, Any] | None = None, pmtiles_url: str | None = None,
+    raster_viewport: dict[str, Any] | None = None,
 ) -> StyleDocuments:
     locale_config = next(
         (entry for entry in config["locales"] if entry.get("tag") == locale), None
@@ -90,7 +91,7 @@ def compile_styles(
                 vector["sources"][source_id][key.replace("_", "")] = value
     if sprite_url not in (None, "", "null"):
         vector["sprite"] = sprite_url
-    return StyleDocuments(vector, _compile_bake(vector, config), _compile_raster(vector, config))
+    return StyleDocuments(vector, _compile_bake(vector, config), _compile_raster(vector, config, raster_viewport))
 
 
 def _compile_paint_layer(layer: dict[str, Any], source_id: str) -> dict[str, Any]:
@@ -176,7 +177,8 @@ def _compile_bake(vector: dict[str, Any], config: dict[str, Any]) -> dict[str, A
     return bake
 
 
-def _compile_raster(vector: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+def _compile_raster(vector: dict[str, Any], config: dict[str, Any],
+                    viewport: dict[str, Any] | None = None) -> dict[str, Any]:
     raster_source = config.get("raster_source", {})
     source_id = raster_source.get("id", "raster-bake")
     allowed = set(config.get("raster_overlays", {}).get(
@@ -188,6 +190,10 @@ def _compile_raster(vector: dict[str, Any], config: dict[str, Any]) -> dict[str,
         "url": raster_source.get("url", "pmtiles://{raster_pmtiles}"),
         "tileSize": raster_source.get("tile_size", 256),
     }
+    if viewport:
+        for key in ("min_zoom", "max_zoom"):
+            sources[source_id][key.replace("_", "")] = viewport[key]
+        sources[source_id]["bounds"] = list(viewport["bounds"])
     background = [deepcopy(layer) for layer in vector["layers"] if layer["type"] == "background"]
     overlays = [deepcopy(layer) for layer in vector["layers"] if layer["type"] in allowed]
     raster: dict[str, Any] = {
@@ -198,6 +204,8 @@ def _compile_raster(vector: dict[str, Any], config: dict[str, Any]) -> dict[str,
                                   "source": source_id}] + overlays,
         "metadata": {**deepcopy(vector["metadata"]), "huavd:asset-role": "raster-baked"},
     }
+    if viewport:
+        raster["metadata"]["huavd:viewport"] = deepcopy(viewport)
     if "sprite" in vector:
         raster["sprite"] = vector["sprite"]
     return raster

@@ -16,6 +16,7 @@ from huavd_map_build.production.domain.raster import (
     RasterTileServerEndpoint,
     RasterTileCoordinate,
     RasterTilePlan,
+    RasterSourceMetadata,
 )
 
 
@@ -80,7 +81,8 @@ class RasterMvtClient(Protocol):
 
 
 class RasterRuntimeStyleStore(Protocol):
-    def write(self, source_path: str, output_path: str, tile_url: str) -> None: ...
+    def write(self, source_path: str, output_path: str, tile_url: str,
+              metadata: RasterSourceMetadata) -> None: ...
 
 
 class RasterCacheLifecycle(Protocol):
@@ -99,3 +101,7 @@ class RasterEvidenceStore(Protocol):
         self, path: str, result: RasterBakeResult,
         mbtiles_path: str, pmtiles_path: str,
     ) -> None: ...
+
+
+class RasterArchiveVerifier(Protocol):
+    def verify(self, archive: str, queue: str, webp_directory: str, tile_size: int) -> int: ...

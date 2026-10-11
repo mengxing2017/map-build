@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import re
+import threading
 import socket
 import subprocess
 import time
 import zlib
-from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.error import URLError, HTTPError
+from urllib.request import urlopen, build_opener, ProxyHandler
 
 from huavd_map_build.production.domain.raster import (
     RasterExecutionError,
@@ -34,6 +38,8 @@ class ProcessRasterTileServer:
         log_path = archive.with_name(f".{archive.name}.serve.log")
         log = log_path.open("wb")
         process: subprocess.Popen[bytes] | None = None
+        proxy = None
+        worker = None
         try:
             try:
                 process = subprocess.Popen(
@@ -50,11 +56,63 @@ class ProcessRasterTileServer:
                 ) from error
             self._wait_until_ready(process, port, log_path)
             archive_name = archive.name.removesuffix(".pmtiles")
+            request_log = archive.with_name(f".{archive.name}.requests.jsonl")
+            request_log.write_text("", encoding="utf-8")
+            lock = threading.Lock()
+            opener = build_opener(ProxyHandler({}))
+            route = re.compile(r"/" + re.escape(archive_name) + r"/(\d+)/(\d+)/(\d+)\.mvt")
+
+            class Proxy(BaseHTTPRequestHandler):
+                def do_GET(self):
+                    match = route.fullmatch(self.path)
+                    if match is None:
+                        self.send_error(404)
+                        return
+                    z, x, y = map(int, match.groups())
+                    if not 0 <= z <= 24 or x >= 1 << z or y >= 1 << z:
+                        self.send_error(400)
+                        return
+                    try:
+                        try:
+                            response = opener.open(f"http://127.0.0.1:{port}{self.path}", timeout=30)
+                        except HTTPError as error:
+                            response = error
+                        with response:
+                            status = response.status
+                            payload = response.read(16 * 1024 * 1024 + 1)
+                            headers = response.headers
+                        if len(payload) > 16 * 1024 * 1024:
+                            raise ValueError("MVT response exceeds size limit")
+                    except (OSError, URLError, ValueError):
+                        status, payload, headers = 502, b"upstream tile fetch failed", {}
+                    with lock, request_log.open("a", encoding="utf-8") as stream:
+                        stream.write(json.dumps({"z":z,"x":x,"y":y,"status":status,
+                                                 "bytes":len(payload)})+"\n")
+                    self.send_response(status)
+                    for name in ("Content-Type", "Content-Encoding"):
+                        if headers.get(name):
+                            self.send_header(name, headers[name])
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+
+                def log_message(self, *args):
+                    pass
+
+            proxy = ThreadingHTTPServer(("127.0.0.1", 0), Proxy)
+            worker = threading.Thread(target=proxy.serve_forever, daemon=True)
+            worker.start()
+            proxy_port = proxy.server_address[1]
             yield RasterTileServerEndpoint(
-                f"http://127.0.0.1:{port}/{archive_name}/{{z}}/{{x}}/{{y}}.mvt",
-                port,
+                f"http://127.0.0.1:{proxy_port}/{archive_name}/{{z}}/{{x}}/{{y}}.mvt",
+                proxy_port,
             )
         finally:
+            if proxy is not None:
+                proxy.shutdown()
+                proxy.server_close()
+            if worker is not None:
+                worker.join(timeout=5)
             if process is not None and process.poll() is None:
                 process.terminate()
                 try:
@@ -109,6 +167,7 @@ class UrlLibRasterMvtClient:
             "application/vnd.mapbox-vector-tile", "application/x-protobuf",
         ))):
             raise RasterExecutionError(f"empty MVT preflight response: {url}")
+        layers: tuple[str, ...] = ()
         if validate and payload:
             try:
                 if len(payload) > 16 * 1024 * 1024:
@@ -121,9 +180,10 @@ class UrlLibRasterMvtClient:
                         raise ValueError("invalid or oversized gzip MVT")
                 import mapbox_vector_tile
 
-                mapbox_vector_tile.decode(decoded)
+                document = mapbox_vector_tile.decode(decoded)
+                layers = tuple(name for name, layer in document.items() if layer.get("features"))
             except Exception as error:
                 raise RasterExecutionError(f"invalid MVT preflight response {url}: {error}") from error
         return RasterMvtPreflightResult(
-            url, len(payload), round((time.perf_counter() - started) * 1000, 3)
+            url, len(payload), round((time.perf_counter() - started) * 1000, 3), layers
         )

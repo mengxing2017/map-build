@@ -65,6 +65,41 @@ fn validate_style(style: &Value) -> Result<()> {
     for source in sources.values() {
         match source["type"].as_str() {
             Some("vector") => {
+                let zoom = |key: &str, fallback: u64| -> Result<u64> {
+                    match source.get(key) {
+                        None => Ok(fallback),
+                        Some(value) => value
+                            .as_u64()
+                            .filter(|z| *z <= 24)
+                            .ok_or_else(|| format!("{key} must be an integer in 0..24").into()),
+                    }
+                };
+                if zoom("minzoom", 0)? > zoom("maxzoom", 22)? {
+                    return Err("source minzoom exceeds maxzoom".into());
+                }
+                if let Some(bounds) = source.get("bounds") {
+                    let values = bounds
+                        .as_array()
+                        .filter(|b| b.len() == 4)
+                        .ok_or("source bounds require four numbers")?;
+                    let b: Vec<f64> = values
+                        .iter()
+                        .map(|v| {
+                            v.as_f64()
+                                .filter(|n| n.is_finite())
+                                .ok_or("source bounds require finite numbers")
+                        })
+                        .collect::<std::result::Result<_, _>>()?;
+                    if !(-180.0 <= b[0]
+                        && b[0] < b[2]
+                        && b[2] <= 180.0
+                        && -85.051129 <= b[1]
+                        && b[1] < b[3]
+                        && b[3] <= 85.051129)
+                    {
+                        return Err("source bounds are outside ordered Web Mercator extent".into());
+                    }
+                }
                 if source.get("url").is_some() {
                     return Err("vector source must use explicit local tiles, not url".into());
                 }
@@ -239,5 +274,30 @@ mod tests {
             .contains("loopback"));
         style["sources"]["base"]["tiles"] = json!(["http://127.0.0.1:1234/{z}/{x}/{y}.mvt"]);
         assert!(validate_style(&style).is_ok());
+    }
+
+    #[test]
+    fn validates_source_zoom_and_bounds_before_initializing_native() {
+        let mut style = json!({"version":8,"sources":{"base":{"type":"vector",
+            "tiles":["http://127.0.0.1:123/{z}/{x}/{y}.mvt"],
+            "minzoom":0,"maxzoom":19,"bounds":[110.0,25.0,111.0,26.0]}},"layers":[]});
+        assert!(validate_style(&style).is_ok());
+        for value in [json!(true), json!(19.5), json!(25), json!(-1)] {
+            style["sources"]["base"]["maxzoom"] = value;
+            assert!(validate_style(&style).is_err());
+        }
+        style["sources"]["base"]["maxzoom"] = json!(19);
+        style["sources"]["base"]["minzoom"] = json!(20);
+        assert!(validate_style(&style).is_err());
+        style["sources"]["base"]["minzoom"] = json!(0);
+        for value in [
+            json!([111, 25, 110, 26]),
+            json!([110, 25, 111]),
+            json!([110, true, 111, 26]),
+            json!([110, 25, 111, 90]),
+        ] {
+            style["sources"]["base"]["bounds"] = value;
+            assert!(validate_style(&style).is_err());
+        }
     }
 }
