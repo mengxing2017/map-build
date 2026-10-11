@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 import sqlite3
+import struct
 import subprocess
 import shutil
 import tempfile
@@ -153,7 +154,7 @@ class RasterArchiveProcessTest(unittest.TestCase):
             queue = root / "tiles.tsv"
             queue.write_text(coordinate.tsv(), encoding="utf-8")
             settings = RasterAssemblySettings(
-                "test-raster", RasterBounds(-180, -85, 180, 85), 0, 0,
+                "test-raster", RasterBounds(104.252447, 19.995808, 112.265, 26.696033), 0, 0,
                 str(root / "webp"),
             )
             mbtiles, pmtiles = root / "raster.mbtiles", root / "raster.pmtiles"
@@ -161,8 +162,11 @@ class RasterArchiveProcessTest(unittest.TestCase):
                 str(queue), str(mbtiles), settings
             )
             ProcessRasterArchive().convert(str(mbtiles), str(pmtiles))
-            header = pmtiles.read_bytes()[:7]
-        self.assertEqual(b"PMTiles", header)
+            header = pmtiles.read_bytes()[:127]
+        self.assertEqual(b"PMTiles", header[:7])
+        longitude, latitude = (value / 10_000_000 for value in struct.unpack_from("<ii", header, 119))
+        self.assertAlmostEqual(108.2587235, longitude, places=6)
+        self.assertAlmostEqual(23.3459205, latitude, places=6)
 
 
 class FakeAssembler:

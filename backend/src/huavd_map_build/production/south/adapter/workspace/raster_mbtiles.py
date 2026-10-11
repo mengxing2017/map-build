@@ -43,6 +43,11 @@ class SqliteRasterTileArchiveAssembler:
                 "name": settings.name,
                 "format": "webp",
                 "bounds": ",".join(str(value) for value in settings.bounds.as_list()),
+                "center": ",".join(str(value) for value in (
+                    (settings.bounds.west + settings.bounds.east) / 2,
+                    (settings.bounds.south + settings.bounds.north) / 2,
+                    settings.min_zoom,
+                )),
                 "minzoom": str(settings.min_zoom),
                 "maxzoom": str(settings.max_zoom),
                 "type": "baselayer",
