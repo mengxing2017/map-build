@@ -794,10 +794,10 @@ VENV_BIN_DIR="${REPO_ROOT}/.venv/bin"
 PYTHON_PIP_DEPENDENCIES=(
   "fonttools|fontTools|fonttools|required"
   "PyYAML|yaml|PyYAML|required"
-  "mapbox-vector-tile|mapbox_vector_tile|mapbox_vector_tile|optional_nix"
-  "shapely|shapely|shapely|optional_nix"
-  "pyclipper|pyclipper|pyclipper|optional_nix"
-  "protobuf|google.protobuf|protobuf|optional_nix"
+  "mapbox-vector-tile|mapbox_vector_tile|mapbox_vector_tile|required"
+  "shapely|shapely|shapely|required"
+  "pyclipper|pyclipper|pyclipper|required"
+  "protobuf|google.protobuf|protobuf|required"
 )
 
 in_nix_environment() {
@@ -999,7 +999,7 @@ install_python_package() {
   local package="$1"
   local label="$2"
 
-  log_warn "${label} is not installed; attempting pip install ${package}"
+  log_warn "installing Python package ${package} for ${label}"
 
   if ! ensure_pip; then
     log_error "cannot install ${label} because pip is not available"
@@ -1017,12 +1017,12 @@ install_python_package() {
     return 1
   fi
 
-  log_info "${label} installed via pip"
+  log_info "pip completed for ${label}; runtime import is checked separately"
 }
 
 check_python_package_dependency() {
   local spec="$1"
-  local package module label mode
+  local package module label mode python diagnostic
   IFS='|' read -r package module label mode <<< "${spec}"
 
   if python_module_available "${module}"; then
@@ -1030,14 +1030,25 @@ check_python_package_dependency() {
     return 0
   fi
 
-  if [[ "${mode}" == "optional_nix" ]] && in_nix_environment; then
-    log_warn "${label} is not available in Nix environment"
-    log_warn "pip-installed binary packages may be incompatible with Nix Python"
-    log_warn "viewport and verification tile decoding will use fallbacks where possible"
-    return 0
+  python="${VENV_PYTHON}"
+  if [[ ! -x "${python}" ]]; then
+    python="$(command -v python3)" || return 1
+  fi
+  if "${python}" -c 'import importlib.metadata, sys; importlib.metadata.distribution(sys.argv[1])' "${package}" >/dev/null 2>&1; then
+    diagnostic="$("${python}" -c "import ${module}" 2>&1)" || {
+      log_error "${label} is installed but cannot be loaded by ${python}: ${diagnostic}"
+      log_error "run devbox run setup (or enter devbox shell); reinstalling the package does not fix missing runtime libraries"
+      return 1
+    }
   fi
 
-  install_python_package "${package}" "${label}"
+  install_python_package "${package}" "${label}" || return 1
+  if ! python_module_available "${module}"; then
+    log_error "${label} still cannot be imported after pip installation"
+    "${python}" -c "import ${module}" >&2 || return 1
+    return 1
+  fi
+  log_info "${label} installed and import verified"
 }
 
 write_pip_wrapper() {
@@ -1138,8 +1149,7 @@ check_glyph_tooling() {
 check_python_pip_dependencies() {
   # sprite.sh hardparse YAML via `import yaml`; without PyYAML `make pack`
   # fails when style.json references a sprite and pack auto-invokes sprite.sh.
-  # mapbox-vector-tile is optional in Nix, but when it is installed all of its
-  # runtime imports must work or tile decoding silently falls back to {}.
+  # Deep tile verification requires working imports, including native libraries.
   local failed=0
   local spec
 

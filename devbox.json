@@ -86,7 +86,7 @@
       "export HUAVD_MAP_BUILD_HOME=\"${HUAVD_MAP_BUILD_HOME:-/tmp/huavd-map-build}\"",
       "export PATH=\"$HOME/.local/bin:$HUAVD_MAP_BUILD_HOME/tools/maplibre-native/bin:$GOPATH/bin:$CARGO_HOME/bin:$PATH\"",
       ". $VENV_DIR/bin/activate",
-      "export LD_LIBRARY_PATH=$(dirname $(gcc -print-file-name=libstdc++.so.6)):$LD_LIBRARY_PATH"
+      "export LD_LIBRARY_PATH=\"$PWD/.devbox/nix/profile/default/lib:$(dirname $(gcc -print-file-name=libstdc++.so.6))${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\""
     ],
     "scripts": {
       "setup":  "bash scripts/setup-tools.sh",
