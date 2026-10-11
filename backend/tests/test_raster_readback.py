@@ -1,4 +1,6 @@
 import json
+import io
+from contextlib import redirect_stderr
 from pathlib import Path
 import shutil
 import subprocess
@@ -25,7 +27,16 @@ class RasterReadbackTest(unittest.TestCase):
             with patch('shutil.which', side_effect=lambda name: '/tools/'+name), patch(
                 'subprocess.run', return_value=subprocess.CompletedProcess([],0,stdout=lossless_webp())
             ) as run, patch('huavd_map_build.production.south.adapter.process.raster_readback._run') as decode:
-                self.assertEqual(2, ProcessRasterArchiveVerifier().verify(str(archive),str(queue),str(root/'webp'),256))
+                progress = io.StringIO()
+                with redirect_stderr(progress), patch(
+                    'huavd_map_build.production.south.adapter.process.raster_readback.time.monotonic',
+                    side_effect=[0, 11, 22],
+                ):
+                    self.assertEqual(2, ProcessRasterArchiveVerifier().verify(str(archive),str(queue),str(root/'webp'),256))
+                self.assertIn('raster readback started tiles=2', progress.getvalue())
+                self.assertIn('1/2 (50.0%)', progress.getvalue())
+                self.assertIn('2/2 (100.0%)', progress.getvalue())
+                self.assertIn('eta=0s', progress.getvalue())
                 self.assertEqual(2, run.call_count)
                 self.assertEqual(1, decode.call_count)
                 report = json.loads(archive.with_suffix('.readback.json').read_text())

@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
+import time
 import tempfile
 
 from huavd_map_build.production.domain.raster import RasterExecutionError, RasterTileCoordinate, webp_dimensions
@@ -19,6 +21,10 @@ class ProcessRasterArchiveVerifier:
         report.unlink(missing_ok=True)
         decoded: set[str] = set()
         count = 0
+        with Path(queue).open(encoding="utf-8") as rows:
+            total = sum(1 for _ in rows)
+        started = last_progress = time.monotonic()
+        print(f"raster readback started tiles={total} archive={archive}", file=sys.stderr, flush=True)
         with tempfile.TemporaryDirectory(prefix="huavd-raster-readback-") as directory:
             image = Path(directory) / "tile.webp"
             with Path(queue).open(encoding="utf-8") as rows:
@@ -43,6 +49,18 @@ class ProcessRasterArchiveVerifier:
                         _run([dwebp, str(image), "-quiet", "-o", os.devnull], 30, "raster readback decode")
                         decoded.add(digest)
                     count += 1
+                    now = time.monotonic()
+                    if now - last_progress >= 10 or count == total:
+                        elapsed = max(now - started, 0.001)
+                        rate = count / elapsed
+                        remaining = (total - count) / rate
+                        print(
+                            f"raster readback {count}/{total} ({count / total:.1%}) "
+                            f"tile={label} elapsed={elapsed:.0f}s rate={rate:.1f} tiles/s "
+                            f"eta={remaining:.0f}s decoded={len(decoded)}",
+                            file=sys.stderr, flush=True,
+                        )
+                        last_progress = now
         if count == 0:
             raise RasterExecutionError("raster readback plan is empty")
         def sha512(path: str) -> str:
