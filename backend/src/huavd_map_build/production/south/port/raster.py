@@ -92,6 +92,8 @@ class RasterCacheLifecycle(Protocol):
 
 
 class RasterEvidenceStore(Protocol):
+    def write_failure_metrics(self, path: str, document: dict[str, object]) -> None: ...
+
     def write_parameters(
         self, path: str, identity: RasterCacheIdentity,
         settings: RasterRenderSettings, display: RasterDisplaySettings,

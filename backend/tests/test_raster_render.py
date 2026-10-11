@@ -11,6 +11,8 @@ from unittest.mock import patch
 from huavd_map_build.production.domain.raster import (
     MissingRasterToolError,
     RasterBatchExecutionError,
+    RasterExecutionError,
+    RasterNonRetryableError,
     RasterRenderSettings,
     RasterTileCoordinate,
 )
@@ -187,6 +189,7 @@ class RasterRenderServiceTest(unittest.TestCase):
                 FileSystemRasterWorkQueue(), renderer, FakeEncoder()
             ).render(str(queue), settings)
         self.assertEqual(6, result.planned_tiles)
+        self.assertEqual({"render:retryable": 1}, result.failure_counts)
         self.assertEqual(7, result.attempts)
         self.assertEqual(1, result.retried_tiles)
         self.assertLessEqual(renderer.maximum_active, 2)
@@ -213,6 +216,49 @@ class RasterRenderServiceTest(unittest.TestCase):
                 ).render(str(queue), settings)
         self.assertEqual(1, raised.exception.failed_tiles)
         self.assertEqual(1, len(raised.exception.samples))
+
+    def test_failed_worker_metrics_include_all_attempts_and_exit_codes(self):
+        coordinates = [RasterTileCoordinate(2, i, 0) for i in range(3)]
+        class Renderer:
+            def render(self, coordinate, settings, output_path):
+                if coordinate.x == 1:
+                    error = RasterExecutionError("native failure")
+                    error.exit_code = 6
+                    raise error
+                Path(output_path).write_bytes(b"png")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            queue = root / "tiles.tsv"
+            queue.write_text("".join(item.tsv() for item in coordinates))
+            settings = RasterRenderSettings("style.json", str(root / "png"), str(root / "webp"), retries=1)
+            with self.assertRaises(RasterBatchExecutionError) as raised:
+                RasterRenderService(FileSystemRasterWorkQueue(), Renderer(), FakeEncoder()).render(str(queue), settings)
+            metrics = raised.exception.metrics
+            self.assertEqual(3, metrics["worker_queue_tiles"])
+            self.assertEqual(2, metrics["rendered_tiles"])
+            self.assertEqual(1, metrics["failed_tiles"])
+            self.assertEqual(4, metrics["attempts"])
+            self.assertEqual(1, metrics["retried_tiles"])
+            self.assertEqual({"render:retryable": 2}, metrics["failure_counts"])
+            self.assertEqual({"6": 2}, metrics["exit_code_counts"])
+            self.assertEqual([], list((root / "png").rglob("*.png")))
+
+    def test_non_retryable_encoder_preflight_failure_is_counted_once(self):
+        class Encoder:
+            def encode(self, *args):
+                raise RasterNonRetryableError("bad encoder configuration")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            queue = root / "tiles.tsv"
+            queue.write_text("0\t0\t0\n")
+            settings = RasterRenderSettings("style.json", str(root / "png"), str(root / "webp"), retries=2)
+            with self.assertRaises(RasterBatchExecutionError) as raised:
+                RasterRenderService(FileSystemRasterWorkQueue(), TrackingRenderer(), Encoder()).render(str(queue), settings)
+            metrics = raised.exception.metrics
+            self.assertEqual(1, metrics["attempts"])
+            self.assertEqual(0, metrics["rendered_tiles"])
+            self.assertEqual(0, metrics["retried_tiles"])
+            self.assertEqual({"encode:non-retryable": 1}, metrics["failure_counts"])
 
     def test_queue_rejects_invalid_rows_with_line_number(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

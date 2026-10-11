@@ -148,7 +148,9 @@ def run_native(arguments: list[str], timeout_seconds: int, registry: NativeProce
         if code != 0:
             diagnostic = tail.decode("utf-8", errors="replace")
             error_type = RasterNonRetryableError if code in (2, 3, 4, 7, 126, 127) else RasterExecutionError
-            raise error_type(f"native renderer failed with exit code {code}: {diagnostic}")
+            error = error_type(f"native renderer failed with exit code {code}: {diagnostic}")
+            error.exit_code = code
+            raise error
     finally:
         if registry is not None:
             registry.remove(process)

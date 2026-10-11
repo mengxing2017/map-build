@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import math
@@ -25,7 +25,8 @@ class RasterNonRetryableError(RasterExecutionError):
 
 
 class RasterBatchExecutionError(RasterExecutionError):
-    def __init__(self, failed_tiles: int, samples: tuple[str, ...]) -> None:
+    def __init__(self, failed_tiles: int, samples: tuple[str, ...],
+                 metrics: dict[str, Any] | None = None) -> None:
         detail = "; ".join(samples)
         super().__init__(
             f"raster tile execution failed for {failed_tiles} tile(s)"
@@ -33,6 +34,7 @@ class RasterBatchExecutionError(RasterExecutionError):
         )
         self.failed_tiles = failed_tiles
         self.samples = samples
+        self.metrics = metrics or {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +191,8 @@ class RasterRenderResult:
     rendered_tiles: int
     attempts: int
     retried_tiles: int
+    failure_counts: dict[str, int] = field(default_factory=dict)
+    exit_code_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -355,6 +359,8 @@ def raster_metrics_document(
             "rendered_tiles": 0 if render is None else render.rendered_tiles,
             "attempts": 0 if render is None else render.attempts,
             "retried_tiles": 0 if render is None else render.retried_tiles,
+            "failure_counts": {} if render is None else render.failure_counts,
+            "exit_code_counts": {} if render is None else render.exit_code_counts,
         },
         "mvt_service_preflight": {
             "url": result.preflight.url,

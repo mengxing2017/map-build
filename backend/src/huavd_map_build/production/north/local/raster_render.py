@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections import Counter
+from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
 import tempfile
+import threading
 
 from huavd_map_build.production.domain.raster import (
     RasterBatchExecutionError,
@@ -26,8 +29,33 @@ class RasterRenderService:
         self._queue, self._renderer, self._encoder = queue, renderer, encoder
 
     def render(self, queue_path: str, settings: RasterRenderSettings) -> RasterRenderResult:
-        planned = rendered = attempts = retried = failed = 0
+        planned = rendered = failed = 0
         samples: list[str] = []
+        attempt_count = retry_count = 0
+        failures: Counter[str] = Counter()
+        exit_codes: Counter[str] = Counter()
+        lock = threading.Lock()
+
+        def record(attempt: int, stage: str, error: Exception | None) -> None:
+            nonlocal attempt_count, retry_count
+            with lock:
+                attempt_count += 1
+                retry_count += int(attempt > 1)
+                if error is not None:
+                    category = "non-retryable" if isinstance(error, RasterNonRetryableError) else "retryable"
+                    failures[f"{stage}:{category}"] += 1
+                    code = getattr(error, "exit_code", None)
+                    if code is not None:
+                        exit_codes[str(code)] += 1
+
+        def batch_error(count: int, samples: tuple[str, ...]) -> RasterBatchExecutionError:
+            return RasterBatchExecutionError(count, samples, {
+                "worker_queue_tiles": planned, "rendered_tiles": rendered,
+                "failed_tiles": count, "attempts": attempt_count,
+                "retried_tiles": retry_count, "failure_counts": dict(failures),
+                "exit_code_counts": dict(exit_codes),
+            })
+
         coordinates = iter(self._queue.coordinates(queue_path))
         try:
             preflight = next(coordinates)
@@ -35,14 +63,12 @@ class RasterRenderService:
             return RasterRenderResult(0, 0, 0, 0)
         planned = 1
         try:
-            tile_attempts, tile_retries = self._render_one(preflight, settings)
+            self._render_one(preflight, settings, record)
         except Exception as error:
-            raise RasterBatchExecutionError(
+            raise batch_error(
                 1, (f"{preflight.zoom}/{preflight.x}/{preflight.y}: {error}",)
             ) from error
         rendered = 1
-        attempts = tile_attempts
-        retried = tile_retries
         futures: dict[Future[tuple[int, int]], RasterTileCoordinate] = {}
         with ThreadPoolExecutor(max_workers=settings.parallel_jobs) as executor:
             try:
@@ -55,14 +81,14 @@ class RasterRenderService:
                             exhausted = True
                             break
                         planned += 1
-                        futures[executor.submit(self._render_one, coordinate, settings)] = coordinate
+                        futures[executor.submit(self._render_one, coordinate, settings, record)] = coordinate
                     if not futures:
                         continue
                     completed, _ = wait(futures, return_when=FIRST_COMPLETED)
                     for future in completed:
                         coordinate = futures.pop(future)
                         try:
-                            tile_attempts, tile_retries = future.result()
+                            future.result()
                         except Exception as error:
                             failed += 1
                             if len(samples) < 10:
@@ -71,8 +97,6 @@ class RasterRenderService:
                                 )
                         else:
                             rendered += 1
-                            attempts += tile_attempts
-                            retried += tile_retries
             except BaseException:
                 # Cancel before executor shutdown waits for workers.
                 cancel = getattr(self._renderer, "cancel", None)
@@ -82,11 +106,13 @@ class RasterRenderService:
                     future.cancel()
                 raise
         if failed:
-            raise RasterBatchExecutionError(failed, tuple(samples))
-        return RasterRenderResult(planned, rendered, attempts, retried)
+            raise batch_error(failed, tuple(samples))
+        return RasterRenderResult(planned, rendered, attempt_count, retry_count,
+                                  dict(failures), dict(exit_codes))
 
     def _render_one(
         self, coordinate: RasterTileCoordinate, settings: RasterRenderSettings,
+        record: Callable[[int, str, Exception | None], None] | None = None,
     ) -> tuple[int, int]:
         png_parent = Path(settings.png_directory) / str(coordinate.zoom) / str(coordinate.x)
         webp = (
@@ -100,15 +126,21 @@ class RasterRenderService:
                 dir=png_parent, prefix=f".{coordinate.y}.", suffix=".png", delete=False,
             ) as output:
                 png = Path(output.name)
+            stage = "render"
+            error_seen = None
             try:
                 self._renderer.render(coordinate, settings, str(png))
+                stage = "encode"
                 self._encoder.encode(str(png), str(webp), settings)
                 return attempt, attempt - 1
-            except RasterNonRetryableError:
+            except RasterNonRetryableError as error:
+                error_seen = error
                 raise
             except Exception as error:
-                last_error = error
+                error_seen = last_error = error
             finally:
+                if record is not None:
+                    record(attempt, stage, error_seen)
                 png.unlink(missing_ok=True)
         assert last_error is not None
         raise last_error

@@ -5,6 +5,7 @@ import time
 
 from huavd_map_build.production.domain.raster import (
     RasterAssemblySettings,
+    RasterBatchExecutionError,
     RasterBakeResult,
     RasterCacheIdentity,
     RasterDisplaySettings,
@@ -94,10 +95,28 @@ class RasterBakeService:
                             request.render_settings, style_path=runtime.style_path,
                             display=display.display,
                         )
-                        render_result = self._timed(
-                            "render", timings,
-                            lambda: self._renderer.render(request.missing_path, settings),
-                        )
+                        try:
+                            render_result = self._timed(
+                                "render", timings,
+                                lambda: self._renderer.render(request.missing_path, settings),
+                            )
+                        except RasterBatchExecutionError as error:
+                            if self._evidence is not None and request.metrics_path is not None:
+                                try:
+                                    self._evidence.write_failure_metrics(
+                                        f"{request.metrics_path}.failed.json", {
+                                            "schema_version": 1, "status": "failed",
+                                            "cache_identity": request.identity.digest,
+                                            "planned_tiles": initial.planned_tiles,
+                                            "render": error.metrics,
+                                            "phases_ms": {item.stage: item.elapsed_ms for item in timings},
+                                        },
+                                    )
+                                except Exception as evidence_error:
+                                    raise RasterExecutionError(
+                                        f"raster render failed; failure metrics could not be written: {evidence_error}"
+                                    ) from error
+                            raise
                     final = self._timed(
                         "cache-scan-final", timings,
                         lambda: self._cache.scan(

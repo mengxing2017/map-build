@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
+from unittest.mock import Mock
 import hashlib
 import json
 from pathlib import Path
@@ -9,6 +11,7 @@ import unittest
 
 from huavd_map_build.production.domain.raster import (
     RasterAssemblyResult,
+    RasterBatchExecutionError,
     RasterBakeResult,
     RasterAssemblySettings,
     RasterBounds,
@@ -228,6 +231,56 @@ class RasterBakeServiceTest(unittest.TestCase):
             ("plan", "cache-scan-initial", "render", "cache-scan-final", "assembly"),
             tuple(item.stage for item in result.timings),
         )
+
+    def test_failed_render_writes_metrics_without_archives_and_releases_resources(self):
+        events = []
+        failure = RasterBatchExecutionError(1, ("0/0/0: failed",), {
+            "attempts": 3, "rendered_tiles": 0, "failed_tiles": 1,
+            "failure_counts": {"render:retryable": 3}, "exit_code_counts": {"6": 3},
+        })
+        renderer = Mock()
+        renderer.render.side_effect = failure
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            metrics = root / "metrics.json"
+            request = replace(self.request(root), metrics_path=str(metrics))
+            store = FileSystemRasterEvidenceStore(AtomicFileWriter(), FileDigestAdapter())
+            service = RasterBakeService(
+                FakeLifecycle(events), FakeCache(events, [RasterCacheScanResult(1, 0, 1, 0, 0)]),
+                FakeDisplay(events), FakeRuntime(events), renderer, FakeAssembly(events),
+                evidence=store, clock=SequenceClock(),
+            )
+            with self.assertRaises(RasterBatchExecutionError):
+                service.bake(request)
+            target = Path(f"{metrics}.failed.json")
+            document = json.loads(target.read_text())
+            self.assertEqual("failed", document["status"])
+            self.assertEqual(failure.metrics, document["render"])
+            self.assertGreater(document["phases_ms"]["render"], 0)
+            self.assertEqual(request.identity.digest, document["cache_identity"])
+            expected = hashlib.sha512(target.read_bytes()).hexdigest()
+            self.assertEqual(f"{expected}  {target.name}\n", Path(f"{target}.sha512").read_text())
+            self.assertFalse(metrics.exists())
+            self.assertFalse(Path(request.pmtiles_path).exists())
+        self.assertNotIn("assembly", events)
+        self.assertEqual(["runtime-close", "display-close", "unlock"], events[-3:])
+
+    def test_failure_metrics_write_error_is_visible_and_preserves_render_cause(self):
+        events = []
+        failure = RasterBatchExecutionError(1, ("failed",))
+        renderer, evidence = Mock(), Mock()
+        renderer.render.side_effect = failure
+        evidence.write_failure_metrics.side_effect = OSError("disk full")
+        with tempfile.TemporaryDirectory() as temporary:
+            request = replace(self.request(Path(temporary)), metrics_path=str(Path(temporary) / "metrics.json"))
+            service = RasterBakeService(
+                FakeLifecycle(events), FakeCache(events, [RasterCacheScanResult(1, 0, 1, 0, 0)]),
+                FakeDisplay(events), FakeRuntime(events), renderer, FakeAssembly(events), evidence=evidence,
+            )
+            with self.assertRaisesRegex(RasterExecutionError, "failure metrics could not be written: disk full") as raised:
+                service.bake(request)
+            self.assertIs(failure, raised.exception.__cause__)
+        self.assertEqual(["runtime-close", "display-close", "unlock"], events[-3:])
 
     def test_hot_cache_skips_renderer(self) -> None:
         events: list[str] = []
