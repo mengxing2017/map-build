@@ -5,9 +5,27 @@
 Native 安装与图片 ZIP 快速流程见 [图片地图操作](../operations/native-renderer-build.md)。准备本地 PBF 见 [标准地图构建](./build.md#手动下载地图数据)。
 
 ```bash
-make release REGION=china/guangxi YYYYMMDD=20260818 \
-  INPUT=/data/osm/guangxi-260726.osm.pbf ROLE=base_raster FORMAT=zip
+devbox run -- make python-doctor python-catalog-validate
+devbox run -- make release REGION=china/guangxi YYYYMMDD=20260818 \
+  WORKDIR_ROOT=/data/huavd-map-build \
+  INPUT=/home/dev/Downloads/guangxi-261003.osm.pbf ROLE=base_raster FORMAT=zip
 ```
+
+在仓库根目录执行上述命令，也可先进入 `devbox shell` 后直接运行 `make`。
+`WORKDIR_ROOT` 是 release 工作目录的父目录；该例的实际工作目录为
+`/data/huavd-map-build/china-guangxi-20260818`，最终 ZIP 为
+`/data/huavd-map-build/china-guangxi-20260818/outputs/china-guangxi-20260818.bundle.zip`。
+省略目录参数时默认父目录为 `/tmp/huavd-map-build`；需要长期保留产物时应显式指定。
+若希望直接指定完整工作目录，可使用 `RELEASE_WORKDIR=/data/my-map-run`，
+产物位于其 `outputs/` 下。后续单独执行 `build`、`verify`、`pack` 或 `raster-estimate`
+时，应传入实际工作目录 `WORKDIR=/data/huavd-map-build/china-guangxi-20260818`。
+`YYYYMMDD` 是产物构建日期，不会根据 PBF 文件名自动推断；请按实际发布日期设置。
+
+`python-catalog-validate` 检查配置，`python-doctor` 检查工具和 Python 依赖；
+它们不能替代构建后的 `deep-verify` 数据质量检查。`make build` 会先执行
+`python-doctor`，在过滤或生成瓦片前发现依赖加载失败。
+例如普通 shell 中缺少 `libstdc++.so.6` 会导致 Shapely 及 `mapbox_vector_tile`
+无法加载，应切换到 devbox 环境，不应跳过深度检查。
 
 该命令先通过 Python vector pipeline 构建并验证 `base` 矢量 PMTiles，再以它为输入生成 `raster_bake` WebP PMTiles；包内同时包含图片底图样式、矢量标注和 glyph/sprite 资源。`base_raster` 会自动启用资源生成。只重跑图片阶段时可保留已验证的 base 和支撑资源，使用 `ROLE=raster_bake`，无需重新提供 PBF。
 
@@ -20,7 +38,8 @@ Python vector build 会在 stderr 实时输出各阶段的 `START`、`DONE` 或 
 在启动长任务前，先基于已验证的 `base` 估算矩形覆盖的瓦片数量。`BAKE_MAX_TILES` 是可选预算；当计划超过它时，命令会在启动渲染器前以输入错误退出。计划写入 `${WORKDIR}/cache/bake/${SESSION}/plan.json`，按缩放级别列出瓦片数量和坐标范围。
 
 ```bash
-make raster-estimate REGION=china/guangxi YYYYMMDD=20260818 BAKE_MAX_TILES=200000
+devbox run -- make raster-estimate REGION=china/guangxi YYYYMMDD=20260818 \
+  WORKDIR=/data/huavd-map-build/china-guangxi-20260818 BAKE_MAX_TILES=200000
 ```
 
 正常构建完成后，同一缓存目录的 `metrics.json` 会记录计划、初始缓存命中、结构损坏隔离、未验证缓存复验、渲染批次与重试次数、MVT 预检、worker 队列、渲染/组装/转换耗时以及中间文件大小，用于比较相同样本下的配置调整。finalization 会从 PMTiles 抽取首、中、末 zoom 的中心样本并再次解码，同时核对 addressed tile count、tile 计划、输入指纹和清单中的覆盖摘要。
@@ -30,9 +49,9 @@ make raster-estimate REGION=china/guangxi YYYYMMDD=20260818 BAKE_MAX_TILES=20000
 直接诊断 Python raster pipeline 时可执行：
 
 ```bash
-PYTHONPATH=backend/src python -m huavd_map_build build raster-bake \
+devbox run -- env PYTHONPATH=backend/src .venv/bin/python -m huavd_map_build build raster-bake \
   --region china/guangxi --yyyymmdd 20260818 \
-  --workdir /tmp/huavd-map-build --no-publish
+  --workdir /data/huavd-map-build/china-guangxi-20260818 --no-publish
 ```
 
 `--no-publish` 只在 `cache/bake/${SESSION}/` 保留候选 PMTiles，不写正式 outputs 或 ready marker。默认不传该参数时会执行 metadata、manifest、attribution、PMTiles/WebP 抽样、消费者资源闭合和 ready-last 发布。
@@ -45,8 +64,8 @@ PYTHONPATH=backend/src python -m huavd_map_build build raster-bake \
 兼容旧 `maplibre-native` 命令协议（不是默认 Native XYZ 协议）时：
 
 ```bash
-PYTHONPATH=backend/src python -m huavd_map_build build raster-bake \
+devbox run -- env PYTHONPATH=backend/src .venv/bin/python -m huavd_map_build build raster-bake \
   --region china/guangxi --yyyymmdd 20260818 \
-  --workdir /tmp/huavd-map-build \
+  --workdir /data/huavd-map-build/china-guangxi-20260818 \
   --renderer-engine maplibre-native --renderer-command /path/to/mbgl-render
 ```
