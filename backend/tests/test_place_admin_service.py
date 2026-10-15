@@ -1,4 +1,5 @@
 import json
+import hashlib
 import shutil
 import tempfile
 import unittest
@@ -88,6 +89,12 @@ class PlaceAdminServiceTest(unittest.TestCase):
             relation_index_exists = (cache / "admin-relations.ndjson").is_file()
             boundary_index_exists = (cache / "admin-boundaries.ndjson").is_file()
         self.assertEqual(1, report["summary"]["output_feature_count"])
+        self.assertEqual(3, report["schema_version"])
+        self.assertEqual([], report["identity_relations_without_kept_point"])
+        self.assertEqual(
+            hashlib.sha512(output.encode("utf-8")).hexdigest(),
+            report["output_geojsonseq_sha512"],
+        )
         self.assertEqual(20, report["relations"][0]["admin_id"])
         self.assertIn('"admin_id":20', output)
         self.assertNotIn('"@id"', output)

@@ -106,20 +106,131 @@ class PlaceAdminDomainTest(unittest.TestCase):
         )
         output_names = [value["properties"]["name"] for value in result.features]
         summary = result.report["summary"]
-        self.assertEqual(4, len(result.features))
+        self.assertEqual(8, len(result.features))
         self.assertIn("Alpha Prefecture", output_names)
         self.assertEqual(3, summary["role_member_relations_with_place_candidates"])
-        self.assertEqual(1, summary["fallback_canonical_feature_count"])
-        self.assertEqual(2, summary["fallback_dropped_count"])
+        self.assertEqual(0, summary["fallback_canonical_feature_count"])
+        self.assertEqual(0, summary["fallback_dropped_count"])
         self.assertEqual(1, summary["exact_duplicate_dropped_count"])
-        self.assertEqual(1, summary["same_name_tier_dropped_count"])
-        self.assertEqual(1, summary["redundant_role_member_dropped_count"])
+        self.assertEqual(0, summary["same_name_tier_dropped_count"])
+        self.assertEqual(0, summary["redundant_role_member_dropped_count"])
         self.assertEqual(1, summary["admin_display_name_override_count"])
-        self.assertEqual(
-            [{"node_id": 1, "selected_admin_id": 100, "discarded_admin_ids": [200]}],
-            result.report["shared_member_choices"],
-        )
+        decisions = {item["node_id"]: item for item in result.report["entity_decisions"]}
+        self.assertEqual(3, result.report["schema_version"])
+        self.assertEqual("node:2", decisions[2]["entity_key"])
+        self.assertEqual("no-direct-identity-match", decisions[2]["unresolved_reason"])
+        self.assertEqual("retained", decisions[2]["reason"])
+        self.assertEqual("retained", decisions[5]["reason"])
+        self.assertEqual([6], result.report["dropped_node_ids"])
+        self.assertEqual([], result.report["identity_relations_without_kept_point"])
         self.assertTrue(all("@id" not in value["properties"] for value in result.features))
+
+    def test_direct_identity_selection_preserves_parent_seats_and_ambiguous_names(self) -> None:
+        def point(node_id, name, place, **properties):
+            return {
+                "type": "Feature",
+                "properties": {"@id": node_id, "name": name, "place": place, **properties},
+                "geometry": {"type": "Point", "coordinates": [node_id, 0]},
+            }
+
+        features = [
+            point(1, "Parent", "state"),
+            point(2, "Capital", "city"),
+            point(3, "Seat Village", "village"),
+            point(4, "Same Entity", "town"),
+            point(5, "Same Entity", "town"),
+            point(6, "Ambiguous", "town"),
+        ]
+        relations = (
+            AdministrativeRelation(100, 4, (None, None, "Parent", None), None,
+                                   ((1, "label"), (2, "admin_centre"))),
+            AdministrativeRelation(200, 5, (None, None, "Capital", None), None,
+                                   ((2, "label"),)),
+            AdministrativeRelation(300, 8, (None, None, "Seat Town", None), None,
+                                   ((3, "admin_centre"),)),
+            AdministrativeRelation(400, 8, (None, None, "Same Entity", None), "Q400",
+                                   ((4, "label"), (5, "admin_centre"))),
+            AdministrativeRelation(500, 8, (None, None, "Ambiguous", None), None,
+                                   ((6, "label"),)),
+            AdministrativeRelation(600, 6, (None, None, "Ambiguous", None), None,
+                                   ((6, "admin_centre"),)),
+        )
+
+        result = enrich_place_labels(
+            features, relations, {4: "Q400", 5: "Q400"}, {}, self.hierarchy
+        )
+        decisions = {item["node_id"]: item for item in result.report["entity_decisions"]}
+        output = {feature["properties"]["name"]: feature for feature in result.features}
+
+        self.assertEqual(3, result.report["schema_version"])
+        self.assertEqual(5, len(result.features))
+        self.assertEqual(100, output["Parent"]["properties"]["admin_id"])
+        self.assertEqual(200, output["Capital"]["properties"]["admin_id"])
+        self.assertNotIn("admin_id", output["Seat Village"]["properties"])
+        self.assertEqual(200, decisions[2]["identity_relation_id"])
+        self.assertEqual([100, 200], decisions[2]["direct_relation_ids"])
+        self.assertIsNone(decisions[2]["association_relation_id"])
+        self.assertEqual("relation:200", decisions[2]["entity_key"])
+        self.assertEqual("node:3", decisions[3]["entity_key"])
+        self.assertEqual("no-direct-identity-match", decisions[3]["unresolved_reason"])
+        self.assertEqual("entity-canonical-lost", decisions[4]["reason"])
+        self.assertEqual(5, decisions[4]["kept_node_id"])
+        self.assertEqual("node:6", decisions[6]["entity_key"])
+        self.assertEqual("ambiguous-name-match", decisions[6]["unresolved_reason"])
+        self.assertEqual([], result.report["identity_relations_without_kept_point"])
+
+    def test_canonical_selection_prefers_fallback_point_with_matching_wikidata(self) -> None:
+        def point(node_id, coordinates, **properties):
+            return {
+                "type": "Feature",
+                "properties": {
+                    "@id": node_id, "name": "Babu District", "place": "city",
+                    **properties,
+                },
+                "geometry": {"type": "Point", "coordinates": coordinates},
+            }
+
+        boundary = [[[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]]]
+        relation = AdministrativeRelation(
+            100, 6, (None, None, "Babu District", None), "Q100",
+            ((2, "admin_centre"),),
+        )
+        result = enrich_place_labels(
+            [point(1, [2, 2]), point(2, [8, 8])],
+            (relation,), {1: "Q100"}, {100: boundary}, self.hierarchy,
+        )
+        decisions = {item["node_id"]: item for item in result.report["entity_decisions"]}
+
+        self.assertEqual(1, len(result.features))
+        self.assertEqual([2, 2], result.features[0]["geometry"]["coordinates"])
+        self.assertEqual("name-boundary-unique", decisions[1]["entity_evidence"])
+        self.assertEqual("kept", decisions[1]["outcome"])
+        self.assertEqual("entity-canonical-lost", decisions[2]["reason"])
+        self.assertEqual(1, decisions[2]["kept_node_id"])
+        self.assertEqual([], result.report["identity_relations_without_kept_point"])
+
+    def test_entity_key_keeps_unrelated_same_name_and_selects_unique_boundary_fallback(self) -> None:
+        def point(node_id, coordinates, **properties):
+            return {
+                "type": "Feature", "properties": {
+                    "@id": node_id, "name": "Naga", "place": "city", **properties,
+                }, "geometry": {"type": "Point", "coordinates": coordinates},
+            }
+
+        boundary = [[[[0, 0], [4, 0], [4, 4], [0, 4], [0, 0]]]]
+        relation = AdministrativeRelation(20, 6, (None, None, "Naga", None), "Q20", ())
+        result = enrich_place_labels(
+            [point(1, [1, 1]), point(2, [20, 20], wikidata="Q2")],
+            (relation,), {2: "Q2"}, {20: boundary}, self.hierarchy,
+        )
+        output = {feature["properties"]["name"] for feature in result.features}
+        decisions = {item["node_id"]: item for item in result.report["entity_decisions"]}
+        self.assertEqual({"Naga"}, output)
+        self.assertEqual(2, len(result.features))
+        self.assertEqual("relation:20", decisions[1]["entity_key"])
+        self.assertEqual(20, decisions[1]["admin_id"])
+        self.assertEqual("wd:Q2", decisions[2]["entity_key"])
+        self.assertEqual([], result.report["dropped_node_ids"])
 
     def test_conventional_region_filter_reports_only_when_no_evidence_exists(self) -> None:
         feature = {

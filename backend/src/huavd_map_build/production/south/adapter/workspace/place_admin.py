@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -123,6 +124,7 @@ class FileSystemPlaceAdminIndexStore:
         source = Path(source_path)
         temporary = Path(f"{source_path}.place-admin.tmp")
         report_target = Path(report_path)
+        report_temporary = Path(f"{report_path}.place-admin.tmp")
         report_target.parent.mkdir(parents=True, exist_ok=True)
         try:
             with temporary.open("w", encoding="utf-8", newline="\n") as stream:
@@ -130,21 +132,25 @@ class FileSystemPlaceAdminIndexStore:
                     stream.write("\x1e")
                     stream.write(json.dumps(feature, ensure_ascii=False, separators=(",", ":")))
                     stream.write("\n")
-            report_target.write_text(
+            report["output_geojsonseq_sha512"] = hashlib.sha512(temporary.read_bytes()).hexdigest()
+            report_temporary.write_text(
                 json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
             )
             os.replace(temporary, source)
+            os.replace(report_temporary, report_target)
         except Exception:
             temporary.unlink(missing_ok=True)
+            report_temporary.unlink(missing_ok=True)
             raise
 
     def write_empty_report(
         self, report_path: str, skipped_reason: str | None = None
     ) -> None:
         report = {
-            "schema_version": 1,
+            "schema_version": 3,
             "source": {"place_feature_count": 0, "administrative_relation_count": 0},
             "summary": {
+                "source_feature_count": 0,
                 "role_member_relations_with_place_candidates": 0,
                 "role_member_canonical_feature_count": 0,
                 "fallback_canonical_feature_count": 0,
@@ -158,6 +164,9 @@ class FileSystemPlaceAdminIndexStore:
                 "conventional_region_demoted_count": 0,
                 "output_feature_count": 0,
             },
+            "output_geojsonseq_sha512": hashlib.sha512(b"").hexdigest(),
+            "dropped_node_ids": [], "entity_decisions": [], "entity_groups": [],
+            "identity_relations_without_kept_point": [],
             "relations": [], "shared_member_choices": [], "fallback_dropped": [],
             "exact_duplicates": [], "same_name_tier_duplicates": [],
             "redundant_role_members": [],
@@ -166,5 +175,11 @@ class FileSystemPlaceAdminIndexStore:
         }
         target = Path(report_path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-                          encoding="utf-8")
+        temporary = Path(f"{report_path}.place-admin.tmp")
+        try:
+            temporary.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+                                 encoding="utf-8")
+            os.replace(temporary, target)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise

@@ -199,6 +199,44 @@ def _relation_name_forms(relation: AdministrativeRelation) -> tuple[str, ...]:
     ))
 
 
+def _direct_identity_selection(
+    feature: dict[str, Any], candidates: list[PlaceCandidate], node_qid: str | None,
+) -> tuple[PlaceCandidate | None, str | None, str | None, list[dict[str, Any]]]:
+    feature_forms = set(_feature_name_forms(feature.get("properties", {})))
+    evidence: list[tuple[PlaceCandidate, str | None]] = []
+    for candidate in candidates:
+        if node_qid is not None and node_qid == candidate.relation.wikidata:
+            match = "wikidata"
+        elif feature_forms.intersection(_relation_name_forms(candidate.relation)):
+            match = "name-form"
+        else:
+            match = None
+        evidence.append((candidate, match))
+
+    audit = [{
+        "relation_id": candidate.relation.id,
+        "role": candidate.role,
+        "evidence": match,
+    } for candidate, match in evidence]
+    wikidata_matches = {
+        candidate.relation.id: candidate
+        for candidate, match in evidence if match == "wikidata"
+    }
+    if len(wikidata_matches) == 1:
+        return next(iter(wikidata_matches.values())), "wikidata", None, audit
+    if len(wikidata_matches) > 1:
+        return None, None, "ambiguous-wikidata-match", audit
+    name_matches = {
+        candidate.relation.id: candidate
+        for candidate, match in evidence if match == "name-form"
+    }
+    if len(name_matches) == 1:
+        return next(iter(name_matches.values())), "name-form", None, audit
+    if len(name_matches) > 1:
+        return None, None, "ambiguous-name-match", audit
+    return None, None, "no-direct-identity-match", audit
+
+
 def _prefix_match(left: str, right: str, minimum: int) -> bool:
     shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
     return len(shorter) >= minimum and longer.startswith(shorter)
@@ -305,10 +343,14 @@ def enrich_place_labels(
     boundaries: dict[int, list[Any]],
     hierarchy: dict[str, Any],
 ) -> PlaceAdminResult:
-    feature_by_id = {
-        feature_id: feature for feature in features
-        if (feature_id := numeric_feature_id(feature)) is not None
-    }
+    feature_by_id: dict[int, dict[str, Any]] = {}
+    for feature in features:
+        feature_id = numeric_feature_id(feature)
+        if feature_id is None:
+            raise PlaceAdminExecutionError("place_label feature has no numeric @id for audit")
+        if feature_id in feature_by_id:
+            raise PlaceAdminExecutionError(f"duplicate place_label @id: {feature_id}")
+        feature_by_id[feature_id] = feature
     relation_tiers = {
         relation.id: (
             hierarchy["boundary_tier"].get(str(relation.level))
@@ -323,123 +365,167 @@ def enrich_place_labels(
                 candidates_by_relation.setdefault(relation.id, []).append(PlaceCandidate(
                     relation, relation_tiers[relation.id], role, node_id, feature
                 ))
-    groups: list[tuple[int, PlaceCandidate, list[PlaceCandidate]]] = []
-    for relation_id in sorted(candidates_by_relation):
-        candidates = candidates_by_relation[relation_id]
-        chosen = min(candidates, key=lambda value: _candidate_key(value, hierarchy))
-        groups.append((relation_id, chosen, candidates))
-
-    chosen_by_node: dict[int, list[PlaceCandidate]] = {}
-    for _relation_id, chosen, _candidates in groups:
-        chosen_by_node.setdefault(chosen.node_id, []).append(chosen)
-    assignments = {
-        node_id: min(values, key=lambda value: _primary_key(value, hierarchy))
-        for node_id, values in chosen_by_node.items()
-    }
-    selected_node_ids = set(assignments)
-    member_duplicates: list[dict[str, Any]] = []
-    for _relation_id, chosen, candidates in groups:
-        kept_name = name_key(chosen.feature.get("properties", {}))
+    direct_by_node: dict[int, list[PlaceCandidate]] = {}
+    for candidates in candidates_by_relation.values():
         for candidate in candidates:
-            candidate_name = name_key(candidate.feature.get("properties", {}))
-            if (
-                candidate.node_id != chosen.node_id
-                and candidate.node_id not in selected_node_ids
-                and candidate_name is not None and kept_name is not None
-                and common_prefix_length(candidate_name, kept_name) >= 2
-            ):
-                member_duplicates.append({
-                    "dropped_node_id": candidate.node_id,
-                    "kept_node_id": chosen.node_id,
-                    "reason": "redundant-role-member",
-                })
-    shared = []
-    for node_id, values in sorted(chosen_by_node.items()):
-        if len(values) > 1:
-            ordered = sorted(values, key=lambda value: _primary_key(value, hierarchy))
-            shared.append({
-                "node_id": node_id,
-                "selected_admin_id": ordered[0].relation.id,
-                "discarded_admin_ids": sorted(value.relation.id for value in ordered[1:]),
-            })
-
+            direct_by_node.setdefault(candidate.node_id, []).append(candidate)
     relations_by_name: dict[str, list[AdministrativeRelation]] = {}
     for relation in relations:
-        if (relation_name := relation.display_name()) is not None:
+        for relation_name in _relation_name_forms(relation):
             relations_by_name.setdefault(relation_name, []).append(relation)
-    kept_relation_ids = set(candidates_by_relation)
-    fallback_dropped: list[dict[str, Any]] = []
-    fallback_candidates: dict[int, list[tuple[dict[str, Any], AdministrativeRelation]]] = {}
+    relations_with_direct_candidates = set(candidates_by_relation)
     fallback_places = {"city", "county", "district", "town"}
-    for feature in features:
-        feature_id = numeric_feature_id(feature)
-        if feature_id in assignments or feature.get("properties", {}).get("place") not in fallback_places:
-            continue
-        feature_name = name_key(feature.get("properties", {}))
-        matches = relations_by_name.get(feature_name, []) if feature_name is not None else []
-        if len(matches) != 1 or feature_id is None:
-            continue
-        relation = matches[0]
-        if relation.id in kept_relation_ids:
-            node_qid, relation_qid = node_wikidata.get(feature_id), relation.wikidata
-            same_entity = (
-                node_qid == relation_qid if node_qid is not None and relation_qid is not None
-                else point_in_multipolygon(
-                    feature.get("geometry", {}).get("coordinates", []),
-                    boundaries.get(relation.id, []),
-                )
+    decisions: dict[int, dict[str, Any]] = {}
+    for feature_id, feature in feature_by_id.items():
+        properties = feature.get("properties", {})
+        direct = direct_by_node.get(feature_id, [])
+        if direct:
+            node_qid = node_wikidata.get(feature_id)
+            candidate, identity_evidence, unresolved_reason, identity_candidates = (
+                _direct_identity_selection(feature, direct, node_qid)
             )
-            if same_entity:
-                fallback_dropped.append({
-                    "node_id": feature_id, "admin_id": relation.id,
-                    "reason": "relation-already-selected",
-                })
-        else:
-            fallback_candidates.setdefault(relation.id, []).append((feature, relation))
-
-    fallback_lost: list[dict[str, Any]] = []
-    for relation_id in sorted(fallback_candidates):
-        values = fallback_candidates[relation_id]
-        winner, relation = min(values, key=lambda value: (
-            -population(value[0]), _id_or_max(value[0])
-        ))
-        winner_id = numeric_feature_id(winner)
-        assert winner_id is not None
-        assignments[winner_id] = PlaceCandidate(
-            relation, relation_tiers[relation.id], "name-fallback", winner_id, winner
-        )
-        for feature, _relation in values:
-            feature_id = numeric_feature_id(feature)
-            if feature_id != winner_id:
-                fallback_lost.append({
-                    "node_id": feature_id, "admin_id": relation.id,
-                    "reason": "fallback-canonical-lost",
-                })
-    fallback_drop_ids = {
-        item["node_id"] for item in (*fallback_dropped, *fallback_lost)
-    }
-    intermediate: list[dict[str, Any]] = []
-    for original in features:
-        feature_id = numeric_feature_id(original)
-        if feature_id in fallback_drop_ids:
+            node_direct_relation_ids = sorted({value.relation.id for value in direct})
+            if candidate is None:
+                decisions[feature_id] = {
+                    "feature": feature,
+                    "entity_key": f"wd:{node_qid}" if node_qid is not None else f"node:{feature_id}",
+                    "entity_evidence": "node-wikidata" if node_qid is not None else "unresolved",
+                    "relation": None,
+                    "role": None,
+                    "association_relation_id": (
+                        node_direct_relation_ids[0] if len(node_direct_relation_ids) == 1 else None
+                    ),
+                    "direct_relation_ids": node_direct_relation_ids,
+                    "identity_candidates": identity_candidates,
+                    "identity_relation_id": None,
+                    "unresolved_reason": unresolved_reason,
+                }
+                continue
+            decisions[feature_id] = {
+                "feature": feature, "entity_key": f"relation:{candidate.relation.id}",
+                "entity_evidence": f"role-member-{identity_evidence}-match",
+                "relation": candidate.relation,
+                "role": candidate.role,
+                "association_relation_id": (
+                    node_direct_relation_ids[0] if len(node_direct_relation_ids) == 1 else None
+                ),
+                "direct_relation_ids": node_direct_relation_ids,
+                "identity_candidates": identity_candidates,
+                "identity_relation_id": candidate.relation.id,
+                "unresolved_reason": None,
+            }
             continue
-        feature = deepcopy(original)
-        assignment = assignments.get(feature_id)
-        tier = label_tier(feature, assignment.tier if assignment else None, hierarchy)
-        if assignment is not None:
-            properties = feature.setdefault("properties", {})
-            properties["admin_id"] = assignment.relation.id
-            if assignment.relation.level is not None:
-                properties["boundary_admin_level"] = assignment.relation.level
-        apply_label_rendering(feature, tier, hierarchy)
-        intermediate.append(feature)
+        node_qid = node_wikidata.get(feature_id)
+        forms = set(_feature_name_forms(properties))
+        potential = {
+            relation.id: relation for form in forms
+            for relation in relations_by_name.get(form, [])
+        }
+        accepted: list[AdministrativeRelation] = []
+        low_tier = False
+        missing_boundary = False
+        fallback_tier = label_tier(feature, None, hierarchy)
+        fallback_rank = hierarchy["rank"][fallback_tier]
+        coordinates = feature.get("geometry", {}).get("coordinates", [])
+        for relation in potential.values():
+            relation_tier = relation_tiers[relation.id]
+            if relation_tier is None or hierarchy["rank"][relation_tier] < fallback_rank:
+                low_tier = True
+            elif not boundaries.get(relation.id):
+                missing_boundary = True
+            elif point_in_multipolygon(coordinates, boundaries[relation.id]):
+                accepted.append(relation)
+        relation = accepted[0] if len(accepted) == 1 else None
+        if relation is not None and properties.get("place") in fallback_places:
+            same_wikidata = node_qid is not None and node_qid == relation.wikidata
+            if relation.id not in relations_with_direct_candidates or same_wikidata:
+                decisions[feature_id] = {
+                    "feature": feature, "entity_key": f"relation:{relation.id}",
+                    "entity_evidence": "name-boundary-unique", "relation": relation,
+                    "role": "name-fallback", "association_relation_id": relation.id,
+                    "direct_relation_ids": [], "identity_candidates": [],
+                    "identity_relation_id": None,
+                    "unresolved_reason": None,
+                }
+                continue
+            decisions[feature_id] = {
+                "feature": feature, "entity_key": f"node:{feature_id}",
+                "entity_evidence": "fallback-ambiguous-existing-selection", "relation": None,
+                "role": None, "association_relation_id": relation.id,
+                "direct_relation_ids": [], "identity_candidates": [],
+                "identity_relation_id": None,
+                "unresolved_reason": "existing-relation-selection",
+            }
+            continue
+        reason = "multiple-boundary-matches" if len(accepted) > 1 else (
+            "low-tier" if low_tier else "missing-boundary" if missing_boundary else "zero-boundary-matches"
+        )
+        decisions[feature_id] = {
+            "feature": feature,
+            "entity_key": f"wd:{node_qid}" if node_qid is not None else f"node:{feature_id}",
+            "entity_evidence": "node-wikidata" if node_qid is not None else "unresolved",
+            "relation": None, "role": None, "association_relation_id": None,
+            "direct_relation_ids": [], "identity_candidates": [],
+            "identity_relation_id": None,
+            "unresolved_reason": reason,
+        }
 
+    def canonical_key(item: dict[str, Any]) -> tuple[Any, ...]:
+        evidence = item["entity_evidence"]
+        role = item["role"]
+        relation = item["relation"]
+        node_qid = node_wikidata.get(numeric_feature_id(item["feature"]))
+        identity_match = (
+            node_qid is not None
+            and relation is not None
+            and node_qid == relation.wikidata
+        )
+        return (
+            0 if identity_match else 1,
+            0 if role == "admin_centre" else 1 if role == "label" else 2,
+            0 if evidence == "name-boundary-unique" else 1,
+            -population(item["feature"]), numeric_feature_id(item["feature"]),
+        )
+
+    by_entity: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    for feature_id, decision in decisions.items():
+        if not decision["entity_key"].startswith("node:"):
+            by_entity.setdefault(decision["entity_key"], []).append((feature_id, decision))
+    for entity_key, values in by_entity.items():
+        winner_id, _winner = min(values, key=lambda value: canonical_key(value[1]))
+        for feature_id, decision in values:
+            if feature_id != winner_id:
+                decision["outcome"] = "dropped"
+                decision["reason"] = "entity-canonical-lost"
+                decision["kept_node_id"] = winner_id
+
+    intermediate: list[dict[str, Any]] = []
+    for feature_id, decision in decisions.items():
+        if decision.get("outcome") == "dropped":
+            continue
+        feature = deepcopy(decision["feature"])
+        relation = decision["relation"]
+        tier = label_tier(feature, relation_tiers[relation.id] if relation else None, hierarchy)
+        if relation is not None:
+            properties = feature.setdefault("properties", {})
+            properties["admin_id"] = relation.id
+            if relation.level is not None:
+                properties["boundary_admin_level"] = relation.level
+        apply_label_rendering(feature, tier, hierarchy)
+        decision["label_tier"] = tier
+        intermediate.append(feature)
     exact_duplicates = _exact_duplicates(intermediate)
-    name_duplicates = _same_name_tier_duplicates(intermediate, hierarchy)
-    dropped_ids = {
-        item["dropped_node_id"]
-        for item in (*exact_duplicates, *name_duplicates, *member_duplicates)
-    }
+    legacy_name_candidates = _same_name_tier_duplicates(intermediate, hierarchy)
+    for item in exact_duplicates:
+        decision = decisions[item["dropped_node_id"]]
+        decision["outcome"] = "dropped"
+        decision["reason"] = item["reason"]
+        decision["kept_node_id"] = item["kept_node_id"]
+    dropped_ids = {item["dropped_node_id"] for item in exact_duplicates}
+    dropped_ids.update(
+        feature_id for feature_id, decision in decisions.items()
+        if decision.get("outcome") == "dropped"
+    )
     (
         conventional_dropped_ids,
         conventional_candidates,
@@ -450,6 +536,11 @@ def enrich_place_labels(
         intermediate, dropped_ids, relations, node_wikidata, boundaries, hierarchy
     )
     dropped_ids.update(conventional_dropped_ids)
+    for item in conventional_candidates:
+        if item["outcome"] == "dropped":
+            decision = decisions[item["node_id"]]
+            decision["outcome"] = "dropped"
+            decision["reason"] = "conventional-region-filter"
     output: list[dict[str, Any]] = []
     policy = hierarchy["admin_display_name"]
     override_count = sum(
@@ -465,63 +556,106 @@ def enrich_place_labels(
         properties.pop("@id", None)
         apply_admin_display_name(feature, properties["label_tier"], policy)
         output.append(feature)
+    for feature_id, decision in decisions.items():
+        if decision.get("outcome") != "dropped":
+            decision["outcome"] = "kept"
+            decision["reason"] = "retained"
+    identity_relations: dict[int, list[dict[str, Any]]] = {}
+    for decision in decisions.values():
+        relation_id = decision["identity_relation_id"]
+        if relation_id is not None:
+            identity_relations.setdefault(relation_id, []).append(decision)
+    identity_relations_without_kept_point = []
+    for relation_id, values in sorted(identity_relations.items()):
+        entity_key = f"relation:{relation_id}"
+        covered = any(
+            decision["outcome"] == "kept" and decision["entity_key"] == entity_key
+            for decision in decisions.values()
+        )
+        if not covered:
+            identity_relations_without_kept_point.append({
+                "relation_id": relation_id,
+                "candidate_node_ids": sorted(
+                    numeric_feature_id(value["feature"]) for value in values
+                ),
+                "final_outcomes": [{
+                    "node_id": numeric_feature_id(value["feature"]),
+                    "outcome": value["outcome"],
+                    "reason": value["reason"],
+                } for value in sorted(
+                    values, key=lambda value: numeric_feature_id(value["feature"])
+                )],
+            })
+    audit_decisions = []
+    for feature_id, decision in sorted(decisions.items()):
+        feature = decision["feature"]
+        properties = feature.get("properties", {})
+        audit_decisions.append({
+            "node_id": feature_id, "entity_key": decision["entity_key"],
+            "entity_evidence": decision["entity_evidence"], "outcome": decision["outcome"],
+            "reason": decision["reason"], "kept_node_id": decision.get("kept_node_id"),
+            "association_relation_id": decision["association_relation_id"],
+            "admin_id": decision["relation"].id if decision["relation"] is not None else None,
+            "direct_relation_ids": decision["direct_relation_ids"],
+            "identity_candidates": decision["identity_candidates"],
+            "identity_relation_id": decision["identity_relation_id"],
+            "unresolved_reason": decision["unresolved_reason"], "place": properties.get("place"),
+            "label_tier": decision.get("label_tier", label_tier(feature, None, hierarchy)),
+        })
+    dropped_node_ids = sorted(feature_id for feature_id, decision in decisions.items()
+                              if decision["outcome"] == "dropped")
     report = {
-        "schema_version": 1,
+        "schema_version": 3,
         "source": {
             "place_feature_count": len(features),
             "administrative_relation_count": len(relations),
         },
         "summary": {
-            "role_member_relations_with_place_candidates": len(groups),
-            "role_member_canonical_feature_count": len(assignments) - len(fallback_candidates),
-            "fallback_canonical_feature_count": len(fallback_candidates),
-            "fallback_dropped_count": len(fallback_dropped) + len(fallback_lost),
+            "source_feature_count": len(features),
+            "role_member_relations_with_place_candidates": len(candidates_by_relation),
+            "role_member_canonical_feature_count": sum(
+                1 for decision in decisions.values()
+                if decision["entity_evidence"].startswith("role-member") and decision["outcome"] == "kept"
+            ),
+            "fallback_canonical_feature_count": sum(
+                1 for decision in decisions.values()
+                if decision["entity_evidence"] == "name-boundary-unique" and decision["outcome"] == "kept"
+            ),
+            "fallback_dropped_count": 0,
             "exact_duplicate_dropped_count": len(exact_duplicates),
-            "same_name_tier_dropped_count": len(name_duplicates),
-            "redundant_role_member_dropped_count": len(member_duplicates),
+            "same_name_tier_dropped_count": 0,
+            "same_name_tier_legacy_candidate_count": len(legacy_name_candidates),
+            "redundant_role_member_dropped_count": 0,
             "admin_display_name_override_count": override_count,
             "conventional_region_candidate_count": len(conventional_candidates),
             "conventional_region_dropped_count": conventional_dropped_count,
             "conventional_region_demoted_count": conventional_demoted_count,
             "output_feature_count": len(output),
         },
+        "dropped_node_ids": dropped_node_ids,
+        "entity_decisions": audit_decisions,
+        "identity_relations_without_kept_point": identity_relations_without_kept_point,
+        "entity_groups": [{
+            "entity_key": key, "candidate_count": len(values),
+            "kept_node_id": next((
+                feature_id for feature_id, _decision in values
+                if decisions[feature_id]["outcome"] == "kept"
+            ), None),
+        } for key, values in sorted(by_entity.items())],
         "relations": [{
-            "admin_id": relation_id, "selected_node_id": chosen.node_id,
-            "selected_role": chosen.role, "selected_tier": chosen.tier,
+            "admin_id": relation_id,
             "candidate_node_ids": sorted({value.node_id for value in candidates}),
-        } for relation_id, chosen, candidates in groups],
-        "shared_member_choices": shared,
-        "fallback_dropped": fallback_dropped + fallback_lost,
+        } for relation_id, candidates in sorted(candidates_by_relation.items())],
+        "shared_member_choices": [],
+        "fallback_dropped": [],
         "exact_duplicates": exact_duplicates,
-        "same_name_tier_duplicates": name_duplicates,
-        "redundant_role_members": member_duplicates,
+        "same_name_tier_duplicates": [],
+        "same_name_tier_legacy_candidates": legacy_name_candidates,
+        "redundant_role_members": [],
         "conventional_region_candidates": conventional_candidates,
         "conventional_region_skipped_reason": conventional_skipped_reason,
     }
     return PlaceAdminResult(tuple(output), report)
-
-
-def _candidate_key(candidate: PlaceCandidate, hierarchy: dict[str, Any]) -> tuple[Any, ...]:
-    relation_name = candidate.relation.display_name()
-    feature = candidate.feature
-    expected = hierarchy["tier_expected_place"].get(candidate.tier, [])
-    return (
-        -1 if relation_name is not None and relation_name == name_key(feature.get("properties", {})) else 0,
-        -1 if candidate.role == "label" else 0,
-        -1 if candidate.tier is not None and feature.get("properties", {}).get("place") in expected else 0,
-        -population(feature), _id_or_max(feature),
-    )
-
-
-def _primary_key(candidate: PlaceCandidate, hierarchy: dict[str, Any]) -> tuple[int, int, int]:
-    rank = hierarchy["rank"].get(candidate.tier, 0) if candidate.tier else 0
-    role_priority = (
-        1 if candidate.tier in {"country", "province", "prefecture"}
-        and candidate.role == "admin_centre"
-        else 1 if candidate.tier in {"county", "township", "locality"}
-        and candidate.role == "label" else 0
-    )
-    return -rank, -role_priority, candidate.relation.id
 
 
 def _id_or_max(feature: dict[str, Any]) -> int:
@@ -537,7 +671,10 @@ def _exact_duplicates(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
             feature.get("geometry", {}).get("coordinates"),
             ensure_ascii=False, separators=(",", ":"),
         )
-        groups.setdefault((name_key(properties), properties.get("place"), coordinates), []).append(feature)
+        groups.setdefault((
+            name_key(properties), properties.get("place"), coordinates,
+            properties.get("admin_id"), properties.get("boundary_admin_level"),
+        ), []).append(feature)
     duplicates = []
     for values in groups.values():
         winner = min(values, key=lambda feature: (
