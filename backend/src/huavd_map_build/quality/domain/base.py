@@ -29,5 +29,10 @@ class BaseDeepQualityError(RuntimeError):
     report: BaseDeepQualityReport
 
     def __str__(self) -> str:
-        count = len(self.report.staging.findings) + len(self.report.tiles.findings)
-        return f"base deep quality gate failed with {count} finding(s)"
+        findings = (*self.report.staging.findings, *self.report.tiles.findings)
+        count = len(findings)
+        preview = "; ".join(
+            f"{finding.code}: {finding.detail}" for finding in findings[:3]
+        )
+        suffix = f": {preview}" if preview else ""
+        return f"base deep quality gate failed with {count} finding(s){suffix}"

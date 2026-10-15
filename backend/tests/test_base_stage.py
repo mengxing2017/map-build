@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +15,9 @@ from huavd_map_build.production.north.local.execution import (
     BuildExecutionError,
     BuildExecutionService,
 )
+from huavd_map_build.quality.domain.base import BaseDeepQualityError, BaseDeepQualityReport
+from huavd_map_build.quality.domain.staging import BaseStagingQualityReport, StagingFinding
+from huavd_map_build.quality.domain.tile import TileSamplingReport
 from huavd_map_build.production.south.adapter.workspace.build_source import (
     FileSystemBuildSourceWorkspace,
 )
@@ -237,3 +241,20 @@ class BaseBuildStageExecutorTest(unittest.TestCase):
                 self.executor([], style_quality_passed=False), lambda: "now"
             ).run(plan)
         self.assertEqual("style-quality", raised.exception.job.events[-1].stage)
+
+    def test_writes_deep_quality_report_before_reraising(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            build = build_planner(self.root).plan(
+                region=RegionId("china/guangxi"), build_date=BuildDate("20261003"),
+                role="base", workdir=Path(directory),
+            )
+            error = BaseDeepQualityError(BaseDeepQualityReport(
+                BaseStagingQualityReport(
+                    (), 0, (StagingFinding("place-name-tier", "place_label", "bad"),)
+                ), TileSamplingReport((), ()),
+            ))
+            BaseBuildStageExecutor._write_deep_quality_report(build, error)
+            path = Path(directory) / "staging" / build.session.value / "quality" / "base-deep.json"
+            document = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual("failed", document["status"])
+        self.assertEqual("place-name-tier", document["staging"]["findings"][0]["code"])

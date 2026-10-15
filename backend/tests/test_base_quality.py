@@ -78,3 +78,5 @@ class BaseDeepQualityGateTest(unittest.TestCase):
         self.assertEqual(1, len(raised.exception.report.staging.findings))
         self.assertEqual(1, len(raised.exception.report.tiles.findings))
         self.assertEqual(1, len(tiles.calls))
+        self.assertIn("staging: bad", str(raised.exception))
+        self.assertIn("tile: bad", str(raised.exception))

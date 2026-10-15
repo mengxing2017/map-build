@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
+import os
+from pathlib import Path
+import tempfile
 
 from huavd_map_build.catalog.north.local.configuration import BuildConfigurationService
 from huavd_map_build.production.domain.admin_line import AdminLineRequest
@@ -29,6 +33,7 @@ from huavd_map_build.production.north.local.glyph import GlyphService
 from huavd_map_build.production.north.local.sprite import SpriteService
 from huavd_map_build.production.north.local.style import StyleService
 from huavd_map_build.quality.north.local.style import StyleQualityGate
+from huavd_map_build.quality.domain.base import BaseDeepQualityError
 from huavd_map_build.production.north.local.vector_finalize import (
     VectorFinalizationRequest,
     VectorFinalizationService,
@@ -106,7 +111,11 @@ class VectorBuildStageExecutor:
             if not result.passed:
                 raise RuntimeError("vector finalization quality gates failed")
         elif stage_id == "deep-verify:base":
-            self._deep_verifier.verify(self._role_build(build, Role.BASE))
+            try:
+                self._deep_verifier.verify(self._role_build(build, Role.BASE))
+            except BaseDeepQualityError as error:
+                self._write_deep_quality_report(build, error)
+                raise
         elif stage_id == "glyph":
             self._glyph.run(GlyphRequest(
                 build.region, build.session, root, force=True
@@ -160,6 +169,23 @@ class VectorBuildStageExecutor:
     @staticmethod
     def _root(build: BuildPlan) -> str:
         return build.workdir
+
+    @staticmethod
+    def _write_deep_quality_report(build: BuildPlan, error: BaseDeepQualityError) -> None:
+        target = Path(build.workdir) / "staging" / build.session.value / "quality" / "base-deep.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="\n", dir=target.parent,
+            prefix=".base-deep.", suffix=".tmp", delete=False,
+        ) as stream:
+            json.dump(error.report.as_dict(), stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+            temporary = stream.name
+        try:
+            os.replace(temporary, target)
+        except Exception:
+            Path(temporary).unlink(missing_ok=True)
+            raise
 
 
 # Compatibility name for callers that still import the base-only executor.
