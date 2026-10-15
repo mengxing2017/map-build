@@ -119,6 +119,9 @@ class BaseStagingQualityGate:
                 lambda value: self._valid_place_report(
                     value, stats.get("place_label", {}).get("count", 0),
                     self._configuration.place_label_hierarchy(build.region.value),
+                    self._reader.sha512(
+                        f"{root}/staging/{session}/layers/place_label.geojsonseq"
+                    ),
                 ),
             ),
             (
@@ -183,8 +186,13 @@ class BaseStagingQualityGate:
 
     @classmethod
     def _valid_place_report(
-        cls, value: dict[str, Any], count: int, policy: dict[str, Any]
+        cls, value: dict[str, Any], count: int, policy: dict[str, Any],
+        output_sha512: str,
     ) -> str | None:
+        if value.get("schema_version") == 3:
+            return cls._valid_place_report_v3(value, count, output_sha512)
+        if value.get("schema_version") == 2:
+            return cls._valid_place_report_v2(value, count, output_sha512)
         try:
             summary = value["summary"]
             conventional = policy["conventional_region_filter"]
@@ -256,6 +264,161 @@ class BaseStagingQualityGate:
         except (KeyError, TypeError, AttributeError):
             valid = False
         return None if valid else "place_label enrichment report contract is invalid"
+
+    @classmethod
+    def _valid_place_report_v2(
+        cls, value: dict[str, Any], count: int, output_sha512: str
+    ) -> str | None:
+        try:
+            summary = value["summary"]
+            decisions = value["entity_decisions"]
+            dropped_ids = value["dropped_node_ids"]
+            groups = value["entity_groups"]
+            source_count = summary["source_feature_count"]
+            output_count = summary["output_feature_count"]
+            node_ids = [item["node_id"] for item in decisions]
+            dropped_from_decisions = sorted(
+                item["node_id"] for item in decisions if item["outcome"] == "dropped"
+            )
+            valid = (
+                isinstance(decisions, list) and isinstance(groups, list)
+                and isinstance(dropped_ids, list) and all(type(value) is int for value in dropped_ids)
+                and source_count == len(decisions) == len(set(node_ids))
+                and output_count == count
+                and source_count == output_count + len(dropped_ids)
+                and dropped_ids == sorted(set(dropped_ids)) == dropped_from_decisions
+                and value["output_geojsonseq_sha512"] == output_sha512
+            )
+            by_key: dict[str, list[dict[str, Any]]] = {}
+            for item in decisions:
+                valid = valid and (
+                    isinstance(item, dict) and type(item["node_id"]) is int
+                    and isinstance(item["entity_key"], str)
+                    and isinstance(item["entity_evidence"], str)
+                    and item["outcome"] in {"kept", "dropped"}
+                    and isinstance(item["reason"], str)
+                )
+                if item["entity_key"].startswith("relation:"):
+                    valid = valid and type(item.get("admin_id")) is int
+                if not item["entity_key"].startswith("node:"):
+                    by_key.setdefault(item["entity_key"], []).append(item)
+            group_keys = set()
+            for group in groups:
+                key = group["entity_key"]
+                values = by_key.get(key, [])
+                kept = [item for item in values if item["outcome"] == "kept"]
+                valid = valid and (
+                    isinstance(key, str) and key not in group_keys
+                    and group["candidate_count"] == len(values)
+                    and len(kept) <= 1
+                    and group["kept_node_id"] == (kept[0]["node_id"] if kept else None)
+                )
+                group_keys.add(key)
+            valid = valid and group_keys == set(by_key)
+            for item in decisions:
+                if item["outcome"] == "dropped" and item["reason"] == "entity-canonical-lost":
+                    group = next((group for group in groups if group["entity_key"] == item["entity_key"]), None)
+                    valid = valid and group is not None and item.get("kept_node_id") == group["kept_node_id"]
+        except (KeyError, TypeError, AttributeError):
+            valid = False
+        return None if valid else "place_label schema 2 enrichment report contract is invalid"
+
+    @classmethod
+    def _valid_place_report_v3(
+        cls, value: dict[str, Any], count: int, output_sha512: str
+    ) -> str | None:
+        if cls._valid_place_report_v2(value, count, output_sha512) is not None:
+            return "place_label schema 3 enrichment report contract is invalid"
+        try:
+            decisions = value["entity_decisions"]
+            decisions_by_node = {item["node_id"]: item for item in decisions}
+            missing = value["identity_relations_without_kept_point"]
+            valid = (
+                isinstance(missing, list)
+                and len(decisions_by_node) == len(decisions)
+            )
+            identity_by_relation: dict[int, list[dict[str, Any]]] = {}
+            for item in decisions:
+                direct_ids = item["direct_relation_ids"]
+                candidates = item["identity_candidates"]
+                identity_relation_id = item["identity_relation_id"]
+                valid = valid and (
+                    isinstance(direct_ids, list)
+                    and all(type(relation_id) is int for relation_id in direct_ids)
+                    and direct_ids == sorted(set(direct_ids))
+                    and isinstance(candidates, list)
+                    and (type(identity_relation_id) is int or identity_relation_id is None)
+                )
+                candidate_ids: list[int] = []
+                wikidata_ids: list[int] = []
+                name_ids: list[int] = []
+                for candidate in candidates:
+                    valid = valid and (
+                        isinstance(candidate, dict)
+                        and type(candidate.get("relation_id")) is int
+                        and isinstance(candidate.get("role"), str)
+                        and candidate.get("evidence") in {None, "wikidata", "name-form"}
+                    )
+                    relation_id = candidate.get("relation_id")
+                    if type(relation_id) is int:
+                        candidate_ids.append(relation_id)
+                        if candidate.get("evidence") == "wikidata":
+                            wikidata_ids.append(relation_id)
+                        elif candidate.get("evidence") == "name-form":
+                            name_ids.append(relation_id)
+                valid = valid and sorted(set(candidate_ids)) == direct_ids
+                wikidata_ids = sorted(set(wikidata_ids))
+                name_ids = sorted(set(name_ids))
+                expected_identity_id = (
+                    wikidata_ids[0] if len(wikidata_ids) == 1 else
+                    name_ids[0] if not wikidata_ids and len(name_ids) == 1 else None
+                )
+                valid = valid and identity_relation_id == expected_identity_id
+                if identity_relation_id is None:
+                    valid = valid and (
+                        not direct_ids or not item["entity_key"].startswith("relation:")
+                    )
+                    continue
+                expected_key = f"relation:{identity_relation_id}"
+                valid = valid and item["entity_key"] == expected_key
+                identity_by_relation.setdefault(identity_relation_id, []).append(item)
+                if (
+                    item["outcome"] == "dropped"
+                    and item["reason"] == "entity-canonical-lost"
+                ):
+                    winner = decisions_by_node.get(item.get("kept_node_id"))
+                    valid = valid and winner is not None and winner["entity_key"] == expected_key
+
+            expected_missing = {
+                relation_id: values for relation_id, values in identity_by_relation.items()
+                if not any(
+                    decision["outcome"] == "kept"
+                    and decision["entity_key"] == f"relation:{relation_id}"
+                    for decision in decisions
+                )
+            }
+            reported_missing: set[int] = set()
+            for item in missing:
+                relation_id = item["relation_id"]
+                expected_values = expected_missing.get(relation_id, [])
+                expected_node_ids = sorted(value["node_id"] for value in expected_values)
+                expected_outcomes = [{
+                    "node_id": value["node_id"],
+                    "outcome": value["outcome"],
+                    "reason": value["reason"],
+                } for value in expected_values]
+                valid = valid and (
+                    isinstance(item, dict)
+                    and type(relation_id) is int
+                    and relation_id not in reported_missing
+                    and item["candidate_node_ids"] == expected_node_ids
+                    and item["final_outcomes"] == expected_outcomes
+                )
+                reported_missing.add(relation_id)
+            valid = valid and reported_missing == set(expected_missing)
+        except (KeyError, TypeError, AttributeError):
+            valid = False
+        return None if valid else "place_label schema 3 enrichment report contract is invalid"
 
     @classmethod
     def _valid_island_water_report(cls, value: dict[str, Any], flagged: int) -> str | None:
@@ -433,8 +596,10 @@ class BaseStagingQualityGate:
                 properties.get("name"), ensure_ascii=False, sort_keys=True
             )
             key = (name_key, tier)
-            flags = state["name_tiers"].setdefault(key, set())
-            flags.add(admin_id is not None)
+            counts = state["name_tiers"].setdefault(
+                key, {"with_admin": 0, "without_admin": 0}
+            )
+            counts["with_admin" if admin_id is not None else "without_admin"] += 1
             zoom = policy["tier_zoom"].get(tier, policy["tier_zoom"]["default"])
             actual_zoom = feature.get("tippecanoe")
             expected_zoom = {
@@ -465,10 +630,4 @@ class BaseStagingQualityGate:
         state: dict[str, Any], policy: dict[str, Any],
         findings: list[StagingFinding],
     ) -> None:
-        dedupe_tiers = set(policy.get("dedupe_name_tiers", ()))
-        for (name, tier), flags in state["name_tiers"].items():
-            if tier in dedupe_tiers and flags == {False, True}:
-                findings.append(StagingFinding(
-                    "place-name-tier", "place_label",
-                    f"same name/tier mixes administrative and fallback labels: {name}/{tier}",
-                ))
+        del state, policy, findings

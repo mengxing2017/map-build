@@ -770,25 +770,33 @@ print(json.dumps(tile, ensure_ascii=False))
 }
 
 verify_staged_place_admin_enrichment() {
-  local staged report tier_zoom dedupe_tiers admin_display_name
+  local staged report tier_zoom admin_display_name actual_sha512
   staged="$(layers_dir)/place_label.geojsonseq"
   report="$(place_admin_report_path)"
   tier_zoom="$(place_label_tier_zoom_json)"
-  dedupe_tiers="$(place_label_dedupe_name_tiers_json)"
   admin_display_name="$(place_label_admin_display_name_json)"
 
   [[ -f "${staged}" ]] || { fail "staged place_label GeoJSONSeq missing"; return; }
   [[ -f "${report}" ]] || { fail "place_label administrative enrichment report missing"; return; }
+  actual_sha512="$(sha512sum "${staged}" | awk '{print $1}')"
 
   if [[ ! -s "${staged}" ]]; then
-    if jq -e '
-      .schema_version == 1
-      and .source.place_feature_count == 0
-      and .summary.output_feature_count == 0
-      and (.relations | type == "array" and length == 0)
-      and (.shared_member_choices | type == "array" and length == 0)
-      and (.same_name_tier_duplicates | type == "array" and length == 0)
-      and (.redundant_role_members | type == "array" and length == 0)
+    if jq -e --arg sha "${actual_sha512}" '
+      ((.schema_version == 1
+        and .source.place_feature_count == 0
+        and .summary.output_feature_count == 0
+        and (.relations | type == "array" and length == 0)
+        and (.shared_member_choices | type == "array" and length == 0)
+        and (.same_name_tier_duplicates | type == "array" and length == 0)
+        and (.redundant_role_members | type == "array" and length == 0))
+       or
+       (.schema_version == 3
+        and .summary.source_feature_count == 0
+        and .summary.output_feature_count == 0
+        and .output_geojsonseq_sha512 == $sha
+        and (.entity_decisions | type == "array" and length == 0)
+        and (.dropped_node_ids | type == "array" and length == 0)
+        and (.identity_relations_without_kept_point | type == "array" and length == 0)))
     ' "${report}" >/dev/null; then
       ok "staged place_label administrative enrichment not applicable: no features"
       ok "place_label administrative enrichment report (zero features)"
@@ -831,22 +839,6 @@ verify_staged_place_admin_enrichment() {
     fail "staged place_label per-feature tippecanoe zoom is invalid"
   fi
 
-  # 同名同层去重后不应再出现“无 admin_id 的同名冗余点与带 admin_id 的同名点共存”。
-  if jq --seq -n -e --argjson tiers "${dedupe_tiers}" '
-    [inputs] as $features
-    | ($features | length) > 0
-      and ([ $features[]
-              | select((.properties.label_tier as $t | ($tiers | index($t)) != null))
-              | {name: .properties.name, tier: .properties.label_tier, id: (.properties.admin_id != null)} ]
-           | group_by([.name, .tier])
-           | all(.[]; ((map(select(.id)) | length) == 0)
-                    or ((map(select(.id)) | length) == length)))
-  ' "${staged}" >/dev/null; then
-    ok "staged place_label same-name-tier dedup"
-  else
-    fail "staged place_label same-name-tier dedup is invalid"
-  fi
-
   if jq --seq -n -e --argjson adn "${admin_display_name}" '
     [inputs] as $features
     | ($features | length) > 0
@@ -869,17 +861,89 @@ verify_staged_place_admin_enrichment() {
     fail "staged place_label admin display name override is inconsistent"
   fi
 
-  if jq -e '
-    .schema_version == 1
+  if jq -e --arg sha "${actual_sha512}" '
+    .schema_version == 3
+    and (.summary.source_feature_count | type == "number" and . >= 0)
     and (.summary.output_feature_count | type == "number" and . > 0)
-    and (.summary.exact_duplicate_dropped_count | type == "number" and . >= 0)
-    and (.summary.same_name_tier_dropped_count | type == "number" and . >= 0)
-    and (.summary.redundant_role_member_dropped_count | type == "number" and . >= 0)
-    and (.summary.admin_display_name_override_count | type == "number" and . >= 0)
-    and (.relations | type == "array")
-    and (.shared_member_choices | type == "array")
-    and (.same_name_tier_duplicates | type == "array")
-    and (.redundant_role_members | type == "array")
+    and (.output_geojsonseq_sha512 == $sha)
+    and (.entity_decisions | type == "array")
+    and (.dropped_node_ids | type == "array")
+    and (.entity_groups | type == "array")
+    and (.identity_relations_without_kept_point | type == "array")
+    and (.summary.source_feature_count == (.entity_decisions | length))
+    and (.summary.output_feature_count + (.dropped_node_ids | length) == .summary.source_feature_count)
+    and ((.dropped_node_ids | unique | length) == (.dropped_node_ids | length))
+    and (([.entity_decisions[] | select(.outcome == "dropped") | .node_id] | sort)
+         == (.dropped_node_ids | sort))
+    and (.entity_decisions as $decisions
+         | .entity_groups as $groups
+         | ([ $decisions[]
+              | select(.entity_key | startswith("node:") | not)
+              | .entity_key ] | unique) as $entity_keys
+         | (($groups | map(.entity_key) | unique) == $entity_keys)
+         and all($groups[];
+           . as $group
+           | [ $decisions[] | select(.entity_key == $group.entity_key) ] as $members
+           | [ $members[] | select(.outcome == "kept") ] as $kept
+           | ($group.candidate_count == ($members | length))
+             and (($kept | length) <= 1)
+             and ($group.kept_node_id == ($kept[0].node_id // null))))
+    and (.entity_decisions as $decisions
+         | all($decisions[];
+             . as $decision
+             | (.direct_relation_ids // null) as $direct_ids
+             | (.identity_candidates // null) as $candidates
+             | (.identity_relation_id // null) as $identity_relation_id
+             | ($direct_ids | type == "array"
+                and all(.[]; type == "number")
+                and . == (unique | sort))
+             and ($candidates | type == "array"
+                and all(.[];
+                  type == "object"
+                  and (.relation_id | type == "number")
+                  and (.role | type == "string")
+                  and (.evidence == null or .evidence == "wikidata" or .evidence == "name-form")))
+             and (($candidates | map(.relation_id) | unique | sort) == $direct_ids)
+             and (([$candidates[] | select(.evidence == "wikidata") | .relation_id] | unique | sort) as $wikidata_ids
+                  | ([$candidates[] | select(.evidence == "name-form") | .relation_id] | unique | sort) as $name_ids
+                  | (if ($wikidata_ids | length) == 1 then $wikidata_ids[0]
+                     elif ($wikidata_ids | length) == 0 and ($name_ids | length) == 1 then $name_ids[0]
+                     else null end) as $expected_identity_relation_id
+                  | $identity_relation_id == $expected_identity_relation_id
+                    and (if $expected_identity_relation_id == null then
+                           (($direct_ids | length) == 0 or (.entity_key | startswith("relation:") | not))
+                         else
+                           (.entity_key == "relation:\($expected_identity_relation_id)")
+                           and (if .outcome == "dropped" and .reason == "entity-canonical-lost" then
+                                  ($decisions
+                                   | map(select(.node_id == $decision.kept_node_id))
+                                   | .[0]) as $winner
+                                  | ($winner != null
+                                     and $winner.entity_key == "relation:\($expected_identity_relation_id)")
+                                else true end)
+                         end))))
+    and (.entity_decisions as $decisions
+         | ([ $decisions[] | .identity_relation_id // empty ] | unique | sort) as $identity_relation_ids
+         | [ $identity_relation_ids[] as $relation_id
+             | [ $decisions[]
+                 | select(.identity_relation_id == $relation_id
+                          and .outcome == "kept"
+                          and .entity_key == "relation:\($relation_id)") ]
+             | select(length == 0)
+             | $relation_id ] as $expected_missing_relation_ids
+         | ([.identity_relations_without_kept_point[] | .relation_id] | unique | sort)
+            == $expected_missing_relation_ids
+         and all(.identity_relations_without_kept_point[];
+           . as $entry
+           | ($entry.relation_id | type == "number")
+             and ($entry.candidate_node_ids | type == "array" and all(.[]; type == "number"))
+             and ($entry.final_outcomes | type == "array")
+             and ($entry.candidate_node_ids
+                  == [$decisions[] | select(.identity_relation_id == $entry.relation_id) | .node_id])
+             and ($entry.final_outcomes
+                  == [$decisions[]
+                      | select(.identity_relation_id == $entry.relation_id)
+                      | {node_id: .node_id, outcome: .outcome, reason: .reason}])) )
   ' "${report}" >/dev/null; then
     ok "place_label administrative enrichment report"
   else

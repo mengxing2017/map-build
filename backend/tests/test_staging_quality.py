@@ -109,6 +109,62 @@ class BaseStagingQualityGateTest(unittest.TestCase):
         self.assertEqual(0, report.feature_count)
         self.assertIn("road", report.checked_layers)
 
+    def test_accepts_schema_3_place_label_audit_with_matching_output_hash(self) -> None:
+        reports = valid_reports()
+        reports["place_label_dedup_report"] = {
+            "schema_version": 3,
+            "summary": {"source_feature_count": 0, "output_feature_count": 0},
+            "output_geojsonseq_sha512": "water-sha512",
+            "dropped_node_ids": [], "entity_decisions": [], "entity_groups": [],
+            "identity_relations_without_kept_point": [],
+        }
+        report = BaseStagingQualityGate(
+            self.configuration, MemoryLayerReader(reports=reports)
+        ).inspect(self.build)
+        self.assertTrue(report.passed, report.as_dict())
+
+    def test_rejects_unique_direct_identity_candidate_assigned_to_another_relation(self) -> None:
+        feature = {
+            "type": "Feature",
+            "properties": {
+                "name": "Capital", "place": "city", "admin_id": 21,
+                "label_tier": "county", "label_rank": 300_0,
+            },
+            "geometry": {"type": "Point", "coordinates": [110.29, 25.27]},
+            "tippecanoe": {"minzoom": 6, "maxzoom": 13},
+        }
+        reports = valid_reports()
+        reports["place_label_dedup_report"] = {
+            "schema_version": 3,
+            "summary": {"source_feature_count": 1, "output_feature_count": 1},
+            "output_geojsonseq_sha512": "water-sha512",
+            "dropped_node_ids": [],
+            "entity_decisions": [{
+                "node_id": 1, "entity_key": "relation:21",
+                "entity_evidence": "role-member-name-form-match",
+                "outcome": "kept", "reason": "retained", "kept_node_id": None,
+                "association_relation_id": 21, "admin_id": 21,
+                "direct_relation_ids": [20],
+                "identity_candidates": [
+                    {"relation_id": 20, "role": "label", "evidence": "name-form"},
+                ],
+                "identity_relation_id": 20,
+                "unresolved_reason": None, "place": "city", "label_tier": "county",
+            }],
+            "entity_groups": [{
+                "entity_key": "relation:21", "candidate_count": 1, "kept_node_id": 1,
+            }],
+            "identity_relations_without_kept_point": [],
+        }
+        result = BaseStagingQualityGate(
+            self.configuration,
+            MemoryLayerReader(features={"place_label": (feature,)}, reports=reports),
+        ).inspect(self.build)
+        self.assertTrue(any(
+            item.code == "report-invalid" and item.layer == "place_label"
+            for item in result.findings
+        ), result.as_dict())
+
     def test_reports_missing_layer_and_invalid_feature_contract(self) -> None:
         feature = {
             "type": "Feature", "properties": {"unexpected": "value"},
@@ -278,7 +334,7 @@ class BaseStagingQualityGateTest(unittest.TestCase):
         codes = {finding.code for finding in result.findings}
         self.assertTrue({
             "feature-id-leak", "place-label-zoom", "place-duplicate",
-            "place-name-tier", "place-display-name",
+            "place-display-name",
         }.issubset(codes), result.as_dict())
 
     def test_reports_configured_field_type_violation(self) -> None:
