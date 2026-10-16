@@ -74,7 +74,7 @@ def compile_styles(
         "sources": {source_id: {"type": source_type, "url": source_url}},
         "layers": (
             [{"id": "background", "type": "background",
-              "paint": {"background-color": "#f4f2ed"}}]
+              "paint": {"background-color": config.get("background_color", "#f4f2ed")}}]
             + [layer for layer in paint_layers if layer["type"] != "symbol"]
             + [layer for layer in paint_layers if layer["type"] == "symbol"]
             + text_layers
@@ -141,7 +141,7 @@ def _compile_text_layer(
             ["get", field] for field in locale_config["name_fields"]
         ],
         "text-font": deepcopy(fonts),
-        "text-size": layer.get("text_size", 12),
+        "text-size": deepcopy(layer.get("text_size", 12)),
         "text-anchor": "center",
         "text-allow-overlap": layer.get("text_allow_overlap", False),
         "text-ignore-placement": layer.get("text_ignore_placement", False),
@@ -150,12 +150,25 @@ def _compile_text_layer(
     }
     if layer.get("symbol_spacing") is not None:
         layout["symbol-spacing"] = layer["symbol_spacing"]
+    if "layout" in layer:
+        layout = {
+            key: _convert_style_value(key, value)
+            for key, value in layer["layout"].items()
+        }
+        layout.setdefault("text-font", deepcopy(fonts))
+        layout.setdefault("text-field", ["coalesce"] + [
+            ["get", field] for field in (
+                layer.get("name_prefix_fields", []) + locale_config["name_fields"]
+            )
+        ])
     result: dict[str, Any] = {
         "id": layer["id"], "type": "symbol", "source": source_id,
         "source-layer": layer["source_layer"], "minzoom": layer.get("minzoom", 0),
         "layout": layout,
-        "paint": {"text-color": "#1f2933", "text-halo-color": "#ffffff",
-                  "text-halo-width": 1},
+        "paint": deepcopy(layer.get("paint", {
+            "text-color": "#1f2933", "text-halo-color": "#ffffff",
+            "text-halo-width": 1,
+        })),
     }
     if layer.get("filter") is not None:
         result["filter"] = deepcopy(layer["filter"])
