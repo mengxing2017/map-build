@@ -73,6 +73,8 @@ def _verify_detailed_layers(layers: list[Any], check) -> None:
         "road-shield", "railway-labels", "island-labels", "peak-symbol",
         "transport-station-symbol", "highway-point-symbol", "poi-tourism-symbol",
         "poi-amenity-symbol",
+        "place_label-city-labels", "place_label-locality-labels",
+        "island-anchor-labels-large", "island-water-fill", "road-tunnel",
     )
     for layer_id in required:
         check("style-layer-missing", layer_id in by_id,
@@ -86,7 +88,7 @@ def _verify_detailed_layers(layers: list[Any], check) -> None:
     _contains(check, road, "filter", None, "highway")
     _excludes(check, road, "filter", None, "network")
     _excludes(check, road, "filter", None, "int_ref")
-    _before(check, layers, "railway", "admin-0-boundary")
+    _before(check, layers, "railway-fill-dashed", "admin-0-boundary")
     _before(check, layers, "admin-2-boundary", "peak-symbol")
     for layer_id in ("admin-0-boundary", "admin-1-boundary", "admin-2-boundary"):
         _contains(check, by_id.get(layer_id, {}), "filter", None, "maritime")
@@ -97,7 +99,10 @@ def _verify_detailed_layers(layers: list[Any], check) -> None:
     _excludes(check, transport, "filter", None, '"stop"')
     _contains(check, transport, "layout", "icon-image", "rail-metro")
     _contains(check, transport, "layout", "icon-image", "rail-light")
-    _contains(check, by_id.get("transport-label", {}), "filter", None, '"stop"')
+    _before(check, layers, "place_label-city-labels", "place_label-locality-labels")
+    _before(check, layers, "island-fill", "landuse")
+    _before(check, layers, "water", "island-water-fill")
+    _before(check, layers, "island-anchor-labels-large", "island-labels")
     highway = by_id.get("highway-point-symbol", {})
     _excludes(check, highway, "filter", None, "motorway_junction")
     _contains(check, highway, "layout", "icon-image", "services")
@@ -106,12 +111,13 @@ def _verify_detailed_layers(layers: list[Any], check) -> None:
     amenity = by_id.get("poi-amenity-symbol", {})
     _contains(check, amenity, "layout", "icon-image", "hospital")
     _contains(check, amenity, "layout", "icon-image", "school")
-    for layer_id in ("highway-point-symbol", "poi-amenity-symbol"):
+    for layer_id in ("transport-station-symbol", "highway-point-symbol", "poi-amenity-symbol"):
         layout = by_id.get(layer_id, {}).get("layout", {})
         for key in ("icon-allow-overlap", "icon-ignore-placement"):
             check("style-layout", layout.get(key) is True,
                   f"{layer_id} layout.{key} must be true")
-    for layer_id in ("water", "island", "railway"):
+    for layer_id in ("water", "island-fill", "island-water-fill", "railway-casing",
+                     "railway-fill-solid", "railway-fill-dashed"):
         layer = by_id.get(layer_id, {})
         check(
             "style-paint", layer.get("type") in {"line", "fill", "circle", "background"}

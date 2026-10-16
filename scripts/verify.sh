@@ -358,7 +358,7 @@ verify_railway_metadata_fields() {
 verify_style_text_layers() {
   local style_file="$1"
   [[ -f "${style_file}" ]] || { fail "style.json missing"; return; }
-  for layer_id in road-shield railway-labels island-labels peak-symbol transport-station-symbol highway-point-symbol poi-tourism-symbol poi-amenity-symbol; do
+  for layer_id in road-shield railway-labels island-labels island-anchor-labels-large place_label-city-labels place_label-locality-labels peak-symbol transport-station-symbol highway-point-symbol poi-tourism-symbol poi-amenity-symbol; do
     check_style_layer_present "${style_file}" "${layer_id}"
   done
   check_style_layer_source_layer "${style_file}" "road-shield" "road"
@@ -367,7 +367,7 @@ verify_style_text_layers() {
   check_style_layer_filter_contains "${style_file}" "road-shield" "highway"
   check_style_layer_filter_excludes "${style_file}" "road-shield" "network"
   check_style_layer_filter_excludes "${style_file}" "road-shield" "int_ref"
-  check_style_layer_before "${style_file}" "railway" "admin-0-boundary"
+  check_style_layer_before "${style_file}" "railway-fill-dashed" "admin-0-boundary"
   check_style_layer_before "${style_file}" "admin-2-boundary" "peak-symbol"
   for layer_id in admin-0-boundary admin-1-boundary admin-2-boundary; do
     check_style_layer_filter_contains "${style_file}" "${layer_id}" "maritime"
@@ -378,7 +378,10 @@ verify_style_text_layers() {
   check_style_layer_filter_excludes "${style_file}" "transport-station-symbol" '"stop"'
   check_style_layer_icon_image_contains "${style_file}" "transport-station-symbol" "rail-metro"
   check_style_layer_icon_image_contains "${style_file}" "transport-station-symbol" "rail-light"
-  check_style_layer_filter_contains "${style_file}" "transport-label" '"stop"'
+  check_style_layer_before "${style_file}" "place_label-city-labels" "place_label-locality-labels"
+  check_style_layer_before "${style_file}" "island-fill" "landuse"
+  check_style_layer_before "${style_file}" "water" "island-water-fill"
+  check_style_layer_before "${style_file}" "island-anchor-labels-large" "island-labels"
   check_style_layer_filter_excludes "${style_file}" "highway-point-symbol" "motorway_junction"
   check_style_layer_icon_image_contains "${style_file}" "highway-point-symbol" "services"
   check_style_layer_icon_image_contains "${style_file}" "highway-point-symbol" "rest-area"
@@ -386,6 +389,8 @@ verify_style_text_layers() {
   check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "hospital"
   check_style_layer_icon_image_contains "${style_file}" "poi-amenity-symbol" "school"
   check_style_layer_layout_bool "${style_file}" "highway-point-symbol" "icon-allow-overlap" "true"
+  check_style_layer_layout_bool "${style_file}" "transport-station-symbol" "icon-allow-overlap" "true"
+  check_style_layer_layout_bool "${style_file}" "transport-station-symbol" "icon-ignore-placement" "true"
   check_style_layer_layout_bool "${style_file}" "highway-point-symbol" "icon-ignore-placement" "true"
   check_style_layer_layout_bool "${style_file}" "poi-amenity-symbol" "icon-allow-overlap" "true"
   check_style_layer_layout_bool "${style_file}" "poi-amenity-symbol" "icon-ignore-placement" "true"
@@ -506,7 +511,7 @@ check_style_layer_layout_bool() {
 verify_style_paint_layers() {
   local style_file="$1"
   [[ -f "${style_file}" ]] || { fail "style.json missing"; return; }
-  for layer_id in water island railway; do
+  for layer_id in water island-fill island-water-fill railway-casing railway-fill-solid railway-fill-dashed; do
     if jq -e --arg id "${layer_id}" '
       (.layers | map(select(.id == $id)) | first) as $match
       | $match != null
