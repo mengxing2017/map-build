@@ -373,6 +373,15 @@ class BuildConfigurationService:
                 raise ValueError("invalid styles configuration")
             if not isinstance(layer.get("source_layer"), str):
                 raise ValueError("invalid styles configuration")
+        for layer in text_layers:
+            for section in ("layout", "paint"):
+                if section in layer and not isinstance(layer[section], dict):
+                    raise ValueError(f"invalid styles configuration: {layer['id']}.{section}")
+            prefix = layer.get("name_prefix_fields", [])
+            if not isinstance(prefix, list) or any(
+                not isinstance(field, str) or not field.strip() for field in prefix
+            ):
+                raise ValueError(f"invalid styles configuration: {layer['id']}.name_prefix_fields")
         settings = self.tippecanoe(region, "base")
         return {
             "config": document,
