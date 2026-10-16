@@ -3,6 +3,8 @@ import hashlib
 import subprocess
 import tempfile
 import unittest
+from copy import deepcopy
+from unittest.mock import patch
 from pathlib import Path
 
 from huavd_map_build.bootstrap import build_configuration_service, repository_root
@@ -43,10 +45,10 @@ class StyleCompilerTest(unittest.TestCase):
         )
 
     def test_match_expressions_and_dash_arrays_match_maplibre_contract(self) -> None:
-        railway = next(layer for layer in self.documents.vector["layers"] if layer["id"] == "railway")
+        railway = next(layer for layer in self.documents.vector["layers"] if layer["id"] == "railway-fill-solid")
         dash = railway["paint"]["line-dasharray"]
         self.assertEqual(["match", ["get", "railway"]], dash[:2])
-        self.assertEqual(["literal", [1, 0]], dash[-1])
+        self.assertEqual(["literal", [3, 3]], dash[-1])
         amenity = next(
             layer for layer in self.documents.vector["layers"] if layer["id"] == "poi-amenity-symbol"
         )
@@ -57,8 +59,8 @@ class StyleCompilerTest(unittest.TestCase):
         self.assertNotIn("glyphs", bake)
         self.assertNotIn("sprite", bake)
         self.assertTrue(all(layer["type"] in {"background", "fill", "line"} for layer in bake["layers"]))
-        railway = next(layer for layer in bake["layers"] if layer["id"] == "railway")
-        self.assertEqual(["literal", [1, 0]], railway["paint"]["line-dasharray"])
+        railway = next(layer for layer in bake["layers"] if layer["id"] == "railway-fill-solid")
+        self.assertEqual(["literal", [3, 3]], railway["paint"]["line-dasharray"])
 
     def test_raster_style_keeps_vector_symbol_support(self) -> None:
         raster = self.documents.raster
@@ -72,13 +74,13 @@ class StyleCompilerTest(unittest.TestCase):
     def test_bake_contains_roads_and_land_cover_below_water(self) -> None:
         layers = self.documents.bake["layers"]
         ids = [layer["id"] for layer in layers]
-        for layer_id in ("landuse-fill", "natural-fill", "leisure-fill"):
+        for layer_id in ("landuse", "natural-fill", "leisure-fill"):
             self.assertLess(ids.index(layer_id), ids.index("water"))
-        self.assertLess(ids.index("water"), ids.index("road-casing"))
-        self.assertLess(ids.index("road-casing"), ids.index("road-line"))
-        road = next(layer for layer in layers if layer["id"] == "road-line")
+        self.assertLess(ids.index("water"), ids.index("road-road-casing"))
+        self.assertLess(ids.index("road-road-casing"), ids.index("road-road-fill"))
+        road = next(layer for layer in layers if layer["id"] == "road-road-fill")
         self.assertEqual("road", road["source-layer"])
-        self.assertEqual(["==", ["geometry-type"], "LineString"], road["filter"])
+        self.assertEqual(["!=", ["get", "tunnel"], True], road["filter"])
 
     def test_locale_and_pmtiles_url_overrides(self) -> None:
         resolved = self.configuration.style("china/guangxi", "en")
@@ -87,12 +89,64 @@ class StyleCompilerTest(unittest.TestCase):
             pmtiles_url="pmtiles://manual.pmtiles",
         ).vector
         self.assertEqual("pmtiles://manual.pmtiles", vector["sources"]["huavd-offline"]["url"])
-        place = next(layer for layer in vector["layers"] if layer["id"] == "place-label")
+        place = next(layer for layer in vector["layers"] if layer["id"] == "place_label-city-labels")
         self.assertEqual(["get", "name:en"], place["layout"]["text-field"][1])
 
     def test_unknown_locale_is_rejected_by_configuration_boundary(self) -> None:
         with self.assertRaisesRegex(ValueError, "style locale is not configured"):
             self.configuration.style("china/guangxi", "missing")
+
+    def test_localized_symbol_fields_and_derived_styles(self) -> None:
+        locales = {
+            "zh-Hans": (["name:zh-Hans", "name:zh", "name", "name:en"], "NotoSansCJKsc-Regular"),
+            "en": (["name:en", "name:zh-Hans", "name"], "NotoSans-Regular"),
+            "ja": (["name:ja", "name:en", "name:zh-Hans", "name"], "NotoSansCJKjp-Regular"),
+            "ko": (["name:ko", "name:en", "name:zh-Hans", "name"], "NotoSansCJKkr-Regular"),
+        }
+        for locale, (names, font) in locales.items():
+            with self.subTest(locale=locale):
+                resolved = self.configuration.style("china/guangxi", locale)
+                docs = compile_styles(resolved["config"], locale, resolved["effective_base_layers"])
+                for layer in docs.vector["layers"]:
+                    if layer["type"] != "symbol":
+                        continue
+                    self.assertEqual([font], layer["layout"]["text-font"])
+                    if layer["id"] == "road-shield":
+                        self.assertEqual(["get", "ref"], layer["layout"]["text-field"])
+                    else:
+                        prefix = [["get", "ref"]] if layer["id"] == "highway-point-symbol" else []
+                        self.assertEqual(["coalesce", *prefix, *[["get", field] for field in names]],
+                                         layer["layout"]["text-field"])
+                self.assertEqual([layer for layer in docs.vector["layers"] if layer["type"] == "symbol"],
+                                 [layer for layer in docs.raster["layers"] if layer["type"] == "symbol"])
+                self.assertFalse(any(layer["type"] == "symbol" for layer in docs.bake["layers"]))
+
+    def test_place_layers_split_administrative_and_locality_labels(self) -> None:
+        by_id = {layer["id"]: layer for layer in self.documents.vector["layers"]}
+        city, locality = by_id["place_label-city-labels"], by_id["place_label-locality-labels"]
+        self.assertEqual(["!", city["filter"]], locality["filter"])
+        self.assertEqual(0, city["minzoom"])
+        self.assertEqual(11, locality["minzoom"])
+        self.assertEqual([4, 12], city["layout"]["text-size"][3::2])
+        self.assertEqual([11, 15], locality["layout"]["text-size"][3::2])
+        self.assertIn("symbol-sort-key", city["layout"])
+        self.assertNotIn("symbol-sort-key", locality["layout"])
+        for layer in (city, locality):
+            self.assertEqual("center", layer["layout"]["text-anchor"])
+            self.assertNotIn("text-variable-anchor", layer["layout"])
+
+    def test_explicit_layout_configuration_rejects_invalid_sections_and_prefix(self) -> None:
+        resolved = self.configuration.style("china/guangxi", "zh-Hans")
+        repository = self.configuration._repository
+        original_load = repository.load
+        for key, value in (("layout", []), ("paint", None), ("name_prefix_fields", [""]),
+                           ("name_prefix_fields", "ref")):
+            with self.subTest(key=key, value=value):
+                config = deepcopy(resolved["config"])
+                config["text_layers"][0][key] = value
+                with patch.object(repository, "load", side_effect=lambda name: config if name == "styles" else original_load(name)):
+                    with self.assertRaisesRegex(ValueError, "invalid styles configuration"):
+                        self.configuration.style("china/guangxi", "zh-Hans")
 
     def test_compiler_matches_current_shell_documents_without_pmtiles(self) -> None:
         root = repository_root(Path(__file__))
@@ -186,5 +240,5 @@ class RasterStyleBindingTest(unittest.TestCase):
         docs = compile_styles(resolved["config"],resolved["locale"],resolved["effective_base_layers"])
         ids=[layer['id'] for layer in docs.bake['layers']]
         self.assertLess(ids.index('building-fill'),ids.index('building-outline'))
-        self.assertLess(ids.index('building-outline'),ids.index('road-casing'))
-        self.assertLess(ids.index('road-casing'),ids.index('road-line'))
+        self.assertLess(ids.index('building-outline'),ids.index('road-road-casing'))
+        self.assertLess(ids.index('road-road-casing'),ids.index('road-road-fill'))
