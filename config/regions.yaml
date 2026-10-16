@@ -12105,9 +12105,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/macau-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/macau-latest.osm.pbf.md5"
+      basename: "macau-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
