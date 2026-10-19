@@ -90,7 +90,8 @@
       "export GOPATH=\"${GOPATH:-$HOME/go}\"",
       "export CARGO_HOME=\"${CARGO_HOME:-$HOME/.cargo}\"",
       "export HUAVD_MAP_BUILD_HOME=\"${HUAVD_MAP_BUILD_HOME:-/tmp/huavd-map-build}\"",
-      "export PATH=\"$HOME/.local/bin:$HUAVD_MAP_BUILD_HOME/tools/maplibre-native/bin:$GOPATH/bin:$CARGO_HOME/bin:$PATH\"",
+      "export HUAVD_TOOLS_DIR=\"${HUAVD_TOOLS_DIR:-$PWD/tools}\"",
+      "export PATH=\"$HUAVD_TOOLS_DIR/bin:$HUAVD_TOOLS_DIR/maplibre-native/bin:$HOME/.local/bin:$GOPATH/bin:$CARGO_HOME/bin:$PATH\"",
       ". $VENV_DIR/bin/activate",
       "export LD_LIBRARY_PATH=\"$PWD/.devbox/nix/profile/default/lib:$(dirname $(gcc -print-file-name=libstdc++.so.6))${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}\""
     ],

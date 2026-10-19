@@ -16,6 +16,8 @@ if [[ -z "${HUAVD_MAP_BUILD_LIB_DIR:-}" ]]; then
 fi
 REPO_ROOT="${REPO_ROOT:-$(cd -- "${HUAVD_MAP_BUILD_LIB_DIR}/../.." && pwd)}"
 CONFIG_DIR="${CONFIG_DIR:-${REPO_ROOT}/config}"
+export HUAVD_TOOLS_DIR="${HUAVD_TOOLS_DIR:-${REPO_ROOT}/tools}"
+export PATH="${HUAVD_TOOLS_DIR}/bin:${HUAVD_TOOLS_DIR}/maplibre-native/bin:${PATH}"
 WORKDIR="${WORKDIR:-${HUAVD_MAP_BUILD_HOME:-/tmp/huavd-map-build}}"
 REGION="${REGION:-china/guangxi}"
 YYYYMMDD="${YYYYMMDD:-$(date -u +%Y%m%d)}"
