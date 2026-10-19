@@ -15,6 +15,7 @@ import yaml
 from huavd_map_build.production.south.adapter.process.routeweft import sha256
 from huavd_map_build.production.south.port.routeweft import RouteWeftError, RouteWeftPort
 from huavd_map_build.shared.kernel.identity import RegionId, BuildDate, SessionId
+from huavd_map_build.production.south.adapter.process.routeweft_contract import capabilities, build_report
 
 
 def write_json(path: Path, value):
@@ -57,10 +58,29 @@ class RoutingService:
             raise RouteWeftError(f'routing region not enabled: {region}')
         if self.config.get('profile') != 'driving':
             raise RouteWeftError('unsupported routing profile')
+        self.policy = self.config.get('invalid_restrictions', 'reject')
+        if self.policy not in ('reject', 'block_ways'):
+            raise RouteWeftError('invalid restriction policy; use reject or block_ways')
+        self.review = self.config.get('restriction_review')
+        if self.policy == 'block_ways':
+            if (not isinstance(self.review, dict) or not isinstance(self.review.get('reason'), str)
+                    or not self.review['reason'].strip()
+                    or not isinstance(self.review.get('blocked_way_ids'), list)
+                    or any(type(v) is not int for v in self.review['blocked_way_ids'])
+                    or len(set(self.review['blocked_way_ids'])) != len(self.review['blocked_way_ids'])
+                    or not isinstance(self.review.get('diagnostics'), list)
+                    or any(not isinstance(d, dict) or type(d.get('relation_id')) is not int
+                           or not isinstance(d.get('code'), str) for d in self.review['diagnostics'])):
+                raise RouteWeftError('block_ways requires an explicit complete restriction_review')
+            if not self.config.get('source_sha256'):
+                raise RouteWeftError('block_ways requires a reviewed source SHA-256')
         for key in ('build_timeout_s', 'verify_timeout_s', 'query_timeout_s'):
             value = self.config.get(key)
             if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
                 raise RouteWeftError(f'invalid {key}')
+        timeout = self.config.get('preflight_timeout_s', self.config['build_timeout_s'])
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout <= 0:
+            raise RouteWeftError('invalid preflight_timeout_s')
         queries = self.config.get('smoke', [])
         if not isinstance(queries, list) or any(not isinstance(q, dict) for q in queries):
             raise RouteWeftError('smoke must be a list of query objects')
@@ -132,7 +152,8 @@ class RoutingService:
                 raise RouteWeftError('invalid smoke coordinates')
             arguments = ['--dataset', str(dataset), '--json',
                          '--coordinate' if command == 'nearest' else '--coordinates', coordinates]
-            for key, value in self.config.get('query_budget', {}).items():
+            budget = {**self.config.get('query_budget', {}), **query.get('query_budget', {})}
+            for key, value in budget.items():
                 if key not in ('radius-m', 'max-work', 'max-states', 'max-queue', 'timeout-ms'):
                     raise RouteWeftError('unknown query budget')
                 arguments += ['--' + key, str(value)]
@@ -191,6 +212,8 @@ class RoutingService:
         ready = json.loads(self.ready.read_text())
         if ready.get('schema') != 1 or ready.get('region') != self.region:
             raise RouteWeftError('ready schema/region mismatch')
+        if ready.get('invalid_restrictions') != self.policy:
+            raise RouteWeftError('ready restriction policy mismatch; rebuild required')
         dataset_id = ready.get('dataset_id', '')
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}', dataset_id):
             raise RouteWeftError('invalid ready dataset id')
@@ -204,9 +227,19 @@ class RoutingService:
         manifest = self.verify_dataset(dataset, ready['source_sha256'])
         if manifest['dataset_id'] != dataset_id:
             raise RouteWeftError('ready dataset identity mismatch')
+        receipt = json.loads((dataset / 'routing-build.json').read_text())
+        if receipt.get('invalid_restrictions') != self.policy:
+            raise RouteWeftError('ready restriction policy mismatch')
+        build_report(receipt.get('build_result', {}), ready['source_sha256'], self.policy,
+                     manifest=manifest, review=self.review)
+        if receipt.get('preflight', {}).get('report') != receipt['build_result']['report']:
+            raise RouteWeftError('ready preflight/build report mismatch')
         return dataset, manifest, ready
 
-    def build(self, input_path: Path):
+    def preflight(self, input_path: Path):
+        return self.build(input_path, preflight_only=True)
+
+    def build(self, input_path: Path, *, preflight_only=False):
         with self.locked():
             source = input_path if input_path.is_absolute() else self.workdir / input_path
             if source.is_symlink() or not source.is_file():
@@ -227,12 +260,26 @@ class RoutingService:
                     raise RouteWeftError('input changed during freeze')
                 from huavd_map_build.production.south.adapter.process.routeweft_input import provenance
                 input_provenance = provenance(frozen)
+                version = capabilities(self.tool)
+                arguments = ['--input', str(frozen), '--profile', 'driving',
+                             '--invalid-restrictions', self.policy, '--json']
+                preflight = self.tool.call('preflight', arguments, self.config.get(
+                    'preflight_timeout_s', self.config['build_timeout_s']))
+                report = build_report(preflight, before, self.policy, review=self.review)
+                write_json(attempt / 'preflight.json', preflight)
+                if sha256(frozen) != before:
+                    raise RouteWeftError('frozen input changed during preflight')
+                if preflight_only:
+                    return {'schema': 1, 'tool': self.tool.identity, 'capabilities': version,
+                            'input_provenance': input_provenance, 'attempt': str(attempt), **preflight}
                 dataset = attempt / 'dataset'  # CLI requires an absent output directory.
-                built = self.tool.call('build', ['--input', str(frozen), '--profile', 'driving',
-                                                '--output', str(dataset)], self.config['build_timeout_s'])
+                built = self.tool.call('build', [*arguments, '--output', str(dataset)], self.config['build_timeout_s'])
+                write_json(attempt / 'build-result.json', built)
                 manifest = self.verify_dataset(dataset, before)
                 if built.get('manifest') != manifest:
                     raise RouteWeftError('build/verify manifest mismatch')
+                if build_report(built, before, self.policy, manifest=manifest, review=self.review) != report:
+                    raise RouteWeftError('preflight/build report mismatch')
                 inspect = self.tool.call('inspect', ['--dataset', str(dataset), '--json'], self.config['verify_timeout_s'])
                 if inspect.get('manifest') != manifest:
                     raise RouteWeftError('inspect manifest mismatch')
@@ -243,6 +290,8 @@ class RoutingService:
                          'source_bytes': frozen.stat().st_size, 'source_snapshot': manifest.get('source_snapshot'),
                          'manifest': manifest, 'inspect': inspect, 'elapsed_s': time.monotonic() - started}
                 build['input_provenance'] = input_provenance
+                build.update({'capabilities': version, 'invalid_restrictions': self.policy,
+                              'restriction_review': self.review, 'preflight': preflight, 'build_result': built})
                 # Receipts live inside immutable version, so failed rebuilds cannot invalidate old ready.
                 write_json(dataset / 'routing-build.json', build)
                 write_json(dataset / 'routing-smoke.json', smoke)
@@ -256,13 +305,22 @@ class RoutingService:
                     if self.verify_dataset(destination, before) != manifest:
                         raise RouteWeftError('immutable manifest collision')
                     self.smoke(destination, manifest)
+                    existing = json.loads((destination / 'routing-build.json').read_text())
+                    if (existing.get('invalid_restrictions') != self.policy
+                            or existing.get('build_result', {}).get('report') != report):
+                        raise RouteWeftError('immutable restriction audit collision')
                 else:
                     os.rename(dataset, destination)
                 ready = {'schema': 1, 'dataset_id': manifest['dataset_id'], 'region': self.region,
                          'source_sha256': before, 'tool': self.tool.identity, 'config_sha256': self.config_sha256,
+                         'invalid_restrictions': self.policy,
                          'files': file_records(destination)}
                 write_json(self.ready, ready)
                 return ready
+            except RouteWeftError as error:
+                write_json(attempt / 'failure.json', {'error': str(error), 'response': error.response,
+                                                      'command': error.command, 'exit_code': error.exit_code})
+                raise
             finally:
                 write_json(attempt / 'process-log.json', getattr(self.tool, 'logs', []))
 
