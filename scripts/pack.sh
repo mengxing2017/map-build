@@ -27,6 +27,14 @@ for arg in "$@"; do
   esac
 done
 
+case "${ROLE:-both}" in
+  base|both|raster_bake|base_raster|both_raster)
+    exec make --no-print-directory -C "${REPO_ROOT}" pack \
+      WORKDIR="${WORKDIR}" REGION="${REGION}" YYYYMMDD="$(session_yyyymmdd "${SESSION}")" \
+      SESSION="${SESSION}" ROLE="${ROLE:-both}" FORMAT="${FORMAT}"
+    ;;
+esac
+
 require_cmd jq tar zip
 [[ -n "${SESSION}" ]] || die "${HUAVD_EXIT_INPUT}" "--session is required"
 validate_session "${SESSION}"

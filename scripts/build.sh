@@ -37,7 +37,7 @@ require_region "${REGION}"
 normalize_session_vars
 
 # Raster builds share the maintained Python/Make pipeline and its engine defaults.
-if [[ "${ROLE}" == raster_bake || "${ROLE}" == base_raster || "${ROLE}" == both_raster ]]; then
+if [[ "${ROLE}" == base || "${ROLE}" == both || "${ROLE}" == raster_bake || "${ROLE}" == base_raster || "${ROLE}" == both_raster ]]; then
   exec make --no-print-directory -C "${REPO_ROOT}" build \
     WORKDIR="${WORKDIR}" REGION="${REGION}" YYYYMMDD="${YYYYMMDD}" \
     SESSION="${SESSION}" ROLE="${ROLE}" INPUT="${INPUT}" GLYPH="${GLYPH}" \

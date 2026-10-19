@@ -141,6 +141,9 @@ else
 	fi; \
 	WORKDIR="$(WORKDIR)" GLYPH="$(GLYPH)" FORCE_BUILDING="$(FORCE_BUILDING)" ./scripts/build.sh --input="$$input" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ROLE)" --glyph="$(GLYPH)" $(if $(filter 1,$(FORCE)),--force,) $(if $(filter 1,$(FORCE_BUILDING)),--force-building,)
 endif
+ifneq ($(filter $(ROLE),base both raster_bake base_raster both_raster),)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing build $(ROUTING_ARGS) --input="$(abspath $(WORKDIR))/staging/$(SESSION)/source.osm.pbf"
+endif
 
 raster-estimate:
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build raster-plan \
@@ -207,7 +210,7 @@ verify-dem:
 
 pack:
 ifneq ($(filter $(ROLE),base building both raster_bake base_raster both_raster),)
-	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact pack --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)" --workdir="$(WORKDIR)"
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact pack --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)" --workdir="$(WORKDIR)" $(if $(ROUTING_CONFIG),--routing-config="$(ROUTING_CONFIG)",)
 else
 	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
 endif
@@ -297,16 +300,19 @@ release-import: build pack verify prepare-import
 release-import-all: build pack verify prepare-import-all
 
 # Independent routing audit pipeline. No map roles or renderer prerequisites.
-ROUTING ?= 0
+ROUTING ?= 1
 ROUTEWEFT_SOURCE ?=
 ROUTING_CONFIG ?=
 ROUTING_ARGS = --workdir="$(WORKDIR)" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(ROUTING_CONFIG),--config="$(ROUTING_CONFIG)",)
-.PHONY: setup-routeweft doctor-routeweft build-routing verify-routing smoke-routing pack-routing
+.PHONY: setup-routeweft doctor-routeweft preflight-routing build-routing verify-routing smoke-routing pack-routing
 setup-routeweft:
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing setup --workdir="$(WORKDIR)" $(if $(ROUTEWEFT_SOURCE),--source="$(ROUTEWEFT_SOURCE)",)
 
 doctor-routeweft:
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing doctor --workdir="$(WORKDIR)" $(if $(INPUT),--input="$(INPUT)",)
+
+preflight-routing:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing preflight $(ROUTING_ARGS) $(if $(INPUT),--input="$(INPUT)",)
 
 build-routing:
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing build $(ROUTING_ARGS) $(if $(INPUT),--input="$(INPUT)",)
@@ -320,10 +326,4 @@ smoke-routing:
 pack-routing:
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing pack $(ROUTING_ARGS) --format="$(FORMAT)"
 
-# Combined installation is not defined yet; fail explicitly rather than omit routing.
-ifeq ($(ROUTING),1)
-release release-tar release-zip release-import release-import-all: routing-joint-protocol-required
-.PHONY: routing-joint-protocol-required
-routing-joint-protocol-required:
-	$(error ROUTING=1 joint release requires the phase-2 consumer protocol; use independent routing targets)
-endif
+# Standard map bundles require routing; ROUTING is retained for doctor compatibility.
