@@ -25,8 +25,14 @@
       "version": "latest",
       "outputs": ["out", "dev"]
     },
-    "glslang":                     "latest",
-    "spirv-tools":                 "latest",
+    "glslang": {
+      "version": "latest",
+      "outputs": ["bin", "out", "dev"]
+    },
+    "spirv-tools": {
+      "version": "latest",
+      "outputs": ["out", "lib", "dev"]
+    },
     "vulkan-loader": {
       "version": "latest",
       "outputs": ["out", "dev"]
