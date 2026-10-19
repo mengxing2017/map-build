@@ -27,12 +27,12 @@ class NativeToolsTest(unittest.TestCase):
         (path / "licenses").mkdir()
         return binary
 
-    def test_workdir_controls_default_installation_location(self):
+    def test_project_controls_default_installation_location(self):
         with patch.dict(os.environ, {'WORKDIR': '/data/map/guangxi'}, clear=True):
-            self.assertEqual(Path('/data/map/guangxi/tools/maplibre-native'), tools.tools_root())
+            self.assertEqual(Path(__file__).resolve().parents[2] / 'tools/maplibre-native', tools.tools_root())
         with patch.dict(os.environ, {'WORKDIR': '/data/map/guangxi',
                                     'HUAVD_MAP_BUILD_HOME': '/data/other'}, clear=True):
-            self.assertEqual(Path('/data/map/guangxi/tools/maplibre-native'), tools.tools_root())
+            self.assertEqual(Path(__file__).resolve().parents[2] / 'tools/maplibre-native', tools.tools_root())
         with patch.dict(os.environ, {'WORKDIR': '/data/map/guangxi',
                                     'HUAVD_NATIVE_TOOLS': '/data/shared/native'}, clear=True):
             self.assertEqual(Path('/data/shared/native'), tools.tools_root())
@@ -49,7 +49,7 @@ class NativeToolsTest(unittest.TestCase):
                 self.installation(binary.parent.parent)
                 (tools_directory / 'bin').mkdir()
                 (tools_directory / 'bin/huavd-native-render').symlink_to(binary)
-            with patch.dict(os.environ, {'WORKDIR': temporary}, clear=True), \
+            with patch.dict(os.environ, {'WORKDIR': temporary, 'HUAVD_TOOLS_DIR': str(Path(temporary) / 'tools')}, clear=True), \
                     patch.object(tools, 'resolve_renderer', side_effect=ValueError('missing')), \
                     patch.object(tools.subprocess, 'run', side_effect=build), \
                     patch.object(tools, 'activate', return_value=binary) as activate:
@@ -58,7 +58,7 @@ class NativeToolsTest(unittest.TestCase):
 
     def test_source_build_failure_is_propagated(self):
         with tempfile.TemporaryDirectory() as temporary:
-            with patch.dict(os.environ, {'WORKDIR': temporary}, clear=True), \
+            with patch.dict(os.environ, {'WORKDIR': temporary, 'HUAVD_TOOLS_DIR': str(Path(temporary) / 'tools')}, clear=True), \
                     patch.object(tools, 'resolve_renderer', side_effect=ValueError('missing')), \
                     patch.object(tools.subprocess, 'run',
                                  side_effect=subprocess.CalledProcessError(1, 'source-build')):
