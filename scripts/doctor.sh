@@ -457,6 +457,16 @@ check_multilingual_config() {
 
 check_multilingual_config
 
+if [[ "${ROUTING:-0}" == 1 ]]; then
+  if PYTHONPATH="${REPO_ROOT}/backend/src" "${PYTHON:-python3}" -m huavd_map_build \
+      routing doctor --workdir="${WORKDIR}"; then
+    printf 'OK   %-12s %s\n' "routeweft" "identity and build/verify probe"
+  else
+    printf 'FAIL %-12s %s\n' "routeweft" "identity or contract probe failed"
+    FAILURES=$((FAILURES + 1))
+  fi
+fi
+
 if ((FAILURES > 0)); then
   printf 'doctor: FAIL (%d config error(s), %d missing item warning(s))\n' "${FAILURES}" "${WARNINGS}"
   exit "${HUAVD_EXIT_VERIFY}"

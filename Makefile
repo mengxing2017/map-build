@@ -295,3 +295,35 @@ prepare-import-release-all: prepare-import-all
 release-import: build pack verify prepare-import
 
 release-import-all: build pack verify prepare-import-all
+
+# Independent routing audit pipeline. No map roles or renderer prerequisites.
+ROUTING ?= 0
+ROUTEWEFT_SOURCE ?=
+ROUTING_CONFIG ?=
+ROUTING_ARGS = --workdir="$(WORKDIR)" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(ROUTING_CONFIG),--config="$(ROUTING_CONFIG)",)
+.PHONY: setup-routeweft doctor-routeweft build-routing verify-routing smoke-routing pack-routing
+setup-routeweft:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing setup --workdir="$(WORKDIR)" $(if $(ROUTEWEFT_SOURCE),--source="$(ROUTEWEFT_SOURCE)",)
+
+doctor-routeweft:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing doctor --workdir="$(WORKDIR)" $(if $(INPUT),--input="$(INPUT)",)
+
+build-routing:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing build $(ROUTING_ARGS) $(if $(INPUT),--input="$(INPUT)",)
+
+verify-routing:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing verify $(ROUTING_ARGS)
+
+smoke-routing:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing smoke $(ROUTING_ARGS)
+
+pack-routing:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing pack $(ROUTING_ARGS) --format="$(FORMAT)"
+
+# Combined installation is not defined yet; fail explicitly rather than omit routing.
+ifeq ($(ROUTING),1)
+release release-tar release-zip release-import release-import-all: routing-joint-protocol-required
+.PHONY: routing-joint-protocol-required
+routing-joint-protocol-required:
+	$(error ROUTING=1 joint release requires the phase-2 consumer protocol; use independent routing targets)
+endif
