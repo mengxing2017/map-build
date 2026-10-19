@@ -193,6 +193,7 @@ class VectorQualityGateTest(unittest.TestCase):
                     "url": "https://download.geofabrik.de/asia/china/guangxi-latest.osm.pbf",
                     "downloaded_at": evidence.downloaded_at,
                     "size_bytes": evidence.size_bytes, "md5": evidence.md5,
+                    "sha256": evidence.sha256,
                     "osm_timestamp": None,
                 }, "output": {
                     "path": f"outputs/{stem}.pmtiles",

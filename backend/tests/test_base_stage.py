@@ -81,7 +81,7 @@ class RecordingStyleQuality:
 
 
 class FileSystemBuildSourceWorkspaceTest(unittest.TestCase):
-    def test_links_manual_input_into_canonical_session_staging(self) -> None:
+    def test_freezes_manual_input_into_canonical_session_staging(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "manual/custom.osm.pbf"
@@ -91,8 +91,10 @@ class FileSystemBuildSourceWorkspaceTest(unittest.TestCase):
                 str(source), directory, "china-guangxi-20261003"
             )
             linked = Path(target)
-            self.assertTrue(linked.is_symlink())
-            self.assertEqual(source.resolve(), linked.resolve())
+            self.assertFalse(linked.is_symlink())
+            self.assertEqual(b"pbf", linked.read_bytes())
+            source.write_bytes(b"updated")
+            self.assertEqual(b"pbf", linked.read_bytes())
 
     def test_rejects_missing_input_before_creating_staging(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
