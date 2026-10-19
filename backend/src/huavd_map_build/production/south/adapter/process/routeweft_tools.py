@@ -6,11 +6,26 @@ import platform
 import shutil
 import subprocess
 import tempfile
+import tomllib
 from datetime import datetime, timezone
 
 from huavd_map_build.production.south.adapter.process.routeweft import RouteWeftProcess, sha256
 from huavd_map_build.production.south.port.routeweft import RouteWeftError
 from huavd_map_build.production.south.adapter.process.routeweft_contract import capabilities, build_report
+
+
+def ensure_rust_toolchain(source: Path):
+    if shutil.which('rustup') is None:
+        raise RouteWeftError('rustup is required to install the locked RouteWeft toolchain; '
+                             'run setup inside devbox shell (devbox provides rustup)')
+    specification = tomllib.loads((source / 'rust-toolchain.toml').read_text())['toolchain']
+    channel = specification['channel']
+    installed = subprocess.check_output(['rustup', 'toolchain', 'list'], text=True)
+    if not any(line.split()[0] == channel or line.split()[0].startswith(channel + '-')
+               for line in installed.splitlines() if line.split()):
+        subprocess.run(['rustup', 'toolchain', 'install', channel,
+                        '--profile', specification.get('profile', 'minimal')], check=True)
+    return channel
 
 
 def setup(root: Path, workdir: Path, source: Path | None):
@@ -28,9 +43,11 @@ def setup(root: Path, workdir: Path, source: Path | None):
         return subprocess.check_output(['git', '-C', str(source), *args], text=True).strip()
     if git('rev-parse', 'HEAD') != lock['commit'] or git('status', '--porcelain', '--untracked-files=normal'):
         raise RouteWeftError('setup requires a clean checkout of the locked commit')
+    channel = ensure_rust_toolchain(source)
     target = workdir.resolve() / 'tools/routeweft' / lock['commit']
     target.mkdir(parents=True, exist_ok=True)
-    subprocess.run(lock['build'] + ['--target-dir', str(target / 'target')], cwd=source, check=True)
+    subprocess.run(['rustup', 'run', channel, *lock['build'],
+                    '--target-dir', str(target / 'target')], cwd=source, check=True)
     binary = target / 'routeweft'
     temporary = target / 'routeweft.new'
     shutil.copyfile(target / 'target/release/routeweft', temporary)
@@ -39,7 +56,8 @@ def setup(root: Path, workdir: Path, source: Path | None):
     os.replace(temporary, binary)
     receipt = {'schema': 1, 'commit': lock['commit'], 'binary_sha256': sha256(binary),
                'platform': platform.platform(), 'cargo_lock_sha256': sha256(source / 'backend/Cargo.lock'),
-               'toolchain': subprocess.check_output(['rustc', '--version'], cwd=source, text=True).strip(),
+               'toolchain': subprocess.check_output(['rustup', 'run', channel, 'rustc', '--version'],
+                                                  cwd=source, text=True).strip(),
                'built_at': datetime.now(timezone.utc).isoformat()}
     receipt_tmp = target / 'receipt.json.new'
     receipt_tmp.write_text(json.dumps(receipt, indent=2, sort_keys=True))
@@ -56,7 +74,12 @@ def tool(root: Path, workdir: Path):
     if expected:
         return RouteWeftProcess(binary, expected)
     if not receipt_path.is_file():
-        raise RouteWeftError('provide ROUTEWEFT_SHA256 or a build receipt')
+        raise RouteWeftError(
+            f'RouteWeft installation receipt not found: {receipt_path}. '
+            f'Run make setup-routeweft WORKDIR="{workdir.resolve()}" '
+            '(use the same actual WORKDIR as build/release), then retry. '
+            'For an explicitly supplied ROUTEWEFT_BIN, provide its trusted '
+            'ROUTEWEFT_SHA256 or ROUTEWEFT_RECEIPT.')
     receipt = json.loads(receipt_path.read_text())
     if receipt.get('schema') != 1 or receipt.get('commit') != lock['commit']:
         raise RouteWeftError('receipt does not match tool lock')
