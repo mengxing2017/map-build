@@ -26,12 +26,11 @@ unset SESSION
 ## 工具与输入预检
 
 ```bash
-# 首次准备地图工具、Python 依赖和字体等资源
+# 首次准备地图工具、Python 依赖、字体、RouteWeft 及其锁定 Rust 工具链
 make setup
 make python-doctor python-catalog-validate
 
-# 首次安装锁定的路网工具；此步骤可能下载源码和 Rust 依赖
-make setup-routeweft
+# setup 已安装路网工具；需要单独重装时才使用 make setup-routeweft
 # 不传 INPUT，使用内置微型数据检查工具合约
 make doctor-routeweft INPUT=
 
@@ -39,7 +38,7 @@ make doctor-routeweft INPUT=
 make preflight-routing
 ```
 
-已有干净的锁定 RouteWeft 源码时，可用 `make setup-routeweft ROUTEWEFT_SOURCE=/absolute/path/to/routeweft`。已有受信二进制可设置 `ROUTEWEFT_BIN` 和 `ROUTEWEFT_SHA256`，详见 [工具准备](../operations/routing.md#工具准备)。普通 build 不会自动下载安装工具。preflight 会实际建图，开销接近路网构建；通过预检仍不替代构建后的查询质量门。
+统一 setup 会自动安装路网工具及锁定 Rust 工具链，可能下载源码和依赖；需在 devbox 环境执行。已有干净的锁定 RouteWeft 源码时，可用 `make setup-routeweft ROUTEWEFT_SOURCE=/absolute/path/to/routeweft`。已有受信二进制可设置 `ROUTEWEFT_BIN` 和 `ROUTEWEFT_SHA256`，详见 [工具准备](../operations/routing.md#工具准备)。普通 build 不会自动下载安装工具。preflight 会实际建图，开销接近路网构建；通过预检仍不替代构建后的查询质量门。
 
 图片构建还需要可用的 Native 渲染器：
 

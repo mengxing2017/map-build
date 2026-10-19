@@ -34,12 +34,11 @@ unset SESSION
 路网使用内置驾车参数、容量和超时预算，默认严格拒绝无效转向限制。构建后从实际路网中自动选取道路，检查 nearest 和正向 route；不要求用户填写查询坐标或人工 NoRoute 案例。自动检查只验证基本查询能力，不能替代覆盖范围和导航效果验收。
 
 ```bash
-# 首次准备地图工具、Python 依赖和字体等资源
+# 首次准备地图工具、Python 依赖、字体、RouteWeft 及其锁定 Rust 工具链
 make setup
 make python-doctor python-catalog-validate
 
-# 首次安装锁定的路网工具；此步骤可能下载源码和 Rust 依赖
-make setup-routeweft
+# setup 已安装路网工具；需要单独重装时才使用 make setup-routeweft
 # 不传 INPUT，使用内置微型数据检查工具合约
 make doctor-routeweft INPUT=
 
@@ -47,7 +46,7 @@ make doctor-routeweft INPUT=
 make preflight-routing
 ```
 
-已有干净的锁定 RouteWeft 源码时，可用 `make setup-routeweft ROUTEWEFT_SOURCE=/absolute/path/to/routeweft`。已有受信二进制可设置 `ROUTEWEFT_BIN` 和 `ROUTEWEFT_SHA256`，详见 [工具准备](../operations/routing.md#工具准备)。普通 build 不会自动下载安装工具。preflight 会实际建图，开销接近路网构建；通过预检仍不替代构建后的查询质量门。
+统一 setup 会自动安装路网工具及锁定 Rust 工具链，可能下载源码和依赖；需在 devbox 环境执行。已有干净的锁定 RouteWeft 源码时，可用 `make setup-routeweft ROUTEWEFT_SOURCE=/absolute/path/to/routeweft`。已有受信二进制可设置 `ROUTEWEFT_BIN` 和 `ROUTEWEFT_SHA256`，详见 [工具准备](../operations/routing.md#工具准备)。普通 build 不会自动下载安装工具。preflight 会实际建图，开销接近路网构建；通过预检仍不替代构建后的查询质量门。
 
 RouteWeft 默认严格拒绝无效限制关系；使用保守 `block_ways` 必须有固定源哈希与完整审核集合。它会减少道路覆盖和可达性，不能在严格失败后自动启用。提供的广西省域 PBF 需单独完成省域容量与限制关系审核，不能套用南宁城市夹具；小于 512 MiB 也不代表支持整个省。
 
