@@ -25,11 +25,13 @@ class BundleRequest:
     role: str
     workdir: str
     format: str = "both"
+    routing_config: str | None = None
 
 
 class BundleService:
-    def __init__(self, viewport: PmtilesViewportReader | None = None) -> None:
+    def __init__(self, viewport: PmtilesViewportReader | None = None, routing_factory=None) -> None:
         self._viewport = viewport or PmtilesViewportReader()
+        self._routing_factory = routing_factory or self._routing_service
 
     def run(self, request: BundleRequest) -> dict[str, object]:
         if request.format not in {"tar", "zip", "both"}:
@@ -75,6 +77,8 @@ class BundleService:
             json.dumps(install, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        if Role.BASE in roles:
+            self._include_routing(request, package, included)
         self._write_manifests(package)
         archives = self._archives(outputs, package, request.session.value, request.format)
         metrics = {
@@ -95,6 +99,45 @@ class BundleService:
         metrics_path.write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         self._write_sidecar(metrics_path)
         return {**metrics, "package_directory": str(package)}
+
+    @staticmethod
+    def _routing_service(request):
+        from huavd_map_build.bootstrap import repository_root
+        from huavd_map_build.production.north.local.routing import RoutingService
+        from huavd_map_build.production.south.adapter.process.routeweft_tools import tool
+        root = repository_root()
+        return RoutingService(tool(root, Path(request.workdir)), root, Path(request.workdir),
+                              request.region.value, request.build_date.value, request.session.value,
+                              Path(request.routing_config) if request.routing_config else None)
+
+    def _include_routing(self, request, package, included):
+        from huavd_map_build.production.north.local.routing import file_records, write_json
+        service = self._routing_factory(request)
+        with service.locked():
+            dataset, manifest, ready = service.current()
+            expected = ready['source_sha256']
+            for _, _, map_manifest in included:
+                if map_manifest.get('source', {}).get('sha256') != expected:
+                    raise ValueError("map/routing source SHA-256 mismatch; rebuild both from the same PBF")
+            destination = package / 'routing'
+            shutil.copytree(dataset, destination)
+            if file_records(destination) != ready['files']:
+                raise ValueError("routing dataset changed while packaging")
+            verified = service.verify_dataset(destination, expected)
+            service.smoke(destination, verified)
+            write_json(destination / 'attribution.json', {
+                'source': 'OpenStreetMap contributors', 'license': 'ODbL-1.0',
+                'license_url': 'https://opendatacommons.org/licenses/odbl/1.0/',
+                'attribution': manifest['attribution']})
+            write_json(package / 'package.json', {
+                'schema_version': 'huavd-map-package/v1', 'session': request.session.value,
+                'region': request.region.value, 'source_sha256': expected,
+                'map_install': 'install.json',
+                'required_capabilities': ['offline-maps', 'routeweft-dataset-v1'],
+                'routing': {'required': True, 'directory': 'routing',
+                            'dataset_id': manifest['dataset_id'], 'format': manifest['format'],
+                            'profile': manifest['profile'], 'invalid_restrictions': service.policy,
+                            'restriction_review': service.review, 'files': file_records(destination)}})
 
     def _offline_map(self, role: Role, paths: ArtifactPaths, manifest: dict) -> dict:
         record = manifest.get("huavd_record", {})
