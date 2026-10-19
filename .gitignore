@@ -16,3 +16,10 @@ target/
 cache
 config/derived/catalog.json
 report
+/tools/bin/
+/tools/build/
+/tools/native-build/
+/tools/maplibre-native/
+/tools/routeweft/
+/tools/lib/
+/tools/share/
