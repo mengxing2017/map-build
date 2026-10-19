@@ -29,9 +29,15 @@ def ensure_rust_toolchain(source: Path):
     return channel
 
 
+def installation_target(root: Path, commit: str) -> Path:
+    """Tool installations belong to the project, independently of map workspaces."""
+    base = Path(os.environ.get('HUAVD_TOOLS_DIR', str(root / 'tools'))).expanduser().resolve()
+    return Path(os.environ.get('ROUTEWEFT_TOOLS', str(base / 'routeweft'))).expanduser().resolve() / commit
+
+
 def setup(root: Path, workdir: Path, source: Path | None):
     lock = json.loads((root / 'config/routeweft.lock.json').read_text())
-    target = workdir.resolve() / 'tools/routeweft' / lock['commit']
+    target = installation_target(root, lock['commit'])
     receipt_path = target / 'receipt.json'
     if receipt_path.exists():
         try:
@@ -43,7 +49,7 @@ def setup(root: Path, workdir: Path, source: Path | None):
             print(f'RouteWeft: reusing verified installation {target}', file=sys.stderr)
             return receipt
     if source is None:
-        cache = workdir.resolve() / 'tools/routeweft/sources'
+        cache = target.parent / 'sources'
         cache.mkdir(parents=True, exist_ok=True)
         source = Path(tempfile.mkdtemp(prefix=lock['commit'] + '-', dir=cache))
         subprocess.run(['git', 'init', str(source)], check=True)
@@ -78,7 +84,7 @@ def setup(root: Path, workdir: Path, source: Path | None):
 
 def tool(root: Path, workdir: Path):
     lock = json.loads((root / 'config/routeweft.lock.json').read_text())
-    target = workdir.resolve() / 'tools/routeweft' / lock['commit']
+    target = installation_target(root, lock['commit'])
     binary = Path(os.environ.get('ROUTEWEFT_BIN', str(target / 'routeweft')))
     expected = os.environ.get('ROUTEWEFT_SHA256')
     receipt_path = Path(os.environ.get('ROUTEWEFT_RECEIPT', str(target / 'receipt.json')))
@@ -87,8 +93,8 @@ def tool(root: Path, workdir: Path):
     if not receipt_path.is_file():
         raise RouteWeftError(
             f'RouteWeft installation receipt not found: {receipt_path}. '
-            f'Run make setup-routeweft WORKDIR="{workdir.resolve()}" '
-            '(use the same actual WORKDIR as build/release), then retry. '
+            'Run make setup-routeweft in the project, then retry. Tool roots can be overridden through '
+            'HUAVD_TOOLS_DIR or ROUTEWEFT_TOOLS. '
             'For an explicitly supplied ROUTEWEFT_BIN, provide its trusted '
             'ROUTEWEFT_SHA256 or ROUTEWEFT_RECEIPT.')
     process, _ = receipt_process(binary, receipt_path, lock)
