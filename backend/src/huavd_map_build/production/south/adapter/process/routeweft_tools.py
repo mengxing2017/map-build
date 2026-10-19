@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 from huavd_map_build.production.south.adapter.process.routeweft import RouteWeftProcess, sha256
 from huavd_map_build.production.south.port.routeweft import RouteWeftError
+from huavd_map_build.production.south.adapter.process.routeweft_contract import capabilities, build_report
 
 
 def setup(root: Path, workdir: Path, source: Path | None):
@@ -67,18 +68,25 @@ def tool(root: Path, workdir: Path):
 
 def doctor(process, probe: Path | None = None):
     # A caller-supplied tiny PBF is explicit: no downloads and no renderer dependencies.
+    version = capabilities(process)
     with tempfile.TemporaryDirectory(prefix='routeweft-probe-') as directory:
         if probe is None:
             from huavd_map_build.production.south.adapter.process.routeweft_probe import generate
             probe = Path(directory) / 'probe.osm.pbf'
             generate(probe)
         output = Path(directory) / 'dataset'
+        preflight = process.call('preflight', ['--input', str(probe.resolve()), '--profile', 'driving',
+                                             '--invalid-restrictions', 'reject', '--json'], 60)
+        report = build_report(preflight, sha256(probe), 'reject')
         built = process.call('build', ['--input', str(probe.resolve()), '--profile', 'driving',
-                                      '--output', str(output)], 60)
+                                      '--invalid-restrictions', 'reject', '--output', str(output)], 60)
         verified = process.call('verify', ['--dataset', str(output), '--json'], 30)
         manifest = verified.get('manifest', {})
         if (verified.get('verified') is not True or built.get('manifest') != manifest
                 or manifest.get('format') != 1 or manifest.get('profile') != 'driving-v1'
                 or manifest.get('source_sha256') != sha256(probe)):
             raise RouteWeftError('RouteWeft contract probe failed')
-        return {'schema': 1, 'tool': process.identity, 'probe': verified}
+        if build_report(built, sha256(probe), 'reject', manifest=manifest) != report:
+            raise RouteWeftError('contract probe preflight/build mismatch')
+        return {'schema': 1, 'tool': process.identity, 'capabilities': version,
+                'preflight': preflight, 'build': built, 'probe': verified}
