@@ -206,6 +206,8 @@ make release WORKDIR=/home/dev/data/map REGION=china/anhui YYYYMMDD=20260818 INP
 
 ### 自动安装行为
 
+Native 未安装时，setup 会自动拉取 `config/native-renderer.lock.json` 中的 wrapper/core 锁定提交及子模块，编译并自检后启用。已有受信安装或运行包优先复用，无需手填源码路径。首次编译可能耗时较长；源码与构建缓存保存在实际工作目录的 `tools/native-build/`。
+
 `devbox run setup` 会优先尝试预编译二进制或系统二进制包，失败后再回退到源码编译。tippecanoe 官方 Releases 当前不提供 Linux 预编译资产，默认会走源码编译；如果 `/tmp/tippecanoe.tar.gz` 已存在，setup 会直接复用，也可通过 `TIPPECANOE_SOURCE_TARBALL` 指定其他本地源码包。如果有内部制品库，可通过 `TIPPECANOE_BINARY_URL` 指定二进制包。默认版本由 `scripts/setup-tools.sh` 维护，可通过环境变量覆盖：
 
 ```bash
