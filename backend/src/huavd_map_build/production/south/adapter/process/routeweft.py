@@ -45,11 +45,18 @@ class RouteWeftProcess:
                                    start_new_session=True)
         buffers = {'stdout': bytearray(), 'stderr': bytearray()}
         failure = None
+        sampled_peak_rss_kib = None
         with selectors.DefaultSelector() as selector:
             for name, stream in [('stdout', process.stdout), ('stderr', process.stderr)]:
                 selector.register(stream, selectors.EVENT_READ, name)
             try:
                 while selector.get_map() or process.poll() is None:
+                    try:
+                        for line in Path(f'/proc/{process.pid}/status').read_text().splitlines():
+                            if line.startswith('VmHWM:'):
+                                sampled_peak_rss_kib = max(sampled_peak_rss_kib or 0, int(line.split()[1]))
+                    except (OSError, ValueError):
+                        pass  # Optional Linux sampling; process may already have exited.
                     remaining = timeout - (time.monotonic() - started)
                     if remaining <= 0:
                         raise RouteWeftError(f'{command}: outer timeout')
@@ -77,6 +84,7 @@ class RouteWeftProcess:
                 process.stderr.close()
                 self.logs.append({'command': command, 'exit_code': process.returncode,
                                   'elapsed_s': time.monotonic() - started, 'failure': failure,
+                                  'sampled_peak_rss_kib': sampled_peak_rss_kib,
                                   **{k: bytes(v).decode('utf-8', errors='replace')
                                      for k, v in buffers.items()}})
         try:
@@ -93,4 +101,5 @@ class RouteWeftProcess:
                 return value
         elif process.returncode == 0 and value.get('status') == 'ok':
             return value
-        raise RouteWeftError(f'{command}: exit/status mismatch or failure: {process.returncode}: {value}')
+        raise RouteWeftError(f'{command}: exit/status mismatch or failure: {process.returncode}: {value}',
+                             response=value, command=command, exit_code=process.returncode)

@@ -3,7 +3,11 @@ from typing import Protocol
 
 
 class RouteWeftError(RuntimeError):
-    pass
+    def __init__(self, message, *, response=None, command=None, exit_code=None):
+        super().__init__(message)
+        self.response = response
+        self.command = command
+        self.exit_code = exit_code
 
 
 class RouteWeftPort(Protocol):
