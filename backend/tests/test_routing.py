@@ -63,7 +63,8 @@ class FakeTool:
             assert not output.exists()
             self.outputs.append(output)
             output.mkdir()
-            (output / 'graph.json').write_text('{}')
+            write_json(output / 'graph.json', {'nodes': [{'lon': 0, 'lat': 0}, {'lon': 0.001, 'lat': 0}],
+                                               'edges': [{'from': 0, 'to': 1, 'distance_mm': 100000}]})
             manifest = {'dataset_id': 'fixture', 'format': 1, 'profile': 'driving-v1',
                         'source_sha256': sha256(Path(arguments[1])), 'diagnostics': {},
                         'nodes': 2, 'edges': 2, 'restrictions': 0,
@@ -165,10 +166,30 @@ class LifecycleTests(unittest.TestCase):
         self.assertFalse(self.service.ready.exists())
 
     def test_disabled_profile_session_rejected(self):
-        with self.assertRaises(RouteWeftError):
-            RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019')
+        default = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019')
+        self.assertTrue(default.automatic_smoke)
         with self.assertRaises(RouteWeftError):
             RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019', 'monaco-20261018', self.config)
+
+    def test_region_only_build_verify_and_package(self):
+        service = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019')
+        service.build(self.input)
+        result = service.verify(smoke=True)
+        self.assertEqual('graph-edge-v1', result['mode'])
+        self.assertEqual(['nearest', 'route'], [q['command'] for q in result['queries']])
+        self.assertEqual(2, len(RoutingDelivery(service).pack('both')))
+
+    def test_automatic_query_requires_a_usable_graph_edge(self):
+        dataset = self.work / 'empty-dataset'
+        dataset.mkdir()
+        write_json(dataset / 'graph.json', {'nodes': [], 'edges': []})
+        with self.assertRaisesRegex(RouteWeftError, 'no suitable edge'):
+            RoutingService._automatic_queries(dataset)
+
+    def test_region_only_rejects_unknown_map_region(self):
+        with self.assertRaises((ValueError, KeyError)) as caught:
+            RoutingService(self.tool, ROOT, self.work, 'not/a-configured-region', '20261019')
+        self.assertIn('region', str(caught.exception).lower())
 
     def test_preflight_never_publishes_and_build_retains_audit(self):
         result = self.service.preflight(self.input)
@@ -389,6 +410,11 @@ class RealCLITests(unittest.TestCase):
             service.build(input)
             service.verify(smoke=True)
             RoutingDelivery(service).pack('both')
+            # Production path: same REGION and PBF, no routing configuration.
+            automatic = RoutingService(process, ROOT, work / 'automatic', 'monaco', '20261019')
+            automatic.build(input)
+            self.assertEqual('graph-edge-v1', automatic.verify(smoke=True)['mode'])
+            RoutingDelivery(automatic).pack('both')
 
 
 @unittest.skipUnless(os.environ.get('ROUTEWEFT_TEST_BIN') and os.environ.get('ROUTEWEFT_TEST_NANNING_PBF'),
