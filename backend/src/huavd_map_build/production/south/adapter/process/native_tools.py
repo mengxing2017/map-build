@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 
@@ -18,7 +19,7 @@ from huavd_map_build.production.south.adapter.process.raster_native import (
 
 def tools_root() -> Path:
     return Path(os.environ.get("HUAVD_NATIVE_TOOLS", str(
-        Path(os.environ.get("HUAVD_MAP_BUILD_HOME", "/tmp/huavd-map-build"))
+        Path(os.environ.get("WORKDIR") or os.environ.get("HUAVD_MAP_BUILD_HOME", "/tmp/huavd-map-build"))
         / "tools/maplibre-native"
     ))).expanduser().resolve()
 
@@ -36,7 +37,7 @@ def resolve_renderer() -> str:
     installed = shutil.which("huavd-native-render")
     if installed:
         return str(Path(installed).resolve())
-    raise ValueError("Native renderer missing; run make setup (see Native tool source configuration)")
+    raise ValueError("Native renderer missing; run make setup to fetch locked sources and build automatically")
 
 
 def validate_installation(directory: Path) -> Path:
@@ -62,8 +63,9 @@ def validate_installation(directory: Path) -> Path:
             raise ValueError(f"Native source lock mismatch: {key}")
     if any(metadata.get(key) != value for key, value in recorded.items()):
         raise ValueError("Native build-info does not match executable")
-    subprocess.run([str(binary), "--self-test"], env=native_environment(),
-                   check=True, timeout=120)
+    progress = Path(__file__).resolve().parents[7] / "scripts/lib/native-progress.py"
+    subprocess.run([sys.executable, str(progress), "renderer-self-test", "timeout", "120",
+                    str(binary), "--self-test"], env=native_environment(), check=True)
     return binary
 
 
@@ -128,11 +130,23 @@ def setup() -> Path:
         binary = Path(resolve_renderer())
     except ValueError:
         candidates = sorted(root.glob("*/bin/huavd-native-render"))
+        if not candidates:
+            repository = Path(__file__).resolve().parents[7]
+            build_dir = root.parent / "native-build"
+            print(f"Native: no installation found; fetching locked sources and building in {build_dir}",
+                  file=sys.stderr, flush=True)
+            subprocess.run([
+                "bash", str(repository / "scripts/setup-native-renderer.sh"),
+                "--online", f"--build-dir={build_dir}", f"--prefix={root}",
+            ], check=True)
+            binary = root / "bin/huavd-native-render"
+            if not binary.is_file():
+                raise ValueError(f"Native source build did not publish an executable: {binary}")
+            return activate(binary.resolve().parent.parent, root)
         if len(candidates) != 1:
             raise ValueError(
-                "No unique Native installation. Maintainer: configure HUAVD_NATIVE_INSTALLATION "
-                "or HUAVD_NATIVE_PACKAGE + HUAVD_NATIVE_PACKAGE_SHA256 once, then run make setup. "
-                "No automatic source build or download was attempted."
+                f"No unique Native installation in {root}: found {len(candidates)} candidates. "
+                "Choose one with HUAVD_NATIVE_INSTALLATION, then rerun setup."
             ) from None
         binary = candidates[0]
     return activate(binary.parent.parent, root)
