@@ -1,0 +1,65 @@
+schema: 1
+# Explicit audit-only pilot; use ROUTING_CONFIG=backend/tests/fixtures/routing/nanning-audit.yaml.
+# This is the fixed urban bbox extract, not the whole Guangxi province.
+regions:
+  china/nanning:
+    enabled: true
+    profile: driving
+    source_sha256: e7eee17e89b65bdff18bdc1be45e59952a1a3774fc9845a9488e67968f31c4ba
+    max_input_bytes: 2097152
+    build_timeout_s: 600
+    preflight_timeout_s: 600
+    verify_timeout_s: 120
+    query_timeout_s: 30
+    invalid_restrictions: block_ways
+    restriction_review:
+      reason: >-
+        Audit-only fixed Nanning urban extract. Five malformed driving relations
+        lack via or from/to members. Exclude all eight affected ways, retain the
+        complete relation audit, and accept reduced coverage only for this pilot.
+      blocked_way_ids:
+        - 389190340
+        - 389194568
+        - 463383946
+        - 538394321
+        - 625702143
+        - 917246626
+        - 917246627
+        - 1014107014
+      diagnostics:
+        - {relation_id: 6843783, code: MissingVia}
+        - {relation_id: 6843784, code: MissingVia}
+        - {relation_id: 6843785, code: MissingVia}
+        - {relation_id: 8700340, code: MissingFromTo}
+        - {relation_id: 8700341, code: MissingFromTo}
+    diagnostic_max:
+      invalid_restrictions_blocked: 5
+      invalid_restriction_ways_blocked: 8
+    query_budget:
+      radius-m: 50
+      timeout-ms: 10000
+    smoke:
+      - command: nearest
+        coordinates: '108.32,22.82'
+        expect: ok
+      - command: route
+        coordinates: '108.32,22.82;108.33,22.82'
+        expect: ok
+        distance_m: [1800, 1950]
+        duration_s: [115, 135]
+      - command: route
+        coordinates: '108.2532541,22.7745994;108.2534996,22.7738817'
+        query_budget: {radius-m: 0.01}
+        expect: NoRoute
+      - command: route
+        coordinates: '108.33204270000002,22.865449050000002;108.3321354,22.8654055'
+        query_budget: {radius-m: 0.01}
+        expect: ok
+        distance_m: [1, 10000]
+        duration_s: [170, 176]
+      - command: route
+        coordinates: '108.2696973,22.83935075;108.26920825,22.839528100000003'
+        query_budget: {radius-m: 0.01}
+        expect: ok
+        distance_m: [1, 1000]
+        duration_s: [7, 8]
