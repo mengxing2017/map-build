@@ -173,12 +173,12 @@ class LifecycleTests(unittest.TestCase):
 
     def test_missing_tool_receipt_explains_installation_in_actual_workdir(self):
         from huavd_map_build.production.south.adapter.process.routeweft_tools import tool
-        with patch.dict(os.environ, {}, clear=True):
+        with patch.dict(os.environ, {'HUAVD_TOOLS_DIR': str(self.work / 'empty-project-tools')}, clear=True):
             with self.assertRaises(RouteWeftError) as caught:
                 tool(ROOT, self.work)
         message = str(caught.exception)
         self.assertIn('receipt not found:', message)
-        self.assertIn(f'make setup-routeweft WORKDIR="{self.work.resolve()}"', message)
+        self.assertIn('make setup-routeweft in the project', message)
 
     def test_region_only_build_verify_and_package(self):
         service = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019')

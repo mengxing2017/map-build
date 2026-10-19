@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from huavd_map_build.production.south.adapter.process.routeweft_tools import ensure_rust_toolchain, setup
+from huavd_map_build.production.south.adapter.process.routeweft_tools import ensure_rust_toolchain, setup, tool
 from huavd_map_build.production.south.adapter.process.routeweft import sha256
 from huavd_map_build.production.south.port.routeweft import RouteWeftError
 
@@ -15,7 +15,29 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class RouteWeftSetupTests(unittest.TestCase):
+    def test_new_map_workspace_reuses_shared_installation(self):
+        binary, _, receipt = self.cached_installation()
+        maps = self.root / 'new-map-workspace'
+        with patch.dict(os.environ, {'HUAVD_TOOLS_DIR': str(self.root / 'tools')}, clear=True), \
+                patch('huavd_map_build.production.south.adapter.process.routeweft_tools.doctor'), \
+                patch('subprocess.run') as run:
+            self.assertEqual(binary, tool(ROOT, maps).binary)
+            self.assertEqual(receipt, setup(ROOT, maps, None))
+            run.assert_not_called()
+            self.assertFalse(maps.exists())
+
+    def test_map_workspace_installation_is_ignored(self):
+        _, _, receipt = self.cached_installation()
+        maps = self.root / 'maps'
+        local = maps / 'tools/routeweft' / receipt['commit']
+        local.mkdir(parents=True)
+        (local / 'receipt.json').write_text(json.dumps(receipt))
+        with patch.dict(os.environ, {'HUAVD_TOOLS_DIR': str(self.root / 'tools')}, clear=True):
+            self.assertEqual(self.root / 'tools/routeweft' / receipt['commit'] / 'routeweft', tool(ROOT, maps).binary)
+
+
     def cached_installation(self):
+        os.environ['HUAVD_TOOLS_DIR'] = str(self.root / 'tools')
         lock = json.loads((ROOT / 'config/routeweft.lock.json').read_text())
         target = self.root / 'tools/routeweft' / lock['commit']
         target.mkdir(parents=True)
@@ -62,6 +84,9 @@ class RouteWeftSetupTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        environment = patch.dict(os.environ, {'HUAVD_TOOLS_DIR': str(self.root / 'tools')})
+        environment.start()
+        self.addCleanup(environment.stop)
         (self.root / 'rust-toolchain.toml').write_text(
             '[toolchain]\nchannel = "1.97.1"\nprofile = "minimal"\n')
 
