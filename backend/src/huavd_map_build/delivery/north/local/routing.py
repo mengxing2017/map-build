@@ -77,6 +77,11 @@ class RoutingDelivery:
                     'region': service.region, 'session': service.session,
                     'dataset_id': manifest['dataset_id'], 'format': manifest['format'],
                     'profile': manifest['profile'], 'source_sha256': ready['source_sha256'],
+                    'invalid_restrictions': service.policy,
+                    'restriction_review': service.review,
+                    'coverage_notice': ('Invalid restriction ways were conservatively excluded; '
+                                        'road coverage and reachability may be reduced.'
+                                        if service.policy == 'block_ways' else None),
                     'tool': ready['tool'], 'files': file_records(stage)})
                 outputs = []
                 for kind in (['tar', 'zip'] if format == 'both' else [format]):
