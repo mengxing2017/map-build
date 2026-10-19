@@ -13,9 +13,9 @@ BUILD_GLYPHS_CRATE="${BUILD_GLYPHS_CRATE:-versatiles_glyphs}"
 BUILD_GLYPHS_BINARY="${BUILD_GLYPHS_BINARY:-versatiles_glyphs}"
 BUILD_GLYPHS_VERSION="${BUILD_GLYPHS_VERSION:-0.10.1}"
 MBGL_RENDERER_NPM_PACKAGE="${MBGL_RENDERER_NPM_PACKAGE:-mbgl-renderer@0.9.0}"
-INSTALL_PREFIX="${INSTALL_PREFIX:-$HOME/.local}"
+INSTALL_PREFIX="${INSTALL_PREFIX:-${HUAVD_TOOLS_DIR}}"
 BIN_DIR="${BIN_DIR:-${INSTALL_PREFIX}/bin}"
-BUILD_ROOT="${BUILD_ROOT:-/tmp/huavd-map-build-tools}"
+BUILD_ROOT="${BUILD_ROOT:-${HUAVD_TOOLS_DIR}/build}"
 
 export GOPATH="${GOPATH:-$HOME/go}"
 export CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}"
@@ -536,7 +536,7 @@ install_pmtiles_from_source() {
   require_tooling go || return 1
 
   log_warn "falling back to pmtiles go install"
-  if ! go install "github.com/protomaps/go-pmtiles@${PMTILES_VERSION}"; then
+  if ! GOBIN="${BIN_DIR}" go install "github.com/protomaps/go-pmtiles@${PMTILES_VERSION}"; then
     log_error "pmtiles go install failed"
     return 1
   fi
@@ -589,7 +589,7 @@ install_build_glyphs() {
       cargo_args+=(--version "${BUILD_GLYPHS_VERSION}")
     fi
 
-    if ! cargo install "${cargo_args[@]}"; then
+    if ! cargo install "${cargo_args[@]}" --root "${INSTALL_PREFIX}"; then
       log_error "glyph generator cargo install failed"
       return 1
     fi
@@ -1169,7 +1169,7 @@ install_routeweft() {
   if [[ -n "${ROUTEWEFT_SOURCE:-}" ]]; then
     args+=(--source="${ROUTEWEFT_SOURCE}")
   fi
-  log_info "checking locked RouteWeft in ${WORKDIR}; install only if missing or invalid"
+  log_info "checking locked RouteWeft in ${HUAVD_TOOLS_DIR}/routeweft; install only if missing or invalid"
   PYTHONPATH="${REPO_ROOT}/backend/src" "${python}" -m huavd_map_build "${args[@]}" || return 1
 }
 
