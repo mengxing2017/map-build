@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import json
 import sys
 from pathlib import Path
@@ -137,6 +138,17 @@ def _file_mode(value: str) -> int:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="huavd-map-build")
     commands = parser.add_subparsers(dest="context", required=True)
+    routing = commands.add_parser("routing", help="Independent routing audit datasets")
+    routing.add_argument("command", choices=("setup", "doctor", "build", "verify", "smoke", "pack"))
+    routing.add_argument("--region", default="monaco")
+    routing.add_argument("--yyyymmdd", default=datetime.now(timezone.utc).strftime("%Y%m%d"))
+    routing.add_argument("--session")
+    routing.add_argument("--workdir", type=Path, default=Path("/tmp/huavd-map-build"))
+    routing.add_argument("--input", type=Path)
+    routing.add_argument("--source", type=Path)
+    routing.add_argument("--config", type=Path)
+    routing.add_argument("--format", choices=("tar", "zip", "both"), default="both")
+
 
     catalog = commands.add_parser("catalog", help="query and validate map catalog")
     catalog_commands = catalog.add_subparsers(dest="command", required=True)
@@ -517,6 +529,31 @@ def _parser() -> argparse.ArgumentParser:
 
 def run(arguments: list[str] | None = None) -> int:
     args = _parser().parse_args(arguments)
+    if args.context == "routing":
+        from huavd_map_build.production.south.adapter.process.routeweft_tools import setup, tool, doctor
+        from huavd_map_build.production.north.local.routing import RoutingService
+        from huavd_map_build.delivery.north.local.routing import RoutingDelivery
+        root = repository_root()
+        if args.command == "setup":
+            result = setup(root, args.workdir, args.source)
+        else:
+            process = tool(root, args.workdir)
+            if args.command == "doctor":
+                result = doctor(process, args.input)
+            else:
+                service = RoutingService(process, root, args.workdir, args.region, args.yyyymmdd,
+                                         args.session, args.config)
+                if args.command == "build":
+                    if args.input is None:
+                        raise ValueError("routing build requires --input")
+                    result = service.build(args.input)
+                elif args.command == "pack":
+                    result = RoutingDelivery(service).pack(args.format)
+                else:
+                    result = service.verify(smoke=args.command == "smoke")
+        print(json.dumps(result, sort_keys=True, indent=2))
+        return 0
+
 
     if args.context == "doctor":
         root = repository_root()
@@ -1245,6 +1282,6 @@ def main() -> int:
     except MetadataVerificationError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 3
-    except (RuntimeError, ValueError) as error:
+    except (RuntimeError, ValueError, OSError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
