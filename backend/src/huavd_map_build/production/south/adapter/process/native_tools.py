@@ -18,10 +18,8 @@ from huavd_map_build.production.south.adapter.process.raster_native import (
 
 
 def tools_root() -> Path:
-    return Path(os.environ.get("HUAVD_NATIVE_TOOLS", str(
-        Path(os.environ.get("WORKDIR") or os.environ.get("HUAVD_MAP_BUILD_HOME", "/tmp/huavd-map-build"))
-        / "tools/maplibre-native"
-    ))).expanduser().resolve()
+    base = Path(os.environ.get("HUAVD_TOOLS_DIR", str(Path(__file__).resolve().parents[7] / "tools")))
+    return Path(os.environ.get("HUAVD_NATIVE_TOOLS", str(base / "maplibre-native"))).expanduser().resolve()
 
 
 def resolve_renderer() -> str:

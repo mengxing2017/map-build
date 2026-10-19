@@ -8,8 +8,8 @@ source "${SCRIPT_DIR}/lib/native-source.sh"
 usage() {
   cat <<'HELP'
 Usage: bash scripts/setup-native-renderer.sh [options]
-  --build-dir=PATH       External build directory (default: WORKDIR/tools/native-build)
-  --prefix=PATH          Installed version directory (default: WORKDIR/tools/maplibre-native)
+  --build-dir=PATH       External build directory (default: project tools/native-build)
+  --prefix=PATH          Installed version directory (default: project tools/maplibre-native)
   --wrapper-source=PATH  Existing local Git repository; export fixed source tree
   --core-source=PATH     Fixed core checkout ending in maplibre-native (source build)
   --amalgam=PATH         External prebuilt core archive (requires --headers)
@@ -20,8 +20,8 @@ Never commits or copies large libraries into the project. Run inside devbox shel
 HELP
 }
 
-build_dir="${WORKDIR}/tools/native-build"
-prefix="${WORKDIR}/tools/maplibre-native"
+build_dir="${HUAVD_TOOLS_DIR}/native-build"
+prefix="${HUAVD_NATIVE_TOOLS:-${HUAVD_TOOLS_DIR}/maplibre-native}"
 wrapper_source=""
 core_source=""
 amalgam=""
