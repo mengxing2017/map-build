@@ -1,18 +1,63 @@
 """Setup wiring and pinned Rust selection, without network downloads."""
 import os
+import json
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from huavd_map_build.production.south.adapter.process.routeweft_tools import ensure_rust_toolchain
+from huavd_map_build.production.south.adapter.process.routeweft_tools import ensure_rust_toolchain, setup
+from huavd_map_build.production.south.adapter.process.routeweft import sha256
 from huavd_map_build.production.south.port.routeweft import RouteWeftError
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class RouteWeftSetupTests(unittest.TestCase):
+    def cached_installation(self):
+        lock = json.loads((ROOT / 'config/routeweft.lock.json').read_text())
+        target = self.root / 'tools/routeweft' / lock['commit']
+        target.mkdir(parents=True)
+        binary = target / 'routeweft'
+        binary.write_text('#!/bin/sh\nexit 0\n')
+        binary.chmod(0o755)
+        receipt = dict(schema=1, commit=lock['commit'], binary_sha256=sha256(binary),
+                       platform='test', toolchain='test', cargo_lock_sha256='a'*64, built_at='test')
+        path = target / 'receipt.json'
+        path.write_text(json.dumps(receipt))
+        return binary, path, receipt
+
+    def test_repeated_setup_reuses_verified_cache_without_git_or_rustup(self):
+        _, _, receipt = self.cached_installation()
+        with patch('huavd_map_build.production.south.adapter.process.routeweft_tools.doctor') as doctor, \
+                patch('subprocess.run') as run, patch('subprocess.check_output') as output, \
+                patch.dict(os.environ, {'ROUTEWEFT_BIN': '/invalid/override'}):
+            for _ in range(2):
+                self.assertEqual(receipt, setup(ROOT, self.root, None))
+            self.assertEqual(2, doctor.call_count)
+            run.assert_not_called()
+            output.assert_not_called()
+
+    def test_invalid_cache_rebuilds_instead_of_reusing(self):
+        for invalid in ('digest', 'commit', 'probe'):
+            with self.subTest(invalid=invalid):
+                if invalid != 'digest':
+                    # Each case uses an independent work directory.
+                    self.root = self.root / invalid
+                binary, path, receipt = self.cached_installation()
+                if invalid == 'digest':
+                    binary.write_text('corrupt')
+                elif invalid == 'commit':
+                    receipt['commit'] = 'wrong'
+                    path.write_text(json.dumps(receipt))
+                with patch('huavd_map_build.production.south.adapter.process.routeweft_tools.doctor',
+                           side_effect=RouteWeftError('failed probe')), \
+                        patch('subprocess.run', side_effect=RuntimeError('rebuild started')) as run:
+                    with self.assertRaisesRegex(RuntimeError, 'rebuild started'):
+                        setup(ROOT, self.root, None)
+                    self.assertEqual('git', run.call_args.args[0][0])
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
