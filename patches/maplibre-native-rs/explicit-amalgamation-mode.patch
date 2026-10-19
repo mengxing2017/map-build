@@ -1,0 +1,16 @@
+diff --git a/build.rs b/build.rs
+index 0bc6448..1083839 100644
+--- a/build.rs
++++ b/build.rs
+@@ -518,9 +518,8 @@ fn configure_local_build(
+             panic!("The `wgpu` feature must be enabled to use WGPU rendering.");
+         }
+     }
+-    if amalgam_lib {
+-        config.configure_arg("-DMLN_CREATE_AMALGAMATION:BOOL=ON");
+-    }
++    // Always set both modes: CMake persists the previous configuration.
++    config.define("MLN_CREATE_AMALGAMATION", if amalgam_lib { "ON" } else { "OFF" });
+     if target_os == "linux" {
+         config.configure_arg("-DMLN_WITH_WAYLAND=OFF");
+     }
