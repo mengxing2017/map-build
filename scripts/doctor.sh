@@ -457,14 +457,15 @@ check_multilingual_config() {
 
 check_multilingual_config
 
-if [[ "${ROUTING:-0}" == 1 ]]; then
-  if PYTHONPATH="${REPO_ROOT}/backend/src" "${PYTHON:-python3}" -m huavd_map_build \
-      routing doctor --workdir="${WORKDIR}"; then
-    printf 'OK   %-12s %s\n' "routeweft" "identity and build/verify probe"
-  else
-    printf 'FAIL %-12s %s\n' "routeweft" "identity or contract probe failed"
-    FAILURES=$((FAILURES + 1))
-  fi
+routing_python="$(huavd_python)"
+if PYTHONPATH="${REPO_ROOT}/backend/src" "${routing_python}" -m huavd_map_build \
+    routing doctor --workdir="${WORKDIR}"; then
+  printf 'OK   %-12s %s\n' "routeweft" "identity and build/verify probe"
+else
+  printf 'FAIL %-12s %s\n' "routeweft" "missing, invalid installation, or contract probe failed"
+  printf 'install hints: WORKDIR="%s" ./scripts/setup-tools.sh (inside devbox shell)\n' "${WORKDIR}"
+  printf 'install hints: or make setup WORKDIR="%s"; use the actual build/release WORKDIR\n' "${WORKDIR}"
+  FAILURES=$((FAILURES + 1))
 fi
 
 if ((FAILURES > 0)); then

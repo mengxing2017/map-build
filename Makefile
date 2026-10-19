@@ -68,7 +68,7 @@ install-build-machine-config:
 	./scripts/init-workdir.sh
 
 setup:
-	./scripts/setup-tools.sh
+	WORKDIR="$(WORKDIR)" ./scripts/setup-tools.sh
 
 doctor:
 	WORKDIR="$(WORKDIR)" ./scripts/doctor.sh
@@ -102,6 +102,13 @@ fetch: init-workdir
 
 fetch-dem: init-workdir
 	WORKDIR="$(WORKDIR)" ./scripts/fetch-dem.sh --region="$(REGION)" --session="$(SESSION)" --source="$(DEM_SOURCE)" $(if $(DEM_INPUT),--input="$(DEM_INPUT)",)
+
+ifneq ($(filter $(ROLE),base both raster_bake base_raster both_raster),)
+.PHONY: check-routeweft-build-tool
+build: check-routeweft-build-tool
+check-routeweft-build-tool:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing doctor --workdir="$(WORKDIR)"
+endif
 
 build: python-doctor python-workspace-init
 ifneq ($(filter $(ROLE),base building both),)

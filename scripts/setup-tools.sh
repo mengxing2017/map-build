@@ -559,7 +559,7 @@ install_pmtiles() {
 }
 
 ensure_cargo_toolchain() {
-  if command -v cargo >/dev/null 2>&1; then
+  if command -v cargo >/dev/null 2>&1 && cargo --version >/dev/null 2>&1; then
     return 0
   fi
 
@@ -1162,6 +1162,17 @@ check_python_pip_dependencies() {
   return "${failed}"
 }
 
+install_routeweft() {
+  local python
+  python="$(huavd_python)" || return 1
+  local args=(routing setup --workdir="${WORKDIR}")
+  if [[ -n "${ROUTEWEFT_SOURCE:-}" ]]; then
+    args+=(--source="${ROUTEWEFT_SOURCE}")
+  fi
+  log_info "installing locked RouteWeft and its Rust toolchain into ${WORKDIR}"
+  PYTHONPATH="${REPO_ROOT}/backend/src" "${python}" -m huavd_map_build "${args[@]}" || return 1
+}
+
 main() {
   mkdir -p "${BIN_DIR}" "${BUILD_ROOT}"
 
@@ -1195,6 +1206,9 @@ main() {
   if ! write_pip_wrapper "${VENV_PYTHON}"; then
     failed=1
   fi
+  if ! install_routeweft; then
+    failed=1
+  fi
   if ! PYTHONPATH="${REPO_ROOT}/backend/src" "${VENV_PYTHON}" -m \
       huavd_map_build.production.south.adapter.process.native_tools setup; then
     failed=1
@@ -1208,4 +1222,6 @@ main() {
   log_info "all tools installed successfully; run 'devbox run doctor' to verify"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
