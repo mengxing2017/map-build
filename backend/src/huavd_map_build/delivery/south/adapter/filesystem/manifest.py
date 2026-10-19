@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +23,11 @@ class FileSystemManifestEvidenceReader:
         if sidecar.is_file():
             values = sidecar.read_text(encoding="utf-8").split()
             md5 = values[0] if values else None
-        return SourceEvidence(size, downloaded, md5)
+        digest = None
+        if source.is_file():
+            with source.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        return SourceEvidence(size, downloaded, md5, digest)
 
     def size(self, path: str) -> int:
         return Path(path).stat().st_size

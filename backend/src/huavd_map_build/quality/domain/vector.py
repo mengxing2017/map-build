@@ -115,6 +115,7 @@ def verify_vector_contract(
               "downloaded_at": expectations.source_evidence.downloaded_at,
               "size_bytes": expectations.source_evidence.size_bytes,
               "md5": expectations.source_evidence.md5,
+              "sha256": expectations.source_evidence.sha256,
               "osm_timestamp": None,
           }, "manifest source evidence does not match the configured input")
     check("manifest-size", manifest.get("output", {}).get("size_bytes") == actual_size,

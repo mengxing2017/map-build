@@ -23,6 +23,7 @@ class SourceEvidence:
     size_bytes: int | None
     downloaded_at: str | None
     md5: str | None
+    sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +67,7 @@ def compile_vector_manifest(
             "vendor": source_vendor, "url": source_url,
             "downloaded_at": evidence.downloaded_at,
             "size_bytes": evidence.size_bytes, "md5": evidence.md5,
+            "sha256": evidence.sha256,
             "osm_timestamp": None,
         },
         "tools": {**tools, "huavd-map-build": "python"},
@@ -132,6 +134,7 @@ def compile_raster_manifest(
             "vendor": source_vendor, "url": source_url,
             "downloaded_at": evidence.downloaded_at,
             "size_bytes": evidence.size_bytes, "md5": evidence.md5,
+            "sha256": evidence.sha256,
             "osm_timestamp": None,
         },
         "tools": {**tools, "huavd-map-build": "python"},
