@@ -21,10 +21,10 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | 变量 | 默认值 | 说明 |
 | :--- | :--- | :--- |
 | `WORKDIR` | `/tmp/huavd-map-build` | 构建工作目录，包含 `mirror/`、`staging/`、`cache/`、`outputs/` |
-| `REGION` | `china/guangxi` | region id，必须存在于 `config/regions.yaml` |
+| `REGION` | `china/guangxi` | 地图命令要求存在于 `config/regions.yaml`；独立路由命令要求在路由配置中启用；同源双构建须同时满足两者 |
 | `YYYYMMDD` | 当前 UTC 日 | 输出版本日，格式为 8 位数字，例如 `20260818` |
 | `SESSION` | `{region-slug}-{YYYYMMDD}` | 构建会话名，例如 `china-guangxi-20260818`；通常不需要手动设置 |
-| `INPUT` | 空 | `make build` 的输入 PBF；为空时自动使用 `mirror/{geofabrik.basename}` |
+| `INPUT` | 空 | 地图 build 为空时使用 `mirror/{geofabrik.basename}`；路由 build/preflight 必须显式提供原始 PBF，相对路径按 WORKDIR 解析 |
 | `ROLE` | `both` | 构建或处理的资产角色：`base`、`building`、`raster_bake`、`base_raster`、`both_raster`、`both`、`dem`、`all`；`raster_bake` 复用已验证的 base PMTiles，`base_raster` 同时构建 base 与图片瓦片 |
 | `FORMAT` | `both` | `make pack` 的包格式：`tar`、`zip`、`both` |
 | `IMPORT_FORMAT` | `zip` | `make prepare-import` 的导入包格式：`zip` 或 `tar` |
@@ -41,7 +41,7 @@ make build REGION=china/guangxi YYYYMMDD=20260818 ROLE=base
 | `HUAVD_MAP_PACKAGE_VERSION_BUILDING` | 同上 | 仅覆盖 building role |
 | `HUAVD_MAP_PACKAGE_VERSION_DEM` | 同上 | 仅覆盖 dem role |
 
-`SESSION` 与 `YYYYMMDD` 同时设置时，以显式 `SESSION` 为准；脚本会从 `SESSION` 末尾反推 `YYYYMMDD`。`ROLE=both` 会处理 base 和 building，其中 building 只有在 region 配置为 `huavd.asset_role: building-vector` 且 `huavd.source_type: derived-building` 时才可用。
+地图 shell 入口中，`SESSION` 与 `YYYYMMDD` 同时设置时，以显式 `SESSION` 为准，脚本会从 `SESSION` 末尾反推日期。路由入口要求 SESSION 严格等于 REGION 和 YYYYMMDD 生成的默认值；同源双构建建议不手动设置 SESSION。`ROLE=both` 会处理 base 和 building，其中 building 只有在 region 配置为 `huavd.asset_role: building-vector` 且 `huavd.source_type: derived-building` 时才可用。路由使用独立入口，不属于地图 ROLE。
 
 完整版本优先级见 [版本与 CI](./versioning.md#package-version-解析规则)。
 
@@ -205,3 +205,28 @@ make build-derived-map DERIVED_MAP=new-country-base YYYYMMDD=20260818
 | `./scripts/viewport-lint.sh` | 无参数；检查 style 中的默认 viewport 是否落在对应 base PMTiles bounds 内 |
 | `./scripts/density-lint.sh` | `<REGION_A> <REGION_B> [YYYYMMDD]`；比较两个基础矢量 PMTiles 的瓦片密度 |
 | `./scripts/diff-region-products.sh` | `<REGION_A> <REGION_B> [YYYYMMDD]`；比较两个基础矢量成品的 metadata 与统计信息 |
+
+## 路由命令与变量
+
+以下入口只处理路由数据集，不会自动生成地图，也不读取 PMTiles。完整同源操作见 [地图与路网构建](./map-and-routing.md)，策略、配置及产物说明见 [路由构建与审核包](../operations/routing.md)。
+
+| Make 入口 | 用途 | INPUT 要求 |
+| :--- | :--- | :--- |
+| `setup-routeweft` | 获取锁定源码或使用指定干净源码，编译工具、执行合约探针、写入回执 | 不使用 INPUT |
+| `doctor-routeweft` | 核对工具身份、能力和实际 preflight/build/verify 合约 | 默认微型 PBF；显式 INPUT 会成为严格探针输入 |
+| `preflight-routing` | 冻结原始 PBF 并预检，保留报告但不发布 ready | 必须显式提供 |
+| `build-routing` | 预检、构建、验证和查询质量门通过后原子提交路由 ready | 必须显式提供 |
+| `verify-routing` | 复核 ready、文件哈希、工具及配置身份和完整审计 | 不需要重新指定 |
+| `smoke-routing` | 对当前有效数据集执行配置的成功、无路和限制用例 | 不需要重新指定 |
+| `pack-routing` | 生成独立审核包，在新目录解包后重新验证和查询 | 不需要重新指定 |
+
+| 变量 | 默认值 | 用途 |
+| :--- | :--- | :--- |
+| `ROUTING` | `1` | doctor 兼容变量；标准地图构建和打包始终要求路网，设置为 0 也不能省略 |
+| `ROUTING_CONFIG` | 仓库 `config/routing.yaml`，默认无启用区域 | 显式路由区域、策略、预算和质量门配置路径 |
+| `ROUTEWEFT_SOURCE` | 空 | setup 使用的干净源码目录；为空时显式 setup 获取锁定提交 |
+| `ROUTEWEFT_BIN` | WORKDIR 下锁定提交的工具缓存 | 已有二进制的绝对路径，通过环境变量传入 |
+| `ROUTEWEFT_SHA256` | 空 | 显式预期二进制 SHA-256，通过环境变量传入；未提供时须有匹配构建回执 |
+| `ROUTEWEFT_RECEIPT` | 锁定工具缓存中的 receipt.json | 外部构建回执路径，通过环境变量传入 |
+
+路由构建不隐式联网安装工具；独立路由不要求地图渲染器。地图与路由使用同一个 WORKDIR 时共用 outputs 父目录，但分别验证和发布，不构成联合成功指针。`make clean` 不是完整的路由生命周期清理入口，不能假定它会删除路由版本和 attempt。

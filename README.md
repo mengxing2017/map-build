@@ -369,10 +369,8 @@ PMTILES_VERSION=v1.31.2
 go install "github.com/protomaps/go-pmtiles@${PMTILES_VERSION}"
 ```
 
-### 独立路由审核构建
+### 默认包含路网的地图包
 
-RouteWeft 提供独立 `setup-routeweft`、`doctor-routeweft`、`build-routing`、
-`verify-routing`、`smoke-routing` 和 `pack-routing` 目标。默认不启用区域，
-不改变地图流水线；输出为审核包，尚不支持联合安装。
-工具身份、城市配置、操作命令及使用限制见
-[路由操作说明](docs/operations/routing.md)。
+标准矢量包和栅格＋矢量包默认包含同源 RouteWeft 路网。`make build` 自动构建路网，`make pack` 要求有效路网并验证同源 SHA-256；失败时停止出包。须先准备锁定工具和已审核的 `ROUTING_CONFIG`，默认区域配置为空。
+
+操作步骤、包内容、输入限制及消费者兼容要求见 [地图与路网构建](docs/manual/map-and-routing.md)。独立路网审核命令见 [路网操作说明](docs/operations/routing.md)。

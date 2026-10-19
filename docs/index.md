@@ -41,6 +41,7 @@ Native 图片渲染工具的源码迁出、构建与 Python 接入见 [操作手
 - 按 `config/tippecanoe.yaml` 生成 base/building PMTiles。
 - 写入 PMTiles metadata、manifest、attribution 和 SHA512 sidecar。
 - 将单次 build session 的产物打包为 tar/zip bundle。
+- 通过固定 RouteWeft 工具从原始城市 PBF 生成、验证并打包独立路由审核数据集；与地图分开构建，不提供联合安装。
 
 不负责：
 
@@ -54,6 +55,7 @@ Native 图片渲染工具的源码迁出、构建与 Python 接入见 [操作手
 | 主题 | 页面 |
 | :--- | :--- |
 | 从零安装和完整使用流程 | [安装与使用](/manual/) |
+| 同源地图与导航路网的完整操作流程 | [地图与路网构建](/manual/map-and-routing) |
 | 开发命令与环境 | [开发入口](/development/) |
 | 构建阶段与文件流 | [构建管线](/pipeline/) |
 | 配置文件职责 | [配置索引](/configuration/) |

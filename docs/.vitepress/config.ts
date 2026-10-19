@@ -32,6 +32,7 @@ export default defineConfig({
           { text: '环境安装与渲染资源', link: '/manual/installation' },
           { text: '命令与变量参考', link: '/manual/commands' },
           { text: '标准地图构建', link: '/manual/build' },
+          { text: '地图与路网构建', link: '/manual/map-and-routing' },
           { text: '版本管理与 CI 发布', link: '/manual/versioning' },
           { text: '图片地图构建', link: '/manual/raster' },
           { text: '产物、打包与导入', link: '/manual/delivery' },
@@ -43,6 +44,7 @@ export default defineConfig({
         items: [
           { text: '配置索引', link: '/configuration/' },
           { text: '运行与故障处理', link: '/operations/' },
+          { text: '路由构建与审核包', link: '/operations/routing' },
           { text: '契约与外部工具', link: '/references/' },
         ],
       },
