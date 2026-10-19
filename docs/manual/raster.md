@@ -1,37 +1,120 @@
-# 图片地图构建
+# 栅格＋矢量地图与路网构建
 
 [返回手册目录](./index.md)
 
-Native 安装与图片 ZIP 快速流程见 [图片地图操作](../operations/native-renderer-build.md)。准备本地 PBF 见 [标准地图构建](./build.md#手动下载地图数据)。
+此处“栅格地图”是由 OSM 矢量与样式预渲染得到的 WebP 图片 PMTiles，不是卫星影像或 DEM。标准交付同时包含 `base` 矢量地图、`raster_bake` 图片地图、样式支撑资源和同源导航路网。图片范围 BAKE_BBOX 只控制渲染窗口，不裁剪原始 PBF，也不缩小路网输入范围。
+
+## 声明输入与区域
+
+所有命令在仓库根目录、devbox 环境内执行。下面的区域和 PBF 路径是占位值，执行前必须替换；区域须已登记在 `config/regions.yaml`。地图和路网直接共用 REGION，无需额外路网配置或区域白名单。
 
 ```bash
-devbox run -- make python-doctor python-catalog-validate
-devbox run -- make release REGION=china/guangxi YYYYMMDD=20260818 \
-  WORKDIR_ROOT=/data/huavd-map-build \
-  INPUT=/home/dev/Downloads/guangxi-261003.osm.pbf ROLE=base_raster FORMAT=zip
+cd /path/to/huavd-map-build
+devbox shell
+
+export REGION=your/configured/local-region
+export YYYYMMDD=20260803
+export WORKDIR=/data/huavd-map-build/local-region-20260803
+export INPUT=/absolute/path/to/verified/source.osm.pbf
+unset SESSION
 ```
 
-在仓库根目录执行上述命令，也可先进入 `devbox shell` 后直接运行 `make`。
-`WORKDIR_ROOT` 是 release 工作目录的父目录；该例的实际工作目录为
-`/data/huavd-map-build/china-guangxi-20260818`，最终 ZIP 为
-`/data/huavd-map-build/china-guangxi-20260818/outputs/china-guangxi-20260818.bundle.zip`。
-省略目录参数时默认父目录为 `/tmp/huavd-map-build`；需要长期保留产物时应显式指定。
-若希望直接指定完整工作目录，可使用 `RELEASE_WORKDIR=/data/my-map-run`，
-产物位于其 `outputs/` 下。后续单独执行 `build`、`verify`、`pack` 或 `raster-estimate`
-时，应传入实际工作目录 `WORKDIR=/data/huavd-map-build/china-guangxi-20260818`。
-`YYYYMMDD` 是产物构建日期，不会根据 PBF 文件名自动推断；请按实际发布日期设置。
+`SESSION` 自动取 `{region-slug}-{YYYYMMDD}`。`INPUT` 使用绝对路径，`YYYYMMDD` 是产物日期，不从文件名推导。下文分步命令始终使用同一个 `WORKDIR`，产物位于 `${WORKDIR}/outputs/`。
 
-`python-catalog-validate` 检查配置，`python-doctor` 检查工具和 Python 依赖；
-它们不能替代构建后的 `deep-verify` 数据质量检查。`make build` 会先执行
-`python-doctor`，在过滤或生成瓦片前发现依赖加载失败。
-例如普通 shell 中缺少 `libstdc++.so.6` 会导致 Shapely 及 `mapbox_vector_tile`
-无法加载，应切换到 devbox 环境，不应跳过深度检查。
+路网使用内置驾车参数、容量和超时预算，默认严格拒绝无效转向限制。构建后从实际路网中自动选取道路，检查 nearest 和正向 route；不要求用户填写查询坐标或人工 NoRoute 案例。自动检查只验证基本查询能力，不能替代覆盖范围和导航效果验收。
 
-该命令先通过 Python vector pipeline 构建并验证 `base` 矢量 PMTiles，再以它为输入生成 `raster_bake` WebP PMTiles；包内同时包含图片底图样式、矢量标注和 glyph/sprite 资源。`base_raster` 会自动启用资源生成。只重跑图片阶段时可保留已验证的 base 和支撑资源，使用 `ROLE=raster_bake`，无需重新提供 PBF。
+## 工具与输入预检
+
+```bash
+# 首次准备地图工具、Python 依赖和字体等资源
+make setup
+make python-doctor python-catalog-validate
+
+# 首次安装锁定的路网工具；此步骤可能下载源码和 Rust 依赖
+make setup-routeweft
+# 不传 INPUT，使用内置微型数据检查工具合约
+make doctor-routeweft INPUT=
+
+# 对真实输入先做路网预检，避免地图长任务完成后才发现源不支持
+make preflight-routing
+```
+
+已有干净的锁定 RouteWeft 源码时，可用 `make setup-routeweft ROUTEWEFT_SOURCE=/absolute/path/to/routeweft`。已有受信二进制可设置 `ROUTEWEFT_BIN` 和 `ROUTEWEFT_SHA256`，详见 [工具准备](../operations/routing.md#工具准备)。普通 build 不会自动下载安装工具。preflight 会实际建图，开销接近路网构建；通过预检仍不替代构建后的查询质量门。
+
+图片构建还需要可用的 Native 渲染器：
+
+```bash
+make check-native-renderer
+```
+
+未安装或自检失败时，先按 [Native 安装操作](../operations/native-renderer-build.md) 准备引擎，再继续。`python-doctor` 检查 Python 依赖；Native 自检检查渲染能力；两者均不替代最终数据质量与视觉验收。
+
+## 构建完整图片地图包
+
+```bash
+export ROLE=base_raster
+# 以下窗口仅适用于覆盖南宁附近的输入，其他区域须替换
+export BAKE_BBOX=108.2,22.7,108.4,22.9
+export BAKE_MIN_ZOOM=12
+export BAKE_MAX_ZOOM=14
+export BAKE_MAX_TILES=200000
+
+make build
+make verify
+make verify-routing
+make smoke-routing
+make pack FORMAT=both
+```
+
+`base_raster` 依次构建 base、支撑资源、WebP 栅格 PMTiles 和同源路网。需要区域启用的独立建筑矢量资产时，将 ROLE 改为 `both_raster`。资源生成自动启用。任何路网步骤失败都不能得到新的完整标准包，`ROUTING=0` 也不能省略路网。
+
+一键执行相同流程时，保持实际目录不变：
+
+```bash
+make release RELEASE_WORKDIR="${WORKDIR}" ROLE=base_raster FORMAT=both
+```
+
+不固定 RELEASE_WORKDIR 时，release 使用 `${WORKDIR_ROOT}/${SESSION}`，RouteWeft 必须安装在该实际目录或通过受信二进制环境变量提供。后续单独 build/verify/pack 也必须使用实际 WORKDIR。不要并行运行 `make -j release`。
+
+输出位于 `${WORKDIR}/outputs/`：
+
+```text
+<session>.base.pmtiles
+<session>.raster_bake.pmtiles
+<session>.raster_bake.ready.json
+<session>.style.json
+<session>.style-raster.json
+<session>.glyphs/
+<session>.sprite/
+<session>.routing/<dataset-id>/
+<session>.routing.ready.json
+<session>.bundle.tar.gz
+<session>.bundle.zip
+```
+
+PMTiles 各有 manifest、attribution 和摘要侧文件。归档内 `routing/` 是必需资产；`package.json` 记录同源指纹、路网 profile/format 和逐文件哈希，`install.json` 继续描述地图。完整安装兼容要求见 [包内容与接入](./map-and-routing.md#包内容与接入)。不能将只处理地图的 `.import.zip` 当作已经验收的地图＋路网联合安装包。
+
+## 复用 base，调整图片范围
+
+先完成上面的完整构建，保留同一 WORKDIR、REGION、YYYYMMDD 和会话冻结的 PBF：
+
+```bash
+# 基于已有 base 估算本次窗口的瓦片数
+make raster-estimate
+# 修改 BAKE_BBOX 或缩放级别后，仅重跑图片阶段及默认路网构建
+make build ROLE=raster_bake
+make verify ROLE=raster_bake
+make smoke-routing
+make pack ROLE=raster_bake FORMAT=both
+```
+
+`ROLE=raster_bake` 不重建 base，不重新 fetch 或读取外部 INPUT；但 Make 仍会从 `staging/<session>/source.osm.pbf` 构建路网。因此不能删除冻结 PBF，也不能只拷贝 base PMTiles 后就运行此流程。pack 自动携带 base、栅格及同源路网。
+
+## 渲染、缓存与底层诊断
 
 Python vector build 会在 stderr 实时输出各阶段的 `START`、`DONE` 或 `FAIL`，并带有 `stage=<当前>/<总数>`。stdout 在构建结束前保持为空是正常的，因为它只用于最终结构化 job JSON。
 
-交付 `ROLE=raster_bake` 时，`make pack` 和 `make prepare-import` 会自动将已验证的 `base` 一并纳入同一安装 bundle；图片底图不作为孤立的离线地图交付。安装描述会逐条解析 `styles-url`，校验对应样式、SHA-512 sidecar、glyph 和 sprite 引用都在归档内闭合。
+交付 `ROLE=raster_bake` 时，`make pack` 和 `make prepare-import` 会自动将已验证的 `base` 一并纳入同一安装 bundle；图片底图不作为孤立的离线地图交付。标准 bundle 还必须包含路网；旧的地图 import 描述不能据此视为已经支持路网联合安装。安装描述会逐条解析 `styles-url`，校验对应样式、SHA-512 sidecar、glyph 和 sprite 引用都在归档内闭合。
 
 图片构建会在 `${WORKDIR}/cache/bake/${SESSION}/parameters.json` 写入 base 身份、渲染器身份、配置覆盖和最终生效参数。瓦片按精确 Web Mercator geographic bounds 渲染，而不是假定相机 zoom 与 XYZ zoom 等价。每个新瓦片先写入临时文件，经 WebP 容器、尺寸和 `dwebp` 解码校验后原子发布，并写入匹配内容摘要的 `.webp.sha512` 验证标记；缓存复用要求容器、尺寸和该标记均有效。异常缓存会隔离到同一缓存目录的 `quarantine/`。同一 workspace 的任务互斥执行，单片渲染和编码默认 120 秒超时。当前 Python 正式入口尚未执行旧 Shell 的 2x2 macro-tile 逐像素视觉网格比较，因此不能把 `metrics.json.quality.visual_grid_validation=not-run` 解释为通过。
 
@@ -40,8 +123,7 @@ Python vector build 会在 stderr 实时输出各阶段的 `START`、`DONE` 或 
 在启动长任务前，先基于已验证的 `base` 估算矩形覆盖的瓦片数量。`max_tiles`（默认 20 万）是软基线：计划超过基线时，按计划张数的 `max_tiles_headroom_ratio`（默认 0.1）自动计算生效预算，不需要逐省配置或每次传参；估算输出的 `budget_source`、`configured_max_tiles` 与 `max_tiles` 分别表示预算来源、基线和生效额度。显式 `BAKE_MAX_TILES` 是硬上限，不会被自动放宽；将 `max_tiles_headroom_ratio` 置 `null` 可恢复严格基线。`raster-estimate` 只根据 base 头信息（或显式 `BAKE_BBOX`）与配置输出计划，不写缓存文件；完整计划由 `ROLE=raster_bake` 在渲染前写入 `${WORKDIR}/cache/bake/${SESSION}/plan.json`，按缩放级别列出瓦片数量和坐标范围。
 
 ```bash
-devbox run -- make raster-estimate REGION=china/guangxi YYYYMMDD=20260818 \
-  WORKDIR=/data/huavd-map-build/china-guangxi-20260818 BAKE_MAX_TILES=200000
+make raster-estimate BAKE_MAX_TILES=200000
 ```
 
 上面的 `BAKE_MAX_TILES` 在此例中是显式硬上限；真实构建需要硬性限制时才传。只做估算或常规长任务时留空即可，超过 20 万的部分会按 `max_tiles_headroom_ratio` 自动放开，并在估算 JSON 中标记 `budget_source: auto-headroom`。
@@ -58,8 +140,8 @@ devbox run -- make raster-estimate REGION=china/guangxi YYYYMMDD=20260818 \
 
 ```bash
 devbox run -- env PYTHONPATH=backend/src .venv/bin/python -m huavd_map_build build raster-bake \
-  --region china/guangxi --yyyymmdd 20260818 \
-  --workdir /data/huavd-map-build/china-guangxi-20260818 --no-publish
+  --region "${REGION}" --yyyymmdd "${YYYYMMDD}" \
+  --workdir "${WORKDIR}" --no-publish
 ```
 
 `--no-publish` 只在 `cache/bake/${SESSION}/` 保留候选 PMTiles，不写正式 outputs 或 ready marker。默认不传该参数时会执行 metadata、manifest、attribution、PMTiles/WebP 抽样、消费者资源闭合和 ready-last 发布。
@@ -73,7 +155,10 @@ devbox run -- env PYTHONPATH=backend/src .venv/bin/python -m huavd_map_build bui
 
 ```bash
 devbox run -- env PYTHONPATH=backend/src .venv/bin/python -m huavd_map_build build raster-bake \
-  --region china/guangxi --yyyymmdd 20260818 \
-  --workdir /data/huavd-map-build/china-guangxi-20260818 \
+  --region "${REGION}" --yyyymmdd "${YYYYMMDD}" \
+  --workdir "${WORKDIR}" \
   --renderer-engine maplibre-native --renderer-command /path/to/mbgl-render
 ```
+
+
+上面的底层 Python `build raster-bake` 命令仅用于诊断图片分支，不构建路网，也不生成完整 bundle。正式交付使用本页 Make 流程；对已有地图单独运行路网分支时，INPUT 必须指向与地图 manifest SHA-256 一致的会话冻结 PBF。
