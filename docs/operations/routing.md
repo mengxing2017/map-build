@@ -7,13 +7,29 @@
 普通 routing 构建不联网，也不依赖地图渲染器。Python 需要 PyYAML。
 
 ```bash
-make setup-routeweft ROUTEWEFT_SOURCE=/absolute/path/to/clean/routeweft WORKDIR=/tmp/routing
-make doctor-routeweft WORKDIR=/tmp/routing
+make setup WORKDIR=/tmp/routing
+make doctor WORKDIR=/tmp/routing
 ```
 
-源码必须是 `config/routeweft.lock.json` 锁定的干净提交。未提供 `ROUTEWEFT_SOURCE` 时，只有显式 setup 会从锁定仓库获取提交。setup 使用 Cargo.lock 和仓库工具链编译，回执记录提交、二进制及 Cargo.lock 哈希、平台、rustc 和时间。Rust 依赖必须预先可用或允许 setup 下载。
+`./scripts/setup-tools.sh` / `make setup` 默认安装 RouteWeft；`./scripts/doctor.sh` / `make doctor` 默认执行路网工具身份及真实微型建图检查，不受 ROUTING=0 影响。安装工作目录必须与实际 build/release 一致。单独重装路网工具仍可执行 `make setup-routeweft`；离线本地源码可通过 ROUTEWEFT_SOURCE 指定。
+
+源码必须是 `config/routeweft.lock.json` 锁定的干净提交。未提供 `ROUTEWEFT_SOURCE` 时，只有显式 setup 会从锁定仓库获取提交。setup 使用 Cargo.lock 和仓库工具链编译，回执记录提交、二进制及 Cargo.lock 哈希、平台、rustc 和时间。setup 自动检查锁定源码 rust-toolchain.toml 的版本，缺失时由 rustup 安装对应 minimal 工具链，并明确使用该版本运行 Cargo；rustup 由 devbox 提供。Rust 依赖须预先可用或允许 setup 下载。
 
 已有二进制无需 Rust 环境：设置绝对 `ROUTEWEFT_BIN`，并提供 `ROUTEWEFT_SHA256` 或 `ROUTEWEFT_RECEIPT`。显式 SHA-256 是操作者信任入口，不声称能单凭哈希证明源码提交。每次调用重新核对二进制哈希。doctor 使用默认微型 PBF 实际运行 version/preflight/build/verify，检查 schema=1、format=1、profile=driving-v1、命令和限制策略能力。不要将真实构建的 INPUT 传给默认工具探针；显式提供 INPUT 时，doctor 会对该文件执行严格策略探针。
+
+### 找不到工具回执
+
+出现 `RouteWeft installation receipt not found`（旧版本为 `provide ROUTEWEFT_SHA256 or a build receipt`）时，表示当前实际 WORKDIR 下没有锁定工具的安装回执，并非 PBF 或 REGION 配置错误。先在同一实际工作目录安装并自检，再重试路网构建：
+
+```bash
+make setup-routeweft WORKDIR=/home/dev/data/map/guangxi
+make doctor-routeweft WORKDIR=/home/dev/data/map/guangxi INPUT=
+make build-routing WORKDIR=/home/dev/data/map/guangxi \
+  REGION=china/guangxi YYYYMMDD=20261020 \
+  INPUT=/home/dev/data/source-map/guangxi-260803.osm.pbf
+```
+
+setup 会生成工具及 receipt.json，正常使用不需要手填 SHA-256。已有干净锁定源码可增加 ROUTEWEFT_SOURCE。若通过 release 使用隔离目录，安装命令的 WORKDIR 必须对应实际 RELEASE_WORKDIR。地图 build 会先执行工具合约检查，再启动地图生成；工具检查不使用真实 INPUT。
 
 ## REGION 与执行
 
