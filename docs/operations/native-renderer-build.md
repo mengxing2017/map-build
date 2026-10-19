@@ -73,9 +73,8 @@ make prepare-import ROLE=base_raster IMPORT_FORMAT=zip
 安装器校验源码锁、二进制摘要和真实渲染自检，再创建固定入口。
 后续使用者不需要填写摘要路径。原目录是运行依赖，登记后不要移动或删除。
 
-工具默认放在实际 `WORKDIR/tools/maplibre-native`；未设置 WORKDIR 时使用
-`HUAVD_MAP_BUILD_HOME`，两者均未设置时使用 `/tmp/huavd-map-build`；
-可以一次性设置 `HUAVD_NATIVE_TOOLS` 到持久工具目录。
+工具默认放在项目 `tools/maplibre-native/`，与地图 WORKDIR 无关。
+可用 `HUAVD_TOOLS_DIR` 指定工具根目录，或单独设置 `HUAVD_NATIVE_TOOLS`。
 自定义工具目录时在构建机环境中保留该设置，独立于地图任务的 WORKDIR。
 
 导入运行包时设置 `HUAVD_NATIVE_PACKAGE` 和可信发布方提供的
@@ -92,7 +91,7 @@ make setup-native-renderer NATIVE_RENDERER_SETUP_ARGS=--online
 ```
 
 未提供 core 时，--online 自动获取锁定 core 和 wrapper 仓库。源码缓存位于
-`${WORKDIR}/tools/native-build`，其中 core 按提交隔离，下载失败后可重试复用缓存；
+项目 `tools/native-build/`，其中 core 按提交隔离，下载失败后可重试复用缓存；
 缓存存在未记录修改或提交不匹配时拒绝覆盖。默认单次源码 fetch 超时 300 秒，
 可设置 NATIVE_FETCH_TIMEOUT_SECONDS；子模块初始化超时默认 1800 秒，可设置
 NATIVE_SUBMODULE_TIMEOUT_SECONDS。构建并发默认 2，可设置 CMAKE_BUILD_PARALLEL_LEVEL。

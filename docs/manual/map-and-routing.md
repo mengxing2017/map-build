@@ -102,12 +102,12 @@ make pack ROLE=raster_bake FORMAT=both
 准备完成后，一键发布可替代相应分步命令：
 
 ```bash
-# 二选一；实际目录固定为已准备工具的 WORKDIR
+# 二选一；显式指定地图产物工作目录
 make release RELEASE_WORKDIR="${WORKDIR}" ROLE=both GLYPH=1 FORMAT=both
 make release RELEASE_WORKDIR="${WORKDIR}" ROLE=base_raster FORMAT=both
 ```
 
-release 不执行 fetch。未设置 RELEASE_WORKDIR 时，它将目录切换到 `${WORKDIR_ROOT}/${SESSION}`；需在该实际目录安装 RouteWeft，或通过 ROUTEWEFT_BIN 与 SHA-256 提供工具。后续分步命令也必须使用实际 WORKDIR。不要用 `make -j release` 并发执行这些依赖产物的步骤。
+release 不执行 fetch。未设置 RELEASE_WORKDIR 时，它将目录切换到 `${WORKDIR_ROOT}/${SESSION}`；RouteWeft 会复用项目工具目录 `tools/routeweft/`，也可用 ROUTEWEFT_TOOLS 指定工具根目录。后续分步命令也必须使用实际 WORKDIR。不要用 `make -j release` 并发执行这些依赖产物的步骤。
 
 本地 INPUT 无需下载。若配置有可用 Geofabrik 下载端点，可先 unset INPUT、执行 `make fetch`，再在同一个 WORKDIR 执行所选流程。下载名由 geofabrik.basename 决定，产物日期不决定输入文件名。
 

@@ -215,7 +215,7 @@ TIPPECANOE_VERSION=2.79.0 PMTILES_VERSION=v1.31.2 devbox run setup
 TIPPECANOE_SOURCE_TARBALL=/path/to/tippecanoe.tar.gz devbox run setup
 ```
 
-`setup` 会通过 cargo 安装 `versatiles_glyphs`，再在 `$HOME/.local/bin` 写入兼容的 `build-glyphs` wrapper。devbox 环境通过 `rustup` 提供 cargo，并把 `$CARGO_HOME/bin` 和 `$HOME/.local/bin` 加入 `PATH`。如果需要固定内部 fork 或版本，可覆盖：
+`setup` 会通过 cargo 安装 `versatiles_glyphs`，再在项目 `tools/bin` 写入兼容的 `build-glyphs` wrapper。devbox 环境通过 `rustup` 提供 cargo，并把项目 `tools/bin`、Native 固定入口和 `$CARGO_HOME/bin` 加入 `PATH`。如果需要固定内部 fork 或版本，可覆盖：
 
 ```bash
 BUILD_GLYPHS_CRATE=versatiles_glyphs BUILD_GLYPHS_VERSION=0.9.1 devbox run setup
@@ -376,3 +376,7 @@ go install "github.com/protomaps/go-pmtiles@${PMTILES_VERSION}"
 标准矢量包和栅格＋矢量包默认包含同源 RouteWeft 路网。`make build` 自动构建路网，`make pack` 要求有效路网并验证同源 SHA-256；失败时停止出包。须先准备锁定工具；地图和路网共用 `REGION` 与原始 PBF，无需单独的路网配置。
 
 操作步骤、包内容、输入限制及消费者兼容要求见 [地图与路网构建](docs/manual/map-and-routing.md)。独立路网审核命令见 [路网操作说明](docs/operations/routing.md)。
+
+工具默认安装在项目 `tools/`，地图 `WORKDIR` 只承载地图输入、缓存和产物。
+生成的 CLI、RouteWeft、Native 和工具构建目录由 `.gitignore` 忽略；
+`tools/native-render` 为项目源码，继续纳入版本管理。可用 `HUAVD_TOOLS_DIR` 覆盖工具根目录。

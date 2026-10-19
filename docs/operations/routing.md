@@ -11,7 +11,7 @@ make setup WORKDIR=/tmp/routing
 make doctor WORKDIR=/tmp/routing
 ```
 
-`./scripts/setup-tools.sh` / `make setup` 默认安装 RouteWeft；`./scripts/doctor.sh` / `make doctor` 默认执行路网工具身份及真实微型建图检查，不受 ROUTING=0 影响。安装工作目录必须与实际 build/release 一致。单独重装路网工具仍可执行 `make setup-routeweft`；离线本地源码可通过 ROUTEWEFT_SOURCE 指定。
+`./scripts/setup-tools.sh` / `make setup` 默认安装 RouteWeft；`./scripts/doctor.sh` / `make doctor` 默认执行路网工具身份及真实微型建图检查，不受 ROUTING=0 影响。工具默认安装到项目 `tools/routeweft/`，不读取地图 WORKDIR 下的工具。可通过 `HUAVD_TOOLS_DIR` 修改项目工具根目录，或通过 `ROUTEWEFT_TOOLS` 单独指定 RouteWeft 根目录。切换地图 WORKDIR 不需要重新安装。单独重装路网工具仍可执行 `make setup-routeweft`；离线本地源码可通过 ROUTEWEFT_SOURCE 指定。
 
 源码必须是 `config/routeweft.lock.json` 锁定的干净提交。未提供 `ROUTEWEFT_SOURCE` 时，只有显式 setup 会从锁定仓库获取提交。setup 使用 Cargo.lock 和仓库工具链编译，回执记录提交、二进制及 Cargo.lock 哈希、平台、rustc 和时间。setup 自动检查锁定源码 rust-toolchain.toml 的版本，缺失时由 rustup 安装对应 minimal 工具链，并明确使用该版本运行 Cargo；rustup 由 devbox 提供。Rust 依赖须预先可用或允许 setup 下载。
 
@@ -19,7 +19,7 @@ make doctor WORKDIR=/tmp/routing
 
 ### 找不到工具回执
 
-出现 `RouteWeft installation receipt not found`（旧版本为 `provide ROUTEWEFT_SHA256 or a build receipt`）时，表示当前实际 WORKDIR 下没有锁定工具的安装回执，并非 PBF 或 REGION 配置错误。先在同一实际工作目录安装并自检，再重试路网构建：
+出现 `RouteWeft installation receipt not found`（旧版本为 `provide ROUTEWEFT_SHA256 or a build receipt`）时，表示项目工具目录没有锁定工具的安装回执，并非 PBF 或 REGION 配置错误。先安装工具并自检，再重试路网构建：
 
 ```bash
 make setup-routeweft WORKDIR=/home/dev/data/map/guangxi
@@ -29,7 +29,7 @@ make build-routing WORKDIR=/home/dev/data/map/guangxi \
   INPUT=/home/dev/data/source-map/guangxi-260803.osm.pbf
 ```
 
-setup 会生成工具及 receipt.json，正常使用不需要手填 SHA-256。已有干净锁定源码可增加 ROUTEWEFT_SOURCE。若通过 release 使用隔离目录，安装命令的 WORKDIR 必须对应实际 RELEASE_WORKDIR。地图 build 会先执行工具合约检查，再启动地图生成；工具检查不使用真实 INPUT。
+setup 会生成工具及 receipt.json，正常使用不需要手填 SHA-256。已有干净锁定源码可增加 ROUTEWEFT_SOURCE。release 的隔离工作目录也会复用共享工具；自定义共享目录时保持 HUAVD_TOOLS_DIR 或 ROUTEWEFT_TOOLS 设置一致。地图 build 会先执行工具合约检查，再启动地图生成；工具检查不使用真实 INPUT。
 
 ## REGION 与执行
 
