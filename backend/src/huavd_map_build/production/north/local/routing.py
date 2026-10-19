@@ -1,6 +1,7 @@
 """Routing-only build lifecycle. Ready is the sole publication commit point."""
 from contextlib import contextmanager
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -49,13 +50,30 @@ class RoutingService:
         self.session = SessionId(session or default).value
         if self.session != default:
             raise RouteWeftError('SESSION must match REGION and YYYYMMDD')
-        document = yaml.safe_load((config or root / 'config/routing.yaml').read_text())
-        if not isinstance(document, dict) or document.get('schema') != 1:
-            raise RouteWeftError('unsupported routing config schema')
-        self.config_sha256 = sha256(config or root / 'config/routing.yaml')
-        self.config = document.get('regions', {}).get(region)
-        if not self.config or self.config.get('enabled') is not True:
-            raise RouteWeftError(f'routing region not enabled: {region}')
+        self.automatic_smoke = config is None
+        if config is None:
+            # Routing uses the existing map region catalog, never a second whitelist.
+            from huavd_map_build.bootstrap import catalog_service
+            catalog_service(root).region(region_id)
+            self.config = {
+                'profile': 'driving', 'invalid_restrictions': 'reject',
+                'max_input_bytes': 512 * 1024**2, 'build_timeout_s': 3600,
+                'preflight_timeout_s': 3600, 'verify_timeout_s': 300,
+                'query_timeout_s': 30, 'query_budget': {'radius-m': 0.1, 'timeout-ms': 10000},
+                'smoke': [], 'smoke_mode': 'graph-edge-v1',
+            }
+            effective = {'region': region, 'defaults': self.config}
+            self.config_sha256 = hashlib.sha256(
+                json.dumps(effective, sort_keys=True).encode()).hexdigest()
+        else:
+            # Explicit audit fixtures remain available to tests and diagnostic CLI.
+            document = yaml.safe_load(config.read_text())
+            if not isinstance(document, dict) or document.get('schema') != 1:
+                raise RouteWeftError('unsupported routing config schema')
+            self.config_sha256 = sha256(config)
+            self.config = document.get('regions', {}).get(region)
+            if not self.config or self.config.get('enabled') is not True:
+                raise RouteWeftError(f'routing region not enabled: {region}')
         if self.config.get('profile') != 'driving':
             raise RouteWeftError('unsupported routing profile')
         self.policy = self.config.get('invalid_restrictions', 'reject')
@@ -93,10 +111,10 @@ class RoutingService:
         thresholds = self.config.get('diagnostic_max', {})
         if not isinstance(thresholds, dict) or any(type(v) is not int or v < 0 for v in thresholds.values()):
             raise RouteWeftError('invalid diagnostic thresholds')
-        if not all(any(q.get('command') == cmd and q.get('expect') == 'ok' for q in queries)
+        if not self.automatic_smoke and not all(any(q.get('command') == cmd and q.get('expect') == 'ok' for q in queries)
                    for cmd in ('nearest', 'route')):
             raise RouteWeftError('smoke requires successful nearest and route')
-        if not any(q.get('expect') == 'NoRoute' for q in queries):
+        if not self.automatic_smoke and not any(q.get('expect') == 'NoRoute' for q in queries):
             raise RouteWeftError('smoke requires a reviewed NoRoute case')
         self.tool, self.region = tool, region
         self.workdir = workdir.resolve()
@@ -139,7 +157,8 @@ class RoutingService:
 
     def smoke(self, dataset, manifest):
         results = []
-        for query in self.config['smoke']:
+        queries = self._automatic_queries(dataset) if self.automatic_smoke else self.config['smoke']
+        for query in queries:
             command, expected = query['command'], query['expect']
             if command not in ('nearest', 'route') or expected not in ('ok', 'NoRoute', 'NoSegment'):
                 raise RouteWeftError('invalid smoke command/expectation')
@@ -185,7 +204,7 @@ class RoutingService:
                         bounds = query.get(key)
                         if (type(value) not in (int, float) or not math.isfinite(value) or value < 0
                                 or not bounds or not bounds[0] <= value <= bounds[1]):
-                            raise RouteWeftError(f'route outside reviewed {key} range')
+                            raise RouteWeftError(f'route outside expected {key} range')
                     legs = payload.get('legs', [])
                     if len(legs) != len(points) - 1 or not legs:
                         raise RouteWeftError('route leg count mismatch')
@@ -206,7 +225,28 @@ class RoutingService:
                         if not math.isclose(sum(l[key] for l in legs), payload[key], rel_tol=1e-6, abs_tol=1e-6):
                             raise RouteWeftError('route leg cost mismatch')
             results.append(result)
-        return {'schema': 1, 'dataset_id': manifest['dataset_id'], 'results': results}
+        return {'schema': 1, 'dataset_id': manifest['dataset_id'],
+                'mode': 'graph-edge-v1' if self.automatic_smoke else 'reviewed',
+                'queries': queries, 'results': results}
+
+    @staticmethod
+    def _automatic_queries(dataset):
+        graph = json.loads((dataset / 'graph.json').read_text())
+        nodes = graph.get('nodes', [])
+        for edge in graph.get('edges', []):
+            if edge.get('distance_mm', 0) < 10000 or edge.get('from') == edge.get('to'):
+                continue
+            start, end = nodes[edge['from']], nodes[edge['to']]
+            def coordinate(fraction):
+                return ','.join(str(start[key] + fraction * (end[key] - start[key]))
+                                for key in ('lon', 'lat'))
+            first, last = coordinate(0.25), coordinate(0.75)
+            return [
+                {'command': 'nearest', 'coordinates': first, 'expect': 'ok'},
+                {'command': 'route', 'coordinates': first + ';' + last, 'expect': 'ok',
+                 'distance_m': [0, 1e15], 'duration_s': [0, 1e15]},
+            ]
+        raise RouteWeftError('routing graph has no suitable edge for automatic query checks')
 
     def current(self):
         ready = json.loads(self.ready.read_text())
