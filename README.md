@@ -371,6 +371,6 @@ go install "github.com/protomaps/go-pmtiles@${PMTILES_VERSION}"
 
 ### 默认包含路网的地图包
 
-标准矢量包和栅格＋矢量包默认包含同源 RouteWeft 路网。`make build` 自动构建路网，`make pack` 要求有效路网并验证同源 SHA-256；失败时停止出包。须先准备锁定工具和已审核的 `ROUTING_CONFIG`，默认区域配置为空。
+标准矢量包和栅格＋矢量包默认包含同源 RouteWeft 路网。`make build` 自动构建路网，`make pack` 要求有效路网并验证同源 SHA-256；失败时停止出包。须先准备锁定工具；地图和路网共用 `REGION` 与原始 PBF，无需单独的路网配置。
 
 操作步骤、包内容、输入限制及消费者兼容要求见 [地图与路网构建](docs/manual/map-and-routing.md)。独立路网审核命令见 [路网操作说明](docs/operations/routing.md)。

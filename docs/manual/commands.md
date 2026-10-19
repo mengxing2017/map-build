@@ -223,7 +223,6 @@ make build-derived-map DERIVED_MAP=new-country-base YYYYMMDD=20260818
 | 变量 | 默认值 | 用途 |
 | :--- | :--- | :--- |
 | `ROUTING` | `1` | doctor 兼容变量；标准地图构建和打包始终要求路网，设置为 0 也不能省略 |
-| `ROUTING_CONFIG` | 仓库 `config/routing.yaml`，默认无启用区域 | 显式路由区域、策略、预算和质量门配置路径 |
 | `ROUTEWEFT_SOURCE` | 空 | setup 使用的干净源码目录；为空时显式 setup 获取锁定提交 |
 | `ROUTEWEFT_BIN` | WORKDIR 下锁定提交的工具缓存 | 已有二进制的绝对路径，通过环境变量传入 |
 | `ROUTEWEFT_SHA256` | 空 | 显式预期二进制 SHA-256，通过环境变量传入；未提供时须有匹配构建回执 |

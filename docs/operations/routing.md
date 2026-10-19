@@ -15,59 +15,29 @@ make doctor-routeweft WORKDIR=/tmp/routing
 
 已有二进制无需 Rust 环境：设置绝对 `ROUTEWEFT_BIN`，并提供 `ROUTEWEFT_SHA256` 或 `ROUTEWEFT_RECEIPT`。显式 SHA-256 是操作者信任入口，不声称能单凭哈希证明源码提交。每次调用重新核对二进制哈希。doctor 使用默认微型 PBF 实际运行 version/preflight/build/verify，检查 schema=1、format=1、profile=driving-v1、命令和限制策略能力。不要将真实构建的 INPUT 传给默认工具探针；显式提供 INPUT 时，doctor 会对该文件执行严格策略探针。
 
-## 城市配置与执行
+## REGION 与执行
 
-`config/routing.yaml` 默认没有启用区域。地图区域存在不代表支持路由；省域输入不能仅因低于 512 MiB 就启用。通过 `ROUTING_CONFIG` 指定审核配置，只有真实验收通过后才写入默认白名单。配置示例（坐标、范围及源哈希须按实际审核结果填写）：
-
-```yaml
-schema: 1
-regions:
-  china/nanning:
-    enabled: true
-    profile: driving
-    max_input_bytes: 104857600
-    source_sha256: <reviewed-city-PBF-SHA256>
-    build_timeout_s: 600
-    preflight_timeout_s: 600
-    verify_timeout_s: 120
-    query_timeout_s: 30
-    invalid_restrictions: reject
-    query_budget:
-      radius-m: 50
-      timeout-ms: 1000
-    smoke:
-      - command: nearest
-        coordinates: '<longitude>,<latitude>'
-        expect: ok
-      - command: route
-        coordinates: '<lon1>,<lat1>;<lon2>,<lat2>'
-        expect: ok
-        distance_m: [100, 2000]
-        duration_s: [10, 600]
-      - command: route
-        coordinates: '<reviewed-disconnected-or-restricted-pair>'
-        expect: NoRoute
-```
-
-`diagnostic_max` 可按诊断字段设置上限。无路只接受指定错误 kind 和退出码 3，超时/预算耗尽不能充当无路结论。方向和限制案例应分别添加到 smoke。坐标和成本示例不是南宁验收结果。
-
-默认 `invalid_restrictions: reject`。只有显式设置为 `block_ways` 并提供固定 `source_sha256` 及 `restriction_review` 才允许保守阻断。review 必须包含非空 `reason`、全部 `blocked_way_ids` 和 `diagnostics`（每项为 `relation_id` 与 `code`）。预检及构建的实际审计必须与此集合完全一致；不同、截断或未知诊断均拒绝发布。此模式不修复原始限制，会减少道路覆盖和可达性，不会由严格失败自动切换。
-
-每条 smoke 可通过 `query_budget` 覆盖全局查询预算，例如精确的单行道用例使用 `{radius-m: 0.01}`。成本范围仍须按审核结果填写。
+普通构建直接复用 config/regions.yaml 的 REGION、同一份原始 PBF 和内置驾车参数，不读取额外区域白名单，也不需要 ROUTING_CONFIG。默认预算为输入不超过 512 MiB，build/preflight 3600 秒，verify 300 秒，单次查询 30 秒；无效转向限制采用 reject。
 
 ```bash
-make preflight-routing REGION=china/nanning YYYYMMDD=20260803 WORKDIR=/tmp/routing ROUTING_CONFIG=/absolute/config.yaml INPUT=/absolute/city.osm.pbf
-make build-routing REGION=china/nanning YYYYMMDD=20260803 WORKDIR=/tmp/routing ROUTING_CONFIG=/absolute/config.yaml INPUT=/absolute/city.osm.pbf
-make verify-routing REGION=china/nanning YYYYMMDD=20260803 WORKDIR=/tmp/routing ROUTING_CONFIG=/absolute/config.yaml
-make smoke-routing REGION=china/nanning YYYYMMDD=20260803 WORKDIR=/tmp/routing ROUTING_CONFIG=/absolute/config.yaml
-make pack-routing REGION=china/nanning YYYYMMDD=20260803 WORKDIR=/tmp/routing ROUTING_CONFIG=/absolute/config.yaml FORMAT=both
+export REGION=your/configured/local-region
+export YYYYMMDD=20260803
+export WORKDIR=/tmp/routing
+export INPUT=/absolute/path/to/source.osm.pbf
+make preflight-routing
+make build-routing
+make verify-routing
+make smoke-routing
+make pack-routing FORMAT=both
 ```
 
-所有步骤须固定同一日期/session。相对 INPUT 按 WORKDIR 解析。只接受普通非符号链接输入，复制为独立只读会话快照并在构建前后复核 SHA-256；不使用普通硬链接冒充冻结。构建自动执行 preflight，独立 preflight 只产生 attempt 和审计，不写 ready。preflight 使用完整内存建图，耗时和内存量级接近构建，不是廉价文件头检查。构建使用不预建的唯一 dataset 路径，失败不重试、不自动切换策略。
+默认 smoke 从已验证 graph.json 中选取一条至少 10 米的有向道路，在其内部取点执行 nearest 和正向 route，验证数据集身份、有限成本、路线几何与分段连续性。没有可用道路或查询失败则停止发布 ready。它不声明已验证人工 NoRoute、所有转向限制或完整区域可达性。
 
-### 南宁切片验收夹具
+所有步骤固定同一 REGION、日期与 WORKDIR。相对 INPUT 按 WORKDIR 解析。路网输入冻结、preflight、ready-last 发布和包内复验机制不变。
 
-`backend/tests/fixtures/routing/nanning-audit.yaml` 是固定输入的测试夹具，默认 `config/routing.yaml` 仍无启用区域。该夹具仅匹配 bbox `108.25,22.75,108.42,22.88`、complete_ways 提取、SHA-256 为 `e7eee17e89b65bdff18bdc1be45e59952a1a3774fc9845a9488e67968f31c4ba` 的城市切片。手动验收时，将上述命令的 `ROUTING_CONFIG` 替换为夹具路径，INPUT 指向匹配的城市 PBF。完整广西省域 PBF 不能作为此夹具输入。该夹具使用保守阻断模式，产物只作独立审核，不代表完整道路覆盖或联合安装能力。
+### 专项测试夹具
+
+backend/tests/fixtures/routing/nanning-audit.yaml 仅用于固定南宁切片的回归测试，包含人工限制审核与查询案例。生产 Make 构建不读取它。诊断 CLI 的 --config 仅用于显式审核测试，不是地图包构建要求；普通入口只需 REGION。
 
 ## 产物与恢复
 
