@@ -1169,7 +1169,7 @@ install_routeweft() {
   if [[ -n "${ROUTEWEFT_SOURCE:-}" ]]; then
     args+=(--source="${ROUTEWEFT_SOURCE}")
   fi
-  log_info "installing locked RouteWeft and its Rust toolchain into ${WORKDIR}"
+  log_info "checking locked RouteWeft in ${WORKDIR}; install only if missing or invalid"
   PYTHONPATH="${REPO_ROOT}/backend/src" "${python}" -m huavd_map_build "${args[@]}" || return 1
 }
 

@@ -5,6 +5,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 import tomllib
 from datetime import datetime, timezone
@@ -30,6 +31,17 @@ def ensure_rust_toolchain(source: Path):
 
 def setup(root: Path, workdir: Path, source: Path | None):
     lock = json.loads((root / 'config/routeweft.lock.json').read_text())
+    target = workdir.resolve() / 'tools/routeweft' / lock['commit']
+    receipt_path = target / 'receipt.json'
+    if receipt_path.exists():
+        try:
+            process, receipt = receipt_process(target / 'routeweft', receipt_path, lock)
+            doctor(process)
+        except (OSError, ValueError, KeyError, TypeError, RouteWeftError) as error:
+            print(f'RouteWeft: cached installation invalid; rebuilding: {error}', file=sys.stderr)
+        else:
+            print(f'RouteWeft: reusing verified installation {target}', file=sys.stderr)
+            return receipt
     if source is None:
         cache = workdir.resolve() / 'tools/routeweft/sources'
         cache.mkdir(parents=True, exist_ok=True)
@@ -44,7 +56,6 @@ def setup(root: Path, workdir: Path, source: Path | None):
     if git('rev-parse', 'HEAD') != lock['commit'] or git('status', '--porcelain', '--untracked-files=normal'):
         raise RouteWeftError('setup requires a clean checkout of the locked commit')
     channel = ensure_rust_toolchain(source)
-    target = workdir.resolve() / 'tools/routeweft' / lock['commit']
     target.mkdir(parents=True, exist_ok=True)
     subprocess.run(['rustup', 'run', channel, *lock['build'],
                     '--target-dir', str(target / 'target')], cwd=source, check=True)
@@ -80,13 +91,18 @@ def tool(root: Path, workdir: Path):
             '(use the same actual WORKDIR as build/release), then retry. '
             'For an explicitly supplied ROUTEWEFT_BIN, provide its trusted '
             'ROUTEWEFT_SHA256 or ROUTEWEFT_RECEIPT.')
+    process, _ = receipt_process(binary, receipt_path, lock)
+    return process
+
+
+def receipt_process(binary: Path, receipt_path: Path, lock: dict):
     receipt = json.loads(receipt_path.read_text())
     if receipt.get('schema') != 1 or receipt.get('commit') != lock['commit']:
         raise RouteWeftError('receipt does not match tool lock')
     for key in ('platform', 'toolchain', 'cargo_lock_sha256', 'built_at'):
         if not receipt.get(key):
             raise RouteWeftError(f'missing receipt {key}')
-    return RouteWeftProcess(binary, receipt['binary_sha256'], commit=lock['commit'])
+    return RouteWeftProcess(binary, receipt['binary_sha256'], commit=lock['commit']), receipt
 
 
 def doctor(process, probe: Path | None = None):

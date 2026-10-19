@@ -128,7 +128,7 @@ if PYTHONPATH="${REPO_ROOT}/backend/src" "${REPO_ROOT}/.venv/bin/python" -m \
     huavd_map_build.production.south.adapter.process.native_tools check; then
   printf 'OK   Native       checksum, protocol and real render self-test\n'
 else
-  printf 'FAIL Native       run make setup; see Native tool source configuration\n'
+  printf 'FAIL Native       run make setup WORKDIR="%s" to fetch locked sources and build automatically\n' "${WORKDIR}"
   FAILURES=$((FAILURES + 1))
 fi
 
