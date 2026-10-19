@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -139,7 +140,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="huavd-map-build")
     commands = parser.add_subparsers(dest="context", required=True)
     routing = commands.add_parser("routing", help="Independent routing audit datasets")
-    routing.add_argument("command", choices=("setup", "doctor", "build", "verify", "smoke", "pack"))
+    routing.add_argument("command", choices=("setup", "doctor", "preflight", "build", "verify", "smoke", "pack"))
     routing.add_argument("--region", default="monaco")
     routing.add_argument("--yyyymmdd", default=datetime.now(timezone.utc).strftime("%Y%m%d"))
     routing.add_argument("--session")
@@ -523,6 +524,7 @@ def _parser() -> argparse.ArgumentParser:
         default="both",
     )
     bundle.add_argument("--format", choices=["tar", "zip", "both"], default="both")
+    bundle.add_argument("--routing-config")
     bundle.add_argument("--workdir", default="/tmp/huavd-map-build")
     return parser
 
@@ -543,10 +545,10 @@ def run(arguments: list[str] | None = None) -> int:
             else:
                 service = RoutingService(process, root, args.workdir, args.region, args.yyyymmdd,
                                          args.session, args.config)
-                if args.command == "build":
+                if args.command in ("build", "preflight"):
                     if args.input is None:
-                        raise ValueError("routing build requires --input")
-                    result = service.build(args.input)
+                        raise ValueError("routing build/preflight requires --input")
+                    result = service.preflight(args.input) if args.command == "preflight" else service.build(args.input)
                 elif args.command == "pack":
                     result = RoutingDelivery(service).pack(args.format)
                 else:
@@ -782,7 +784,7 @@ def run(arguments: list[str] | None = None) -> int:
         ):
             style_service(repository_root()).run(StyleRequest(region, session, args.workdir))
         result = bundle_service().run(BundleRequest(
-            region, build_date, session, args.role, args.workdir, args.format
+            region, build_date, session, args.role, args.workdir, args.format, args.routing_config
         ))
         print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
         return 0
@@ -1282,6 +1284,6 @@ def main() -> int:
     except MetadataVerificationError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 3
-    except (RuntimeError, ValueError, OSError) as error:
+    except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
