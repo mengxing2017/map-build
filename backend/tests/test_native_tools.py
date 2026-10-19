@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import tarfile
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -25,6 +26,45 @@ class NativeToolsTest(unittest.TestCase):
         (path / "source-lock.json").write_text(json.dumps(self.metadata))
         (path / "licenses").mkdir()
         return binary
+
+    def test_workdir_controls_default_installation_location(self):
+        with patch.dict(os.environ, {'WORKDIR': '/data/map/guangxi'}, clear=True):
+            self.assertEqual(Path('/data/map/guangxi/tools/maplibre-native'), tools.tools_root())
+        with patch.dict(os.environ, {'WORKDIR': '/data/map/guangxi',
+                                    'HUAVD_MAP_BUILD_HOME': '/data/other'}, clear=True):
+            self.assertEqual(Path('/data/map/guangxi/tools/maplibre-native'), tools.tools_root())
+        with patch.dict(os.environ, {'WORKDIR': '/data/map/guangxi',
+                                    'HUAVD_NATIVE_TOOLS': '/data/shared/native'}, clear=True):
+            self.assertEqual(Path('/data/shared/native'), tools.tools_root())
+
+    def test_missing_installation_builds_locked_sources_automatically(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tools_directory = root / 'tools/maplibre-native'
+            binary = tools_directory / 'version/bin/huavd-native-render'
+            def build(command, **kwargs):
+                self.assertIn('--online', command)
+                self.assertIn(f'--prefix={tools_directory}', command)
+                self.assertIn(f'--build-dir={root}/tools/native-build', command)
+                self.installation(binary.parent.parent)
+                (tools_directory / 'bin').mkdir()
+                (tools_directory / 'bin/huavd-native-render').symlink_to(binary)
+            with patch.dict(os.environ, {'WORKDIR': temporary}, clear=True), \
+                    patch.object(tools, 'resolve_renderer', side_effect=ValueError('missing')), \
+                    patch.object(tools.subprocess, 'run', side_effect=build), \
+                    patch.object(tools, 'activate', return_value=binary) as activate:
+                self.assertEqual(binary, tools.setup())
+                activate.assert_called_once_with(binary.parent.parent, tools_directory)
+
+    def test_source_build_failure_is_propagated(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.dict(os.environ, {'WORKDIR': temporary}, clear=True), \
+                    patch.object(tools, 'resolve_renderer', side_effect=ValueError('missing')), \
+                    patch.object(tools.subprocess, 'run',
+                                 side_effect=subprocess.CalledProcessError(1, 'source-build')):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    tools.setup()
+                self.assertFalse((Path(temporary)/'tools/maplibre-native/bin/huavd-native-render').exists())
 
     def test_activation_is_stable_and_rejects_corruption_without_changing_old_link(self):
         with tempfile.TemporaryDirectory() as temporary:
