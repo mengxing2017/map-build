@@ -524,7 +524,6 @@ def _parser() -> argparse.ArgumentParser:
         default="both",
     )
     bundle.add_argument("--format", choices=["tar", "zip", "both"], default="both")
-    bundle.add_argument("--routing-config")
     bundle.add_argument("--workdir", default="/tmp/huavd-map-build")
     return parser
 
@@ -784,7 +783,7 @@ def run(arguments: list[str] | None = None) -> int:
         ):
             style_service(repository_root()).run(StyleRequest(region, session, args.workdir))
         result = bundle_service().run(BundleRequest(
-            region, build_date, session, args.role, args.workdir, args.format, args.routing_config
+            region, build_date, session, args.role, args.workdir, args.format
         ))
         print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
         return 0

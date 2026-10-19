@@ -210,7 +210,7 @@ verify-dem:
 
 pack:
 ifneq ($(filter $(ROLE),base building both raster_bake base_raster both_raster),)
-	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact pack --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)" --workdir="$(WORKDIR)" $(if $(ROUTING_CONFIG),--routing-config="$(ROUTING_CONFIG)",)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact pack --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)" --workdir="$(WORKDIR)"
 else
 	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
 endif
@@ -302,8 +302,7 @@ release-import-all: build pack verify prepare-import-all
 # Independent routing audit pipeline. No map roles or renderer prerequisites.
 ROUTING ?= 1
 ROUTEWEFT_SOURCE ?=
-ROUTING_CONFIG ?=
-ROUTING_ARGS = --workdir="$(WORKDIR)" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(ROUTING_CONFIG),--config="$(ROUTING_CONFIG)",)
+ROUTING_ARGS = --workdir="$(WORKDIR)" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)"
 .PHONY: setup-routeweft doctor-routeweft preflight-routing build-routing verify-routing smoke-routing pack-routing
 setup-routeweft:
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing setup --workdir="$(WORKDIR)" $(if $(ROUTEWEFT_SOURCE),--source="$(ROUTEWEFT_SOURCE)",)
