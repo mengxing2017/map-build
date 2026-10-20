@@ -20,6 +20,8 @@ class _Routing:
     policy = 'reject'
     maxspeed_policy = 'reject'
     speed_audit = []
+    blocked_way_ids = []
+    restriction_diagnostics = []
     review = None
     graph_capacity = 'regional'
     dataset_format = 1
@@ -39,6 +41,8 @@ class _Routing:
         manifest = {'dataset_id': 'fixture', 'format': self.dataset_format, 'profile': 'driving-v1',
                     'attribution': 'OpenStreetMap contributors'}
         return self.dataset, manifest, {'source_sha256': self.source, 'maxspeed_diagnostics': self.speed_audit,
+                                      'blocked_way_ids': self.blocked_way_ids,
+                                      'restriction_diagnostics': self.restriction_diagnostics,
                                       'files': file_records(self.dataset)}
 
     def verify_dataset(self, path, source):
@@ -66,6 +70,14 @@ class BundleServiceTest(unittest.TestCase):
         audit = [{'way_id': 42, 'field': 'maxspeed', 'value': '辅路',
                   'action': 'use_default', 'effective_kmh': 30.0}]
         with patch.object(_Routing, 'maxspeed_policy', 'use_default'), patch.object(_Routing, 'speed_audit', audit):
+            self._pack('both')
+
+    def test_blocked_restrictions_survive_standard_package(self):
+        from unittest.mock import patch
+        audit = [{'relation_id': 99, 'code': 'MissingVia', 'action': 'blocked_ways'}]
+        with (patch.object(_Routing, 'policy', 'block_ways'),
+              patch.object(_Routing, 'blocked_way_ids', [42]),
+              patch.object(_Routing, 'restriction_diagnostics', audit)):
             self._pack('both')
 
     def test_source_mismatch_refuses_archive(self):
@@ -153,6 +165,9 @@ class BundleServiceTest(unittest.TestCase):
                 self.assertTrue(contract['routing']['required'])
                 self.assertEqual(routing.maxspeed_policy, contract['routing']['invalid_maxspeed'])
                 self.assertEqual(routing.speed_audit, contract['routing']['maxspeed_diagnostics'])
+                self.assertEqual(routing.blocked_way_ids, contract['routing']['blocked_way_ids'])
+                self.assertEqual(routing.restriction_diagnostics, contract['routing']['restriction_diagnostics'])
+                self.assertEqual(routing.policy == 'block_ways', bool(contract['routing']['coverage_notice']))
                 self.assertEqual(['offline-maps', f'routeweft-dataset-v{routing.dataset_format}'],
                                  contract['required_capabilities'])
                 self.assertEqual(routing.dataset_format, contract['routing']['format'])
