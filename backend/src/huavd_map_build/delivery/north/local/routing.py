@@ -79,6 +79,8 @@ class RoutingDelivery:
                     'profile': manifest['profile'], 'source_sha256': ready['source_sha256'],
                     'graph_capacity': service.graph_capacity,
                     'invalid_restrictions': service.policy,
+                    'invalid_maxspeed': service.maxspeed_policy,
+                    'maxspeed_diagnostics': ready['maxspeed_diagnostics'],
                     'restriction_review': service.review,
                     'coverage_notice': ('Invalid restriction ways were conservatively excluded; '
                                         'road coverage and reachability may be reduced.'
