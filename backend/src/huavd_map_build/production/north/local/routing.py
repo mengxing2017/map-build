@@ -59,8 +59,10 @@ class RoutingService:
                 'profile': 'driving', 'invalid_restrictions': 'reject',
                 'max_input_bytes': 512 * 1024**2, 'build_timeout_s': 3600,
                 'preflight_timeout_s': 3600, 'verify_timeout_s': 300,
-                'query_timeout_s': 30, 'query_budget': {'radius-m': 0.1, 'timeout-ms': 10000},
+                'query_timeout_s': 300, 'query_budget': {'radius-m': 0.1, 'timeout-ms': 10000},
                 'smoke': [], 'smoke_mode': 'graph-edge-v1',
+                'builder': 'external', 'graph_capacity': 'regional',
+                'max_scratch_bytes': 16 * 1024**3, 'max_load_bytes': 8 * 1024**3,
             }
             effective = {'region': region, 'defaults': self.config}
             self.config_sha256 = hashlib.sha256(
@@ -74,6 +76,18 @@ class RoutingService:
             self.config = document.get('regions', {}).get(region)
             if not self.config or self.config.get('enabled') is not True:
                 raise RouteWeftError(f'routing region not enabled: {region}')
+        self.external = self.config.get('builder', 'memory') == 'external'
+        if self.config.get('builder', 'memory') not in ('memory', 'external'):
+            raise RouteWeftError('unsupported routing builder')
+        self.graph_capacity = self.config.get('graph_capacity', 'regional' if self.external else 'city')
+        if self.graph_capacity not in ('city', 'regional') or (not self.external and self.graph_capacity != 'city'):
+            raise RouteWeftError('regional capacity requires external builder')
+        self.dataset_format = 2 if self.external else 1
+        self.graph_file = 'graph.bin' if self.external else 'graph.json'
+        self.capacity_args = ['--graph-capacity', self.graph_capacity] if self.external else []
+        for key in ('max_scratch_bytes', 'max_load_bytes'):
+            if key in self.config and (type(self.config[key]) is not int or self.config[key] <= 0):
+                raise RouteWeftError(f'invalid {key}')
         if self.config.get('profile') != 'driving':
             raise RouteWeftError('unsupported routing profile')
         self.policy = self.config.get('invalid_restrictions', 'reject')
@@ -134,14 +148,14 @@ class RoutingService:
             yield
 
     def verify_dataset(self, dataset, source_sha256=None):
-        result = self.tool.call('verify', ['--dataset', str(dataset), '--json'],
+        result = self.tool.call('verify', ['--dataset', str(dataset), '--json', *self.capacity_args],
                                 self.config['verify_timeout_s'])
         manifest = result.get('manifest', {})
         if not isinstance(manifest, dict):
             raise RouteWeftError('invalid manifest envelope')
         if result.get('verified') is not True:
             raise RouteWeftError('verify did not confirm integrity')
-        if type(manifest.get('format')) is not int or manifest['format'] != 1 or manifest.get('profile') != 'driving-v1':
+        if type(manifest.get('format')) is not int or manifest['format'] != self.dataset_format or manifest.get('profile') != 'driving-v1':
             raise RouteWeftError('unsupported manifest identity')
         if not isinstance(manifest.get('dataset_id'), str) or not re.fullmatch(r'[a-zA-Z0-9_-]{1,128}', manifest['dataset_id']):
             raise RouteWeftError('unsafe dataset id')
@@ -171,6 +185,8 @@ class RoutingService:
                 raise RouteWeftError('invalid smoke coordinates')
             arguments = ['--dataset', str(dataset), '--json',
                          '--coordinate' if command == 'nearest' else '--coordinates', coordinates]
+            if self.external:
+                arguments += [*self.capacity_args, '--max-load-bytes', str(self.config.get('max_load_bytes', 8 * 1024**3))]
             budget = {**self.config.get('query_budget', {}), **query.get('query_budget', {})}
             for key, value in budget.items():
                 if key not in ('radius-m', 'max-work', 'max-states', 'max-queue', 'timeout-ms'):
@@ -231,12 +247,10 @@ class RoutingService:
 
     @staticmethod
     def _automatic_queries(dataset):
-        graph = json.loads((dataset / 'graph.json').read_text())
-        nodes = graph.get('nodes', [])
-        for edge in graph.get('edges', []):
-            if edge.get('distance_mm', 0) < 10000 or edge.get('from') == edge.get('to'):
+        from huavd_map_build.production.south.adapter.process.routeweft_graph import sample_edges
+        for start, end, distance in sample_edges(dataset):
+            if distance < 10000 or start == end:
                 continue
-            start, end = nodes[edge['from']], nodes[edge['to']]
             def coordinate(fraction):
                 return ','.join(str(start[key] + fraction * (end[key] - start[key]))
                                 for key in ('lon', 'lat'))
@@ -272,7 +286,12 @@ class RoutingService:
             raise RouteWeftError('ready restriction policy mismatch')
         build_report(receipt.get('build_result', {}), ready['source_sha256'], self.policy,
                      manifest=manifest, review=self.review)
-        if receipt.get('preflight', {}).get('report') != receipt['build_result']['report']:
+        if self.external:
+            if (receipt.get('preflight') != {'mode': 'external-build-validation'}
+                    or receipt.get('graph_capacity') != self.graph_capacity
+                    or receipt['build_result'].get('build', {}).get('builder') != 'external'):
+                raise RouteWeftError('external build audit mismatch')
+        elif receipt.get('preflight', {}).get('report') != receipt['build_result']['report']:
             raise RouteWeftError('ready preflight/build report mismatch')
         return dataset, manifest, ready
 
@@ -303,24 +322,52 @@ class RoutingService:
                 version = capabilities(self.tool)
                 arguments = ['--input', str(frozen), '--profile', 'driving',
                              '--invalid-restrictions', self.policy, '--json']
-                preflight = self.tool.call('preflight', arguments, self.config.get(
-                    'preflight_timeout_s', self.config['build_timeout_s']))
-                report = build_report(preflight, before, self.policy, review=self.review)
-                write_json(attempt / 'preflight.json', preflight)
-                if sha256(frozen) != before:
-                    raise RouteWeftError('frozen input changed during preflight')
-                if preflight_only:
-                    return {'schema': 1, 'tool': self.tool.identity, 'capabilities': version,
-                            'input_provenance': input_provenance, 'attempt': str(attempt), **preflight}
-                dataset = attempt / 'dataset'  # CLI requires an absent output directory.
-                built = self.tool.call('build', [*arguments, '--output', str(dataset)], self.config['build_timeout_s'])
+                dataset = attempt / 'dataset'
+                if self.external:
+                    caps = version.get('capabilities', {})
+                    if (2 not in version.get('dataset_formats', [])
+                            or 'external' not in caps.get('build_modes', [])
+                            or 2 not in caps.get('external_build_formats', [])
+                            or self.graph_capacity not in caps.get('graph_capacity_profiles', {})):
+                        raise RouteWeftError('RouteWeft lacks external/v2 capacity support; reinstall locked tool')
+                    preflight = {'mode': 'external-build-validation'}
+                    arguments += ['--builder', 'external', '--format', '2', *self.capacity_args,
+                                  '--scratch-dir', str(attempt / 'scratch'), '--max-scratch-bytes',
+                                  str(self.config.get('max_scratch_bytes', 16 * 1024**3))]
+                else:
+                    preflight = self.tool.call('preflight', arguments, self.config.get(
+                        'preflight_timeout_s', self.config['build_timeout_s']))
+                    report = build_report(preflight, before, self.policy, review=self.review)
+                    write_json(attempt / 'preflight.json', preflight)
+                    if sha256(frozen) != before:
+                        raise RouteWeftError('frozen input changed during preflight')
+                    if preflight_only:
+                        return {'schema': 1, 'tool': self.tool.identity, 'capabilities': version,
+                                'input_provenance': input_provenance, 'attempt': str(attempt), **preflight}
+                built = self.tool.call('build', [*arguments, '--output', str(dataset)],
+                                       self.config.get('preflight_timeout_s', self.config['build_timeout_s'])
+                                       if preflight_only else self.config['build_timeout_s'])
                 write_json(attempt / 'build-result.json', built)
                 manifest = self.verify_dataset(dataset, before)
                 if built.get('manifest') != manifest:
                     raise RouteWeftError('build/verify manifest mismatch')
-                if build_report(built, before, self.policy, manifest=manifest, review=self.review) != report:
+                actual_report = build_report(built, before, self.policy, manifest=manifest, review=self.review)
+                if self.external:
+                    if built.get('build', {}).get('builder') != 'external':
+                        raise RouteWeftError('external build identity missing')
+                    report = actual_report
+                elif actual_report != report:
                     raise RouteWeftError('preflight/build report mismatch')
-                inspect = self.tool.call('inspect', ['--dataset', str(dataset), '--json'], self.config['verify_timeout_s'])
+                if sha256(frozen) != before:
+                    raise RouteWeftError('frozen input changed during build')
+                if preflight_only:
+                    result = {'schema': 1, 'status': 'ok', 'mode': 'external-build-validation',
+                              'tool': self.tool.identity, 'capabilities': version,
+                              'input_provenance': input_provenance, 'attempt': str(attempt),
+                              'report': report, 'build_result': built}
+                    write_json(attempt / 'preflight.json', result)
+                    return result
+                inspect = self.tool.call('inspect', ['--dataset', str(dataset), '--json', *self.capacity_args], self.config['verify_timeout_s'])
                 if inspect.get('manifest') != manifest:
                     raise RouteWeftError('inspect manifest mismatch')
                 smoke = self.smoke(dataset, manifest)
@@ -331,7 +378,8 @@ class RoutingService:
                          'manifest': manifest, 'inspect': inspect, 'elapsed_s': time.monotonic() - started}
                 build['input_provenance'] = input_provenance
                 build.update({'capabilities': version, 'invalid_restrictions': self.policy,
-                              'restriction_review': self.review, 'preflight': preflight, 'build_result': built})
+                              'restriction_review': self.review, 'graph_capacity': self.graph_capacity,
+                              'preflight': preflight, 'build_result': built})
                 # Receipts live inside immutable version, so failed rebuilds cannot invalidate old ready.
                 write_json(dataset / 'routing-build.json', build)
                 write_json(dataset / 'routing-smoke.json', smoke)
@@ -339,7 +387,7 @@ class RoutingService:
                 destination = self.outputs / f'{self.session}.routing' / manifest['dataset_id']
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 if destination.exists():
-                    if file_records(destination).get('graph.json') != file_records(dataset).get('graph.json'):
+                    if file_records(destination).get(self.graph_file) != file_records(dataset).get(self.graph_file):
                         raise RouteWeftError('immutable dataset collision')
                     # Reuse only an independently validated existing version.
                     if self.verify_dataset(destination, before) != manifest:
