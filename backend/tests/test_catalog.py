@@ -29,3 +29,27 @@ class CatalogTest(unittest.TestCase):
         self.assertEqual("base-vector", settings["asset_role"])
         self.assertFalse(settings["building_enabled"])
         self.assertIn("20260818", settings["package_version"])
+
+    def test_routing_defaults_overrides_and_invalid_values(self):
+        from huavd_map_build.catalog.south.adapter.yaml.repository import PyYamlRegionCatalogRepository
+        from huavd_map_build.catalog.domain.model import RoutingSettings
+        import yaml
+        import tempfile
+        document = yaml.safe_load((self.root / 'config/regions.yaml').read_text())
+        item = next(r for r in document['regions'] if r['id'] == 'monaco')
+        document['regions'] = [item]
+        item['geofabrik']['parent_region'] = None
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'regions.yaml'
+            def load():
+                path.write_text(yaml.safe_dump(document))
+                return PyYamlRegionCatalogRepository(path).load().get(RegionId('monaco')).routing
+            self.assertEqual(load(), RoutingSettings('use_default', 'block_ways'))
+            item['routing'] = {'invalid_restrictions': 'reject'}
+            self.assertEqual(load(), RoutingSettings('use_default', 'reject'))
+            for bad in ({'invalid_restrictions': 'ignore'}, {'invalid_maxspeed': False},
+                        {'invalid_maxspeeed': 'reject'}, None):
+                with self.subTest(bad=bad):
+                    item['routing'] = bad
+                    with self.assertRaises((ValueError, RuntimeError)):
+                        load()
