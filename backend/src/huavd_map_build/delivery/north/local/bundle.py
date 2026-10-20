@@ -131,10 +131,12 @@ class BundleService:
                 'schema_version': 'huavd-map-package/v1', 'session': request.session.value,
                 'region': request.region.value, 'source_sha256': expected,
                 'map_install': 'install.json',
-                'required_capabilities': ['offline-maps', 'routeweft-dataset-v1'],
+                'required_capabilities': ['offline-maps', f"routeweft-dataset-v{manifest['format']}"],
                 'routing': {'required': True, 'directory': 'routing',
                             'dataset_id': manifest['dataset_id'], 'format': manifest['format'],
-                            'profile': manifest['profile'], 'invalid_restrictions': service.policy,
+                            'profile': manifest['profile'],
+                            'graph_capacity': getattr(service, 'graph_capacity', 'city'),
+                            'invalid_restrictions': service.policy,
                             'restriction_review': service.review, 'files': file_records(destination)}})
 
     def _offline_map(self, role: Role, paths: ArtifactPaths, manifest: dict) -> dict:
