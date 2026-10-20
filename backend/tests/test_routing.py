@@ -43,6 +43,8 @@ class FakeTool:
     def report(self, arguments):
         speed_policy = arguments[arguments.index('--invalid-maxspeed') + 1] if '--invalid-maxspeed' in arguments else 'reject'
         counts = {'maxspeed_policy_use_default': 1} if speed_policy == 'use_default' else {}
+        counts.update(invalid_restrictions_blocked=int(self.blocked),
+                      invalid_restriction_ways_blocked=int(self.blocked))
         if self.speed_audit:
             counts['maxspeed_fallback_values'] = len(self.speed_audit)
         return {'valid': True, 'failure_code': None,
@@ -53,7 +55,7 @@ class FakeTool:
                 'blocked_way_ids': [42] if self.blocked else [],
                 'restriction_diagnostics': [{'relation_id': 99, 'code': 'MissingVia',
                     'action': 'blocked_ways', 'members_truncated': False,
-                    'members': [], 'tags': {}}] if self.blocked else []}
+                    'members': [{'kind': 'way', 'id': 42, 'role': 'from'}], 'tags': {}}] if self.blocked else []}
     def call(self, command, arguments, timeout, expected_error=None):
         self.calls.append((command, list(arguments)))
         if self.fail:
@@ -103,6 +105,21 @@ class FakeTool:
             'geometry': [{'lon': 0, 'lat': 0}, {'lon': 0.001, 'lat': 0}],
             'legs': [{'distance_m': 100, 'duration_s': 10, 'geometry_start': 0, 'geometry_end': 1}],
             'steps': [], 'snapped': [{'lon': 0, 'lat': 0}, {'lon': 0.001, 'lat': 0}]}}
+
+
+class RegionCatalogRoutingTests(unittest.TestCase):
+    def test_production_config_is_independent_of_snapshot_date(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            services = [RoutingService(FakeTool(), ROOT, Path(tmp), 'china/guangxi', day,
+                                       invalid_maxspeed='reject')
+                        for day in ('20260803', '20260804')]
+            self.assertEqual(services[0].config_sha256, services[1].config_sha256)
+            for service in services:
+                self.assertEqual(service.policy, 'block_ways')
+                self.assertEqual(service.maxspeed_policy, 'reject')
+                self.assertTrue(service.automatic_smoke)
+                self.assertNotIn('source_sha256', service.config)
+                self.assertIsNone(service.review)
 
 
 class LifecycleTests(unittest.TestCase):
@@ -320,13 +337,16 @@ class LifecycleTests(unittest.TestCase):
             self.service.build(self.input)
         self.assertFalse(self.service.ready.exists())
 
-    def test_block_ways_requires_explicit_review_and_exact_audit(self):
+    def test_block_ways_accepts_business_policy_and_enforces_optional_review(self):
         config = configuration()
         settings = config['regions']['monaco']
         settings['invalid_restrictions'] = 'block_ways'
         self.config.write_text(yaml.safe_dump(config))
-        with self.assertRaisesRegex(RouteWeftError, 'restriction_review'):
-            RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019', config=self.config)
+        general = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019', config=self.config)
+        self.tool.blocked = True
+        general.build(self.input)
+        general.verify()
+        self.tool.blocked = False
         settings.update(source_sha256=sha256(self.input), restriction_review={
             'reason': 'Reviewed synthetic invalid restriction', 'blocked_way_ids': [42],
             'diagnostics': [{'relation_id': 99, 'code': 'MissingVia'}]})
@@ -502,6 +522,29 @@ class ContractTests(unittest.TestCase):
                 with self.assertRaises(RouteWeftError):
                     build_report({'report': report}, 'a' * 64, 'reject')
 
+    def test_general_restriction_audit_rejects_incomplete_or_unaccounted_data(self):
+        from huavd_map_build.production.south.adapter.process.routeweft_contract import build_report
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'input'
+            source.write_bytes(b'fixture')
+            tool = FakeTool()
+            tool.blocked = True
+            report = tool.report(['--input', str(source), '--invalid-restrictions', 'block_ways'])
+            build_report({'report': report}, sha256(source), 'block_ways')
+            mutations = [
+                lambda r: r['diagnostics'].update(invalid_restrictions_blocked=2),
+                lambda r: r['diagnostics'].update(invalid_restriction_ways_blocked=0),
+                lambda r: r['restriction_diagnostics'][0].update(members_truncated=True),
+                lambda r: r['restriction_diagnostics'][0].update(members=[]),
+                lambda r: r.update(blocked_way_ids=[100]),
+                lambda r: r['restriction_diagnostics'].append(r['restriction_diagnostics'][0]),
+            ]
+            for mutate in mutations:
+                invalid = copy.deepcopy(report)
+                mutate(invalid)
+                with self.assertRaises(RouteWeftError):
+                    build_report({'report': invalid}, sha256(source), 'block_ways')
+
     def test_speed_audit_is_complete_and_matches_manifest_counts(self):
         from huavd_map_build.production.south.adapter.process.routeweft_contract import build_report
         entry = {'way_id': 42, 'field': 'maxspeed:forward', 'value': '辅路',
@@ -579,7 +622,8 @@ class RealCLITests(unittest.TestCase):
             root = Path(temp)
             source = root / 'input.osm.pbf'
             generate(source, maxspeed='辅路')
-            strict = RoutingService(process, ROOT, root / 'strict', 'monaco', '20261019')
+            strict = RoutingService(process, ROOT, root / 'strict', 'monaco', '20261019',
+                                    invalid_maxspeed='reject')
             with self.assertRaises(RouteWeftError) as caught:
                 strict.build(source)
             self.assertEqual('InvalidMaxspeed', caught.exception.response['error']['details']['failure_code'])
@@ -626,6 +670,41 @@ class RealCLITests(unittest.TestCase):
                 self.assertEqual([], ready['maxspeed_diagnostics'])
                 payloads.append((dataset / 'graph.bin').read_bytes())
             self.assertEqual(*payloads)
+
+    def test_business_defaults_handle_invalid_speed_and_turns_without_review(self):
+        from huavd_map_build.production.south.adapter.process.routeweft_probe import generate
+        process = RouteWeftProcess(Path(os.environ['ROUTEWEFT_TEST_BIN']), os.environ['ROUTEWEFT_TEST_SHA256'])
+        with tempfile.TemporaryDirectory(prefix='real routing business ') as tmp:
+            work = Path(tmp)
+            source = work / 'input.osm.pbf'
+            generate(source, maxspeed='辅路', invalid_restriction=True)
+            strict_config = configuration()
+            strict_config['regions']['monaco']['invalid_maxspeed'] = 'use_default'
+            strict_path = work / 'strict.yaml'
+            strict_path.write_text(yaml.safe_dump(strict_config))
+            strict = RoutingService(process, ROOT, work / 'strict', 'monaco', '20261019',
+                                    config=strict_path)
+            with self.assertRaises(RouteWeftError) as failure:
+                strict.build(source)
+            self.assertEqual('InvalidRestriction', failure.exception.response['error']['details']['failure_code'])
+            self.assertFalse(strict.ready.exists())
+            service = RoutingService(process, ROOT, work, 'monaco', '20261019')
+            service.build(source)
+            dataset, manifest, ready = service.current()
+            self.assertIsNone(service.review)
+            self.assertEqual('use_default', service.maxspeed_policy)
+            self.assertEqual('block_ways', service.policy)
+            self.assertEqual([10], ready['blocked_way_ids'])
+            self.assertEqual('MissingVia', ready['restriction_diagnostics'][0]['code'])
+            self.assertTrue(ready['maxspeed_diagnostics'])
+            self.assertEqual(1, manifest['diagnostics']['invalid_restrictions_blocked'])
+            service.verify(smoke=True)
+            for archive in RoutingDelivery(service).pack('both'):
+                out = unpack(Path(archive), work / ('unpack' + Path(archive).suffix))
+                package = json.loads((out / 'routing-package.json').read_text())
+                self.assertEqual([10], package['blocked_way_ids'])
+                self.assertEqual(ready['restriction_diagnostics'], package['restriction_diagnostics'])
+                self.assertTrue(package['coverage_notice'])
 
     def test_contract_probe(self):
         from huavd_map_build.production.south.adapter.process.routeweft_tools import doctor
