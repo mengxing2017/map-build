@@ -66,6 +66,7 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None, ma
              'UnsupportedMultiplicity', 'UnsupportedViaShape', 'UnsupportedRestriction',
              'UnresolvedRestriction', 'RestrictionLimitExceeded'}
     observed = []
+    relation_ids, member_ways = set(), set()
     for item in diagnostics:
         if (not isinstance(item, dict) or type(item.get('relation_id')) is not int
                 or item.get('code') not in codes or item.get('action') != 'blocked_ways'
@@ -73,11 +74,27 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None, ma
                 or not isinstance(item.get('members'), list) or len(item['members']) > 256
                 or not isinstance(item.get('tags'), dict)):
             raise RouteWeftError('invalid or incomplete restriction diagnostic')
+        if item['relation_id'] in relation_ids:
+            raise RouteWeftError('duplicate restriction diagnostic')
+        relation_ids.add(item['relation_id'])
+        for member in item['members']:
+            if (not isinstance(member, dict) or type(member.get('id')) is not int
+                    or member.get('kind') not in ('node', 'way', 'relation', 'unknown')
+                    or not isinstance(member.get('role'), str)):
+                raise RouteWeftError('invalid restriction member')
+            if member['kind'] == 'way':
+                member_ways.add(member['id'])
         observed.append({'relation_id': item['relation_id'], 'code': item['code']})
+    if (counts.get('invalid_restrictions_blocked', 0) != len(diagnostics)
+            or counts.get('invalid_restriction_ways_blocked', 0) != len(blocked)):
+        raise RouteWeftError('restriction audit count mismatch')
+    # Missing source members need not be blocked, but every exclusion must have evidence.
+    if not set(blocked).issubset(member_ways) or (diagnostics and not blocked):
+        raise RouteWeftError('restriction exclusions lack member evidence')
     if policy == 'reject' and (blocked or diagnostics):
         raise RouteWeftError('strict build contains blocked restrictions')
-    if policy == 'block_ways':
-        if (not review or sorted(blocked) != sorted(review['blocked_way_ids'])
+    if policy == 'block_ways' and review is not None:
+        if (sorted(blocked) != sorted(review['blocked_way_ids'])
                 or sorted(observed, key=lambda x: (x['relation_id'], x['code'])) != sorted(
                     review['diagnostics'], key=lambda x: (x['relation_id'], x['code']))):
             raise RouteWeftError('restriction audit differs from reviewed policy')
