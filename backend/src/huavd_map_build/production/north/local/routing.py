@@ -55,9 +55,10 @@ class RoutingService:
         if config is None:
             # Routing uses the existing map region catalog, never a second whitelist.
             from huavd_map_build.bootstrap import catalog_service
-            catalog_service(root).region(region_id)
+            settings = catalog_service(root).region(region_id).routing
             self.config = {
-                'profile': 'driving', 'invalid_restrictions': 'reject',
+                'profile': 'driving', 'invalid_restrictions': settings.invalid_restrictions,
+                'invalid_maxspeed': os.environ.get('ROUTING_INVALID_MAXSPEED', settings.invalid_maxspeed),
                 'max_input_bytes': 512 * 1024**2, 'build_timeout_s': 3600,
                 'preflight_timeout_s': 3600, 'verify_timeout_s': 300,
                 'query_timeout_s': 300, 'query_budget': {'radius-m': 0.1, 'timeout-ms': 10000},
@@ -102,7 +103,7 @@ class RoutingService:
         if self.policy not in ('reject', 'block_ways'):
             raise RouteWeftError('invalid restriction policy; use reject or block_ways')
         self.review = self.config.get('restriction_review')
-        if self.policy == 'block_ways':
+        if self.review is not None:
             if (not isinstance(self.review, dict) or not isinstance(self.review.get('reason'), str)
                     or not self.review['reason'].strip()
                     or not isinstance(self.review.get('blocked_way_ids'), list)
@@ -111,9 +112,9 @@ class RoutingService:
                     or not isinstance(self.review.get('diagnostics'), list)
                     or any(not isinstance(d, dict) or type(d.get('relation_id')) is not int
                            or not isinstance(d.get('code'), str) for d in self.review['diagnostics'])):
-                raise RouteWeftError('block_ways requires an explicit complete restriction_review')
+                raise RouteWeftError('restriction_review must be explicit and complete')
             if not self.config.get('source_sha256'):
-                raise RouteWeftError('block_ways requires a reviewed source SHA-256')
+                raise RouteWeftError('restriction_review requires a reviewed source SHA-256')
         for key in ('build_timeout_s', 'verify_timeout_s', 'query_timeout_s'):
             value = self.config.get(key)
             if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
@@ -295,6 +296,10 @@ class RoutingService:
         if (receipt.get('invalid_maxspeed') != self.maxspeed_policy
                 or ready.get('maxspeed_diagnostics') != receipt.get('build_result', {}).get('report', {}).get('maxspeed_diagnostics')):
             raise RouteWeftError('ready maxspeed audit mismatch')
+        report = receipt.get('build_result', {}).get('report', {})
+        if (ready.get('blocked_way_ids') != report.get('blocked_way_ids')
+                or ready.get('restriction_diagnostics') != report.get('restriction_diagnostics')):
+            raise RouteWeftError('ready restriction audit mismatch')
         if receipt.get('invalid_restrictions') != self.policy:
             raise RouteWeftError('ready restriction policy mismatch')
         build_report(receipt.get('build_result', {}), ready['source_sha256'], self.policy,
@@ -419,6 +424,8 @@ class RoutingService:
                          'invalid_restrictions': self.policy,
                          'invalid_maxspeed': self.maxspeed_policy,
                          'maxspeed_diagnostics': report['maxspeed_diagnostics'],
+                         'blocked_way_ids': report['blocked_way_ids'],
+                         'restriction_diagnostics': report['restriction_diagnostics'],
                          'files': file_records(destination)}
                 write_json(self.ready, ready)
                 return ready
