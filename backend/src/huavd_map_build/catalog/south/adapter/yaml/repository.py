@@ -13,6 +13,7 @@ from huavd_map_build.catalog.south.adapter.yaml.loader import (
     PyYamlConfigurationRepository,
 )
 from huavd_map_build.shared.kernel import RegionId
+from huavd_map_build.catalog.domain.model import RoutingSettings
 
 
 class CatalogAdapterError(YamlAdapterError):
@@ -33,9 +34,10 @@ class PyYamlRegionCatalogRepository:
             raise CatalogAdapterError("invalid regions catalog root structure") from error
         if not isinstance(raw_regions, list):
             raise CatalogAdapterError("regions catalog .regions must be an array")
+        routing = self._routing(document.get("routing", {}))
         return RegionCatalog(
             schema_version=schema_version,
-            regions=tuple(self._to_region(item) for item in raw_regions),
+            regions=tuple(self._to_region(item, routing) for item in raw_regions),
             default_source_id_template=str(
                 document.get("huavd", {}).get("default_source_id_template", "")
             ),
@@ -55,7 +57,20 @@ class PyYamlRegionCatalogRepository:
         )
 
     @staticmethod
-    def _to_region(value: object) -> Region:
+    def _routing(value: object, defaults: RoutingSettings | None = None) -> RoutingSettings:
+        if not isinstance(value, dict) or set(value) - {"invalid_maxspeed", "invalid_restrictions"}:
+            raise CatalogAdapterError("routing must contain only supported policy fields")
+        defaults = defaults or RoutingSettings()
+        try:
+            return RoutingSettings(
+                invalid_maxspeed=value.get("invalid_maxspeed", defaults.invalid_maxspeed),
+                invalid_restrictions=value.get("invalid_restrictions", defaults.invalid_restrictions),
+            )
+        except ValueError as error:
+            raise CatalogAdapterError(str(error)) from error
+
+    @staticmethod
+    def _to_region(value: object, routing: RoutingSettings | None = None) -> Region:
         if not isinstance(value, dict):
             raise CatalogAdapterError("each region must be an object")
         try:
@@ -69,6 +84,7 @@ class PyYamlRegionCatalogRepository:
                 raise TypeError("huavd must be an object")
             return Region(
                 id=RegionId(str(value["id"])),
+                routing=PyYamlRegionCatalogRepository._routing(value.get("routing", {}), routing),
                 slug=str(value["slug"]),
                 display_name=str(value["display_name"]),
                 display_name_zh=PyYamlRegionCatalogRepository._optional_string(
