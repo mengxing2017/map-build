@@ -139,6 +139,11 @@ class BundleService:
                             'invalid_restrictions': service.policy,
                             'invalid_maxspeed': service.maxspeed_policy,
                             'maxspeed_diagnostics': ready['maxspeed_diagnostics'],
+                            'blocked_way_ids': ready['blocked_way_ids'],
+                            'restriction_diagnostics': ready['restriction_diagnostics'],
+                            'coverage_notice': ('Invalid restriction ways were conservatively excluded; '
+                                                'road coverage and reachability may be reduced.'
+                                                if service.policy == 'block_ways' else None),
                             'restriction_review': service.review, 'files': file_records(destination)}})
 
     def _offline_map(self, role: Role, paths: ArtifactPaths, manifest: dict) -> dict:
