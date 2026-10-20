@@ -1,3 +1,7 @@
+import os
+import json
+import sys
+import tempfile
 import subprocess
 import unittest
 from pathlib import Path
@@ -14,6 +18,22 @@ class MakefileBuildEntrypointTest(unittest.TestCase):
         return subprocess.run(
             command, cwd=self.root, text=True, capture_output=True, check=True
         ).stdout
+
+    def test_routing_exports_only_explicit_speed_override(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            probe = Path(tmp) / 'probe.py'
+            probe.write_text("import os, json; print(json.dumps(os.environ.get('ROUTING_INVALID_MAXSPEED')))\n")
+            environment = dict(os.environ)
+            environment.pop('ROUTING_INVALID_MAXSPEED', None)
+            for value in (None, 'reject', 'use_default'):
+                with self.subTest(value=value):
+                    command = ['make', '--no-print-directory', '-s', 'verify-routing',
+                               f'PYTHON={sys.executable} {probe}']
+                    if value is not None:
+                        command.append(f'ROUTING_INVALID_MAXSPEED={value}')
+                    result = subprocess.run(command, cwd=self.root, env=environment,
+                                            text=True, capture_output=True, check=True)
+                    self.assertEqual(value, json.loads(result.stdout))
 
     def test_base_without_glyph_uses_python_production_entrypoint(self) -> None:
         output = self.recipe(
