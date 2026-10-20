@@ -33,7 +33,9 @@ setup 会生成工具及 receipt.json，正常使用不需要手填 SHA-256。�
 
 ## REGION 与执行
 
-普通构建直接复用 config/regions.yaml 的 REGION、同一份原始 PBF 和内置驾车参数，不读取额外区域白名单，也不需要 ROUTING_CONFIG。默认预算为输入不超过 512 MiB，build/preflight 3600 秒，verify 300 秒，单次查询 30 秒；无效转向限制采用 reject。
+普通构建直接复用 config/regions.yaml 的 REGION、同一份原始 PBF 和内置驾车参数，不读取额外区域白名单，也不需要 ROUTING_CONFIG。默认使用 external 磁盘构建、format 2 和 regional 图容量。预算为输入不超过 512 MiB、scratch 16 GiB、查询加载分配估算 8 GiB；build/preflight 3600 秒，verify 和单次查询进程各 300 秒。查询计算本身仍限 10 秒。无效转向限制和无效 maxspeed 均采用 reject。
+
+external 构建自身完成语义检查，不调用仍受 200 万对象限制的内存 preflight。独立 preflight-routing 执行一次 external 试构建与 verify，保留 attempt 审计但不发布 ready；正式 build-routing 不重复建图。显式审核配置可设置 builder: external、graph_capacity: regional、max_scratch_bytes 和 max_load_bytes；未指定 builder 的历史审核夹具继续使用 memory/v1。regional 仍受上游对象、图大小、跨度和数据质量限制，不保证任意省域成功。
 
 ```bash
 export REGION=your/configured/local-region
@@ -47,7 +49,7 @@ make smoke-routing
 make pack-routing FORMAT=both
 ```
 
-默认 smoke 从已验证 graph.json 中选取一条至少 10 米的有向道路，在其内部取点执行 nearest 和正向 route，验证数据集身份、有限成本、路线几何与分段连续性。没有可用道路或查询失败则停止发布 ready。它不声明已验证人工 NoRoute、所有转向限制或完整区域可达性。
+默认 smoke 从已验证 graph.bin（历史审核夹具为 graph.json） 中选取一条至少 10 米的有向道路，在其内部取点执行 nearest 和正向 route，验证数据集身份、有限成本、路线几何与分段连续性。没有可用道路或查询失败则停止发布 ready。它不声明已验证人工 NoRoute、所有转向限制或完整区域可达性。
 
 所有步骤固定同一 REGION、日期与 WORKDIR。相对 INPUT 按 WORKDIR 解析。路网输入冻结、preflight、ready-last 发布和包内复验机制不变。
 
@@ -57,7 +59,7 @@ backend/tests/fixtures/routing/nanning-audit.yaml 仅用于固定南宁切片的
 
 ## 产物与恢复
 
-- `outputs/<session>.routing/<dataset-id>/`：原始 manifest.json、graph.json，构建/查询/进程回执。routing-build.json 保留能力握手、完整 preflight/build CLI 包络、逐关系诊断及审核策略，不仅保留 manifest 计数。
+- `outputs/<session>.routing/<dataset-id>/`：原始 manifest.json、graph.bin（v1 为 graph.json），构建/查询/进程回执。routing-build.json 保留能力握手、内存模式的完整 preflight/build CLI 包络，或外存模式的 external-build-validation 标记及完整 build 包络、逐关系诊断及审核策略，不仅保留 manifest 计数。
 - `outputs/<session>.routing.ready.json`：最后原子提交，含文件大小/哈希、工具身份及配置哈希。
 - `outputs/<session>.routing.bundle.{tar.gz,zip}`：独立审核包，含 routing-package.json、署名和许可链接；没有 install.json。包清单记录限制策略、审核集合和保守阻断的覆盖限制。
 - 归档旁的 `.verified.json`：归档哈希、大小以及新目录解包后 verify/query 结果。
@@ -82,3 +84,5 @@ ROUTEWEFT_TEST_BIN=/absolute/routeweft ROUTEWEFT_TEST_SHA256=<sha256> PYTHONPATH
 
 
 当前独立接口不将历史地图包与路由包自动配对。地图和路由资产配对时必须具有一致的原始 PBF SHA-256 证据。
+
+升级此版本后执行 `make setup-routeweft ROUTEWEFT_SOURCE=/absolute/path/to/routeweft` 安装锁定的新工具，再重新构建路网。新标准包声明 `routeweft-dataset-v2` 与 `routing.graph_capacity=regional`，消费者必须支持相应格式和容量；旧 ready 不可跨构建配置复用。
