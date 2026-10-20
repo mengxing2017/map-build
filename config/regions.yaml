@@ -33,6 +33,11 @@ huavd:
     base: "osm-{region_slug}"
     building: "osm-{region_slug}-building"
     dem: "osm-{region_slug}-dem"
+# Routing business defaults apply to every catalog region and every build date.
+# A region may override either field in its own routing mapping.
+routing:
+  invalid_maxspeed: use_default
+  invalid_restrictions: block_ways
 regions:
   - id: "africa"
     slug: "africa"
