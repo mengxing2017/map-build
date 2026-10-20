@@ -58,9 +58,30 @@ class StyleCompilerTest(unittest.TestCase):
         bake = self.documents.bake
         self.assertNotIn("glyphs", bake)
         self.assertNotIn("sprite", bake)
-        self.assertTrue(all(layer["type"] in {"background", "fill", "line"} for layer in bake["layers"]))
+        self.assertEqual({"fill", "line"}, {layer["type"] for layer in bake["layers"]})
         railway = next(layer for layer in bake["layers"] if layer["id"] == "railway-fill-solid")
         self.assertEqual(["literal", [3, 3]], railway["paint"]["line-dasharray"])
+
+    def test_default_bake_types_exclude_background_and_keep_display_background(self) -> None:
+        resolved = self.configuration.style("china/guangxi", "zh-Hans")
+        for missing in ("bake_layer_types", "raster_overlays"):
+            with self.subTest(missing=missing):
+                config = deepcopy(resolved["config"])
+                if missing == "raster_overlays":
+                    config.pop("raster_overlays")
+                else:
+                    config["raster_overlays"].pop("bake_layer_types")
+                documents = compile_styles(
+                    config, resolved["locale"], resolved["effective_base_layers"],
+                )
+                self.assertEqual(
+                    {"fill", "line"}, {layer["type"] for layer in documents.bake["layers"]},
+                )
+                for display in (documents.vector, documents.raster):
+                    self.assertEqual("background", display["layers"][0]["type"])
+                    self.assertEqual(
+                        "#eef2f3", display["layers"][0]["paint"]["background-color"],
+                    )
 
     def test_raster_style_keeps_vector_symbol_support(self) -> None:
         raster = self.documents.raster

@@ -26,7 +26,7 @@ class NativeIntegrationTest(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
-    def render(self, style, z=1, x=1, y=0, size=256):
+    def render(self, style, z=1, x=1, y=0, size=256, rgba=False):
         source = self.root / "style.json"
         source.write_text(json.dumps(style))
         output = self.root / "tile.png"
@@ -45,8 +45,30 @@ class NativeIntegrationTest(unittest.TestCase):
         self.assertEqual(size * size * depth, len(pixels))
         def pixel(x, y):
             offset = (y * size + x) * depth
+            if rgba:
+                return tuple(pixels[offset:offset + 4]) if depth == 4 else (*pixels[offset:offset + 3], 255)
             return tuple(pixels[offset:offset + 3])
         return pixel
+
+    def test_background_free_tiles_preserve_alpha_through_webp(self):
+        empty = {"version": 8, "sources": {}, "layers": []}
+        filled = {"version": 8, "sources": {"area": {
+            "type": "geojson", "data": {"type": "Feature", "properties": {},
+                "geometry": {"type": "Polygon", "coordinates": [[
+                    [-170, -80], [170, -80], [170, 80], [-170, 80], [-170, -80],
+                ]]}},
+        }}, "layers": [{"id": "area", "type": "fill", "source": "area",
+            "paint": {"fill-color": "#00ff00", "fill-opacity": 0.5}}]}
+        for z, size in ((0, 256), (0, 512), (1, 256), (1, 512)):
+            with self.subTest(z=z, size=size):
+                x = 0 if z == 0 else 1
+                pixel = self.render(empty, z=z, x=x, size=size, rgba=True)
+                self.assertEqual(0, pixel(size // 2, size // 2)[3])
+                pixel = self.render(filled, z=z, x=x, size=size, rgba=True)
+                center = pixel(size // 2, size // 2)
+                self.assertEqual((0, 255, 0), center[:3])
+                self.assertLessEqual(abs(center[3] - 128), 1)
+                self.assertEqual(0, pixel(size - 2, 1)[3])
 
     def test_version_and_real_self_test(self):
         identity = json.loads(native_renderer_identity(self.binary))

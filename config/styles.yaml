@@ -9,7 +9,7 @@ raster_source:
   url: "pmtiles://{raster_pmtiles}"
   tile_size: 256
 raster_overlays:
-  bake_layer_types: ["background", "fill", "line"]
+  bake_layer_types: ["fill", "line"]
   vector_overlay_layer_types: ["symbol"]
   exclude_bake_layer_types: ["symbol", "fill-extrusion"]
 glyphs_url: "huavd-map://glyphs/{locale}/{fontstack}/{range}.pbf"

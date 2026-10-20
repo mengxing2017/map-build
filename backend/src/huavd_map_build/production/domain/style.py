@@ -180,7 +180,7 @@ def _compile_bake(vector: dict[str, Any], config: dict[str, Any]) -> dict[str, A
     bake.pop("glyphs", None)
     bake.pop("sprite", None)
     allowed = set(config.get("raster_overlays", {}).get(
-        "bake_layer_types", ["background", "fill", "line"]
+        "bake_layer_types", ["fill", "line"]
     ))
     bake["layers"] = [layer for layer in bake["layers"] if layer["type"] in allowed]
     for layer in bake["layers"]:
