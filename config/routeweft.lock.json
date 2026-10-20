@@ -1,10 +1,11 @@
 {
   "schema": 1,
   "repository": "https://github.com/mengxing2017/routeweft",
-  "commit": "2fa958dd5dcdae1b9caff4df9f0a51676c2fd494",
+  "commit": "46e8c737d52a4e80780da458db1e5eb0da2e593b",
+  "require_build_identity": true,
   "map_build_baseline": "c1a1c1390bf23a6faed92b6c1356e37ba3613555",
   "build": ["cargo", "build", "--release", "--locked", "--manifest-path", "backend/Cargo.toml", "--bin", "routeweft"],
   "cli_schema": 1,
-  "dataset_format": 1,
+  "dataset_format": 2,
   "profile": "driving-v1"
 }
