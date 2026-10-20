@@ -160,8 +160,12 @@ class RasterMetadataServiceTest(unittest.TestCase):
     def test_writes_raster_metadata_edits_candidate_and_refreshes_sidecar(self) -> None:
         root = repository_root(Path(__file__))
         editor = RecordingEditor()
+        catalog = Mock()
+        catalog.region_settings.side_effect = lambda region, role, day: {
+            "source_id": "raster-source" if role == "raster_bake" else "base-source",
+        }
         service = RasterMetadataService(
-            catalog_service(root), build_configuration_service(root),
+            catalog, build_configuration_service(root),
             FileSystemPmtilesHeaderReader(), editor,
             FileSystemMetadataStore(AtomicFileWriter(), FileDigestAdapter()),
             lambda: "2026-10-03T00:00:00Z",
@@ -177,6 +181,10 @@ class RasterMetadataServiceTest(unittest.TestCase):
             document = json.loads(Path(metadata).read_text(encoding="utf-8"))
             sidecar = Path(f"{candidate}.sha512").read_text(encoding="utf-8")
         self.assertEqual("raster-baked", document["huavd:asset-role"])
+        self.assertEqual("raster-source", document["huavd:source-id"])
+        catalog.region_settings.assert_called_once_with(
+            RegionId("china/guangxi"), "raster_bake", "20261003",
+        )
         self.assertEqual(25, document["huavd:tile-count"])
         self.assertEqual([(str(candidate), metadata)], editor.calls)
         self.assertTrue(sidecar.endswith("  candidate.pmtiles\n"))

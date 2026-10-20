@@ -101,7 +101,7 @@ class RasterMetadataService:
             raise ValueError(f"required file does not exist: {request.pmtiles_path}")
         header = self._headers.read(request.pmtiles_path)
         settings = self._catalog.region_settings(
-            request.region, Role.BASE.value, request.build_date.value
+            request.region, Role.RASTER_BAKE.value, request.build_date.value
         )
         source_id = settings.get("source_id")
         glyphs = self._configuration.glyph_manifest()
