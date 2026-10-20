@@ -64,18 +64,23 @@ def setup(root: Path, workdir: Path, source: Path | None):
     channel = ensure_rust_toolchain(source)
     target.mkdir(parents=True, exist_ok=True)
     subprocess.run(['rustup', 'run', channel, *lock['build'],
-                    '--target-dir', str(target / 'target')], cwd=source, check=True)
+                    '--target-dir', str(target / 'target')], cwd=source, check=True,
+                   env={key: value for key, value in os.environ.items()
+                        if key not in ('ROUTEWEFT_BUILD_COMMIT', 'ROUTEWEFT_BUILD_SOURCE_DIRTY',
+                                       'ROUTEWEFT_BUILD_SOURCE_KIND')})
     binary = target / 'routeweft'
     temporary = target / 'routeweft.new'
     shutil.copyfile(target / 'target/release/routeweft', temporary)
     temporary.chmod(0o755)
-    doctor(RouteWeftProcess(temporary, sha256(temporary), commit=lock['commit']))
+    checked = doctor(RouteWeftProcess(temporary, sha256(temporary), commit=lock['commit'],
+                                     require_build_identity=lock.get('require_build_identity', False)))
     os.replace(temporary, binary)
     receipt = {'schema': 1, 'commit': lock['commit'], 'binary_sha256': sha256(binary),
                'platform': platform.platform(), 'cargo_lock_sha256': sha256(source / 'backend/Cargo.lock'),
                'toolchain': subprocess.check_output(['rustup', 'run', channel, 'rustc', '--version'],
                                                   cwd=source, text=True).strip(),
-               'built_at': datetime.now(timezone.utc).isoformat()}
+               'built_at': datetime.now(timezone.utc).isoformat(),
+               'build_identity': checked['capabilities'].get('build')}
     receipt_tmp = target / 'receipt.json.new'
     receipt_tmp.write_text(json.dumps(receipt, indent=2, sort_keys=True))
     os.replace(receipt_tmp, target / 'receipt.json')
@@ -89,7 +94,8 @@ def tool(root: Path, workdir: Path):
     expected = os.environ.get('ROUTEWEFT_SHA256')
     receipt_path = Path(os.environ.get('ROUTEWEFT_RECEIPT', str(target / 'receipt.json')))
     if expected:
-        return RouteWeftProcess(binary, expected)
+        return RouteWeftProcess(binary, expected,
+                               require_build_identity=lock.get('require_build_identity', False))
     if not receipt_path.is_file():
         raise RouteWeftError(
             f'RouteWeft installation receipt not found: {receipt_path}. '
@@ -108,7 +114,8 @@ def receipt_process(binary: Path, receipt_path: Path, lock: dict):
     for key in ('platform', 'toolchain', 'cargo_lock_sha256', 'built_at'):
         if not receipt.get(key):
             raise RouteWeftError(f'missing receipt {key}')
-    return RouteWeftProcess(binary, receipt['binary_sha256'], commit=lock['commit']), receipt
+    return RouteWeftProcess(binary, receipt['binary_sha256'], commit=lock['commit'],
+                            require_build_identity=lock.get('require_build_identity', False)), receipt
 
 
 def doctor(process, probe: Path | None = None):
@@ -133,5 +140,26 @@ def doctor(process, probe: Path | None = None):
             raise RouteWeftError('RouteWeft contract probe failed')
         if build_report(built, sha256(probe), 'reject', manifest=manifest) != report:
             raise RouteWeftError('contract probe preflight/build mismatch')
-        return {'schema': 1, 'tool': process.identity, 'capabilities': version,
-                'preflight': preflight, 'build': built, 'probe': verified}
+        external_output = Path(directory) / 'external-dataset'
+        external = process.call('build', ['--input', str(probe.resolve()), '--profile', 'driving',
+            '--invalid-restrictions', 'reject', '--builder', 'external', '--format', '2',
+            '--graph-capacity', 'regional', '--output', str(external_output)], 60)
+        external_verified = process.call('verify', ['--dataset', str(external_output),
+            '--graph-capacity', 'regional', '--json'], 30)
+        external_manifest = external_verified.get('manifest', {})
+        if (external_verified.get('verified') is not True
+                or external.get('manifest') != external_manifest
+                or external_manifest.get('format') != 2
+                or external_manifest.get('profile') != 'driving-v1'
+                or external.get('build', {}).get('builder') != 'external'):
+            raise RouteWeftError('RouteWeft external/v2 contract probe failed')
+        build_report(external, sha256(probe), 'reject', manifest=external_manifest)
+        return {'schema': 1, 'tool': {**process.identity,
+                'binary': str(process.binary.resolve()), 'version': version['version'],
+                'embedded_build': version.get('build'),
+                'identity_verification': ('embedded-and-external' if version.get('build')
+                                          else 'external-only'),
+                'selection': ('locked-receipt' if process.identity.get('commit') else 'explicit-sha256')},
+                'capabilities': version,
+                'preflight': preflight, 'build': built, 'probe': verified,
+                'external_build': external, 'external_probe': external_verified}
