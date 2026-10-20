@@ -308,6 +308,8 @@ release-import-all: build pack verify prepare-import-all
 
 # Independent routing audit pipeline. No map roles or renderer prerequisites.
 ROUTING ?= 1
+ROUTING_INVALID_MAXSPEED ?= reject
+export ROUTING_INVALID_MAXSPEED
 ROUTEWEFT_SOURCE ?=
 ROUTING_ARGS = --workdir="$(WORKDIR)" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)"
 .PHONY: setup-routeweft doctor-routeweft preflight-routing build-routing verify-routing smoke-routing pack-routing

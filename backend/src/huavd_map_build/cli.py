@@ -148,6 +148,7 @@ def _parser() -> argparse.ArgumentParser:
     routing.add_argument("--input", type=Path)
     routing.add_argument("--source", type=Path)
     routing.add_argument("--config", type=Path)
+    routing.add_argument("--invalid-maxspeed", choices=("reject", "use_default"))
     routing.add_argument("--format", choices=("tar", "zip", "both"), default="both")
 
 
@@ -543,7 +544,7 @@ def run(arguments: list[str] | None = None) -> int:
                 result = doctor(process, args.input)
             else:
                 service = RoutingService(process, root, args.workdir, args.region, args.yyyymmdd,
-                                         args.session, args.config)
+                                         args.session, args.config, invalid_maxspeed=args.invalid_maxspeed)
                 if args.command in ("build", "preflight"):
                     if args.input is None:
                         raise ValueError("routing build/preflight requires --input")
