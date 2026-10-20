@@ -18,6 +18,8 @@ class _Viewport:
 
 class _Routing:
     policy = 'reject'
+    maxspeed_policy = 'reject'
+    speed_audit = []
     review = None
     graph_capacity = 'regional'
     dataset_format = 1
@@ -36,7 +38,7 @@ class _Routing:
         from huavd_map_build.production.north.local.routing import file_records
         manifest = {'dataset_id': 'fixture', 'format': self.dataset_format, 'profile': 'driving-v1',
                     'attribution': 'OpenStreetMap contributors'}
-        return self.dataset, manifest, {'source_sha256': self.source,
+        return self.dataset, manifest, {'source_sha256': self.source, 'maxspeed_diagnostics': self.speed_audit,
                                       'files': file_records(self.dataset)}
 
     def verify_dataset(self, path, source):
@@ -57,6 +59,13 @@ class BundleServiceTest(unittest.TestCase):
     def test_v2_package_declares_consumer_capability(self):
         from unittest.mock import patch
         with patch.object(_Routing, 'dataset_format', 2):
+            self._pack('both')
+
+    def test_fallback_policy_and_diagnostics_survive_standard_package(self):
+        from unittest.mock import patch
+        audit = [{'way_id': 42, 'field': 'maxspeed', 'value': '辅路',
+                  'action': 'use_default', 'effective_kmh': 30.0}]
+        with patch.object(_Routing, 'maxspeed_policy', 'use_default'), patch.object(_Routing, 'speed_audit', audit):
             self._pack('both')
 
     def test_source_mismatch_refuses_archive(self):
@@ -142,6 +151,8 @@ class BundleServiceTest(unittest.TestCase):
                 members = set(package.namelist())
                 contract = json.loads(package.read('package.json'))
                 self.assertTrue(contract['routing']['required'])
+                self.assertEqual(routing.maxspeed_policy, contract['routing']['invalid_maxspeed'])
+                self.assertEqual(routing.speed_audit, contract['routing']['maxspeed_diagnostics'])
                 self.assertEqual(['offline-maps', f'routeweft-dataset-v{routing.dataset_format}'],
                                  contract['required_capabilities'])
                 self.assertEqual(routing.dataset_format, contract['routing']['format'])
