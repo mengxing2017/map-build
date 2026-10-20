@@ -1,4 +1,5 @@
 """Validate the locked CLI capabilities and bounded build audit contract."""
+import re
 from huavd_map_build.production.south.port.routeweft import RouteWeftError
 
 
@@ -18,6 +19,23 @@ def capabilities(tool):
         if (not isinstance(actual, list) or any(type(v) is not type(next(iter(expected))) for v in actual)
                 or not expected.issubset(actual)):
             raise RouteWeftError(f'incompatible RouteWeft capability: {key}')
+    build = value.get('build')
+    if build is None:
+        if getattr(tool, 'require_build_identity', False):
+            raise RouteWeftError('RouteWeft is missing embedded build identity; reinstall the locked tool')
+    else:
+        if (not isinstance(build, dict)
+                or not isinstance(build.get('git_commit'), str)
+                or not re.fullmatch('[0-9a-f]{40}', build['git_commit'])
+                or build.get('source_dirty') is not False
+                or build.get('release_eligible') is not True
+                or build.get('source_identity_kind') not in ('git', 'git-archive', 'provided')
+                or any(not isinstance(build.get(key), str) or not build[key]
+                       for key in ('target', 'profile', 'rustc'))):
+            raise RouteWeftError('RouteWeft embedded build identity is invalid or not release eligible')
+        expected_commit = tool.identity.get('commit')
+        if expected_commit is not None and build['git_commit'] != expected_commit:
+            raise RouteWeftError('RouteWeft embedded commit does not match tool lock/receipt')
     return value
 
 
