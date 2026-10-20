@@ -9,6 +9,7 @@ from unittest.mock import patch
 import zipfile
 import io
 import copy
+import struct
 
 import yaml
 
@@ -54,7 +55,9 @@ class FakeTool:
         if command == 'version':
             return {'schema': 1, 'status': 'ok', 'version': '0.1.0', 'cli_schema': 1,
                     'commands': ['build','preflight','inspect','verify','nearest','route','version'],
-                    'dataset_formats': [1], 'profiles': ['driving-v1'],
+                    'dataset_formats': [1, 2], 'profiles': ['driving-v1'],
+                    'capabilities': {'build_modes': ['memory', 'external'], 'external_build_formats': [2],
+                                     'graph_capacity_profiles': {'city': {}, 'regional': {}}},
                     'invalid_restriction_policies': ['reject','block_ways']}
         if command == 'preflight':
             return {'schema': 1, 'status': 'ok', 'report': self.report(arguments)}
@@ -69,12 +72,19 @@ class FakeTool:
                         'source_sha256': sha256(Path(arguments[1])), 'diagnostics': {},
                         'nodes': 2, 'edges': 2, 'restrictions': 0,
                         'source_snapshot': None, 'attribution': 'OSM contributors'}
+            if '--builder' in arguments:
+                manifest['format'] = 2
+                (output / 'graph.json').unlink()
+                (output / 'graph.bin').write_bytes(
+                    struct.pack('<8s7Q', b'RWFTG002', 0, 2, 1, 0, 0, 0, 0)
+                    + struct.pack('<4d', 0, 0, 0.001, 0)
+                    + struct.pack('<QQqQQIIQ', 0, 1, 42, 100000, 10000, 0, 0, 0))
             write_json(output / 'manifest.json', manifest)
         else:
             manifest = json.loads((Path(arguments[1]) / 'manifest.json').read_text())
         if command in ('build', 'verify', 'inspect'):
             return {'schema': 1, 'status': 'ok', 'verified': True, 'manifest': manifest,
-                    **({'report': self.report(arguments)} if command == 'build' else {})}
+                    **({'report': self.report(arguments), 'build': {'builder': 'external' if '--builder' in arguments else 'memory'}} if command == 'build' else {})}
         if expected_error:
             return {'schema': 1, 'status': 'error', 'error': {'kind': expected_error}}
         identity = {k: manifest[k] for k in ('dataset_id', 'profile', 'format')}
@@ -187,6 +197,75 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual('graph-edge-v1', result['mode'])
         self.assertEqual(['nearest', 'route'], [q['command'] for q in result['queries']])
         self.assertEqual(2, len(RoutingDelivery(service).pack('both')))
+
+    def test_external_preflight_build_audit_and_rebuild(self):
+        service = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019')
+        result = service.preflight(self.input)
+        self.assertEqual('external-build-validation', result['mode'])
+        self.assertFalse(service.ready.exists())
+        service.build(self.input)
+        service.build(self.input)
+        dataset, manifest, ready = service.current()
+        self.assertEqual(2, manifest['format'])
+        self.assertNotIn('preflight', [cmd for cmd, _ in self.tool.calls])
+        for cmd, args in self.tool.calls:
+            if cmd in ('build', 'verify', 'inspect', 'nearest', 'route'):
+                self.assertEqual('regional', args[args.index('--graph-capacity') + 1])
+            if cmd in ('nearest', 'route'):
+                self.assertIn('--max-load-bytes', args)
+        receipt = json.loads((dataset / 'routing-build.json').read_text())
+        self.assertEqual({'mode': 'external-build-validation'}, receipt['preflight'])
+        receipt['preflight'] = {'report': receipt['build_result']['report']}
+        write_json(dataset / 'routing-build.json', receipt)
+        from huavd_map_build.production.north.local.routing import file_records
+        ready['files'] = file_records(dataset)
+        write_json(service.ready, ready)
+        with self.assertRaisesRegex(RouteWeftError, 'external build audit'):
+            service.verify()
+
+    def test_external_failure_preserves_ready(self):
+        service = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019')
+        service.build(self.input)
+        before = service.ready.read_bytes()
+        original = self.tool.call
+        def failed(command, args, timeout, expected_error=None):
+            if command == 'build':
+                raise RouteWeftError('external budget exceeded')
+            return original(command, args, timeout, expected_error)
+        self.tool.call = failed
+        with self.assertRaisesRegex(RouteWeftError, 'external budget'):
+            service.build(self.input)
+        self.assertEqual(before, service.ready.read_bytes())
+
+    def test_v2_sampler_rejects_truncation_and_invalid_node(self):
+        from huavd_map_build.production.south.adapter.process.routeweft_graph import sample_edges
+        service = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019')
+        service.build(self.input)
+        dataset, _, _ = service.current()
+        path = dataset / 'graph.bin'
+        payload = path.read_bytes()
+        path.write_bytes(payload[:-1])
+        with self.assertRaisesRegex(RouteWeftError, 'sample header'):
+            list(sample_edges(dataset))
+        corrupted = bytearray(payload)
+        struct.pack_into('<Q', corrupted, 64 + 32, 2)
+        path.write_bytes(corrupted)
+        with self.assertRaisesRegex(RouteWeftError, 'sample node'):
+            list(sample_edges(dataset))
+
+    def test_external_capability_missing_stops_before_build(self):
+        service = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019')
+        original = self.tool.call
+        def missing(command, args, timeout, expected_error=None):
+            result = original(command, args, timeout, expected_error)
+            if command == 'version':
+                result.pop('capabilities')
+            return result
+        self.tool.call = missing
+        with self.assertRaisesRegex(RouteWeftError, 'external/v2'):
+            service.build(self.input)
+        self.assertFalse(self.tool.outputs)
+        self.assertFalse(service.ready.exists())
 
     def test_automatic_query_requires_a_usable_graph_edge(self):
         dataset = self.work / 'empty-dataset'
@@ -318,6 +397,36 @@ class ProcessTests(unittest.TestCase):
 
 
 class ContractTests(unittest.TestCase):
+    def test_embedded_identity_matches_locked_commit_and_rejects_untrusted_builds(self):
+        from huavd_map_build.production.south.adapter.process.routeweft_contract import capabilities
+        tool = FakeTool()
+        tool.identity = {'commit': 'a' * 40}
+        tool.require_build_identity = True
+        response = copy.deepcopy(tool.call('version', [], 1))
+        tool.call = lambda *args: response
+        with self.assertRaisesRegex(RouteWeftError, 'missing embedded'):
+            capabilities(tool)
+        valid = {'git_commit': 'a' * 40, 'source_dirty': False, 'release_eligible': True,
+                 'source_identity_kind': 'git', 'target': 'test-target',
+                 'profile': 'release', 'rustc': 'rustc test'}
+        response['build'] = valid.copy()
+        self.assertEqual(valid, capabilities(tool)['build'])
+        for key, value in [('git_commit', 'b' * 40), ('git_commit', 'unknown'),
+                           ('source_dirty', True), ('source_dirty', None),
+                           ('release_eligible', False), ('source_identity_kind', 'unknown'),
+                           ('target', None)]:
+            with self.subTest(key=key, value=value):
+                response['build'] = {**valid, key: value}
+                with self.assertRaises(RouteWeftError):
+                    capabilities(tool)
+        # Explicit digest overrides have no lock commit, but still require a clean identity.
+        tool.identity = {'commit': None}
+        response['build'] = valid.copy()
+        capabilities(tool)
+        response['build']['source_dirty'] = True
+        with self.assertRaises(RouteWeftError):
+            capabilities(tool)
+
     def test_incompatible_capabilities_are_rejected(self):
         from huavd_map_build.production.south.adapter.process.routeweft_contract import capabilities
         baseline = FakeTool().call('version', [], 1)
@@ -421,7 +530,11 @@ class RealCLITests(unittest.TestCase):
             RoutingDelivery(service).pack('both')
             # Production path: same REGION and PBF, no routing configuration.
             automatic = RoutingService(process, ROOT, work / 'automatic', 'monaco', '20261019')
+            self.assertEqual('external-build-validation', automatic.preflight(input)['mode'])
+            self.assertFalse(automatic.ready.exists())
             automatic.build(input)
+            automatic.build(input)
+            self.assertEqual(2, automatic.current()[1]['format'])
             self.assertEqual('graph-edge-v1', automatic.verify(smoke=True)['mode'])
             RoutingDelivery(automatic).pack('both')
 
