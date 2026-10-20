@@ -29,10 +29,15 @@ def block(kind, payload):
     return struct.pack('>I', len(header)) + header + body
 
 
-def generate(path: Path):
+def generate(path: Path, maxspeed='36', forward=None, backward=None):
     # Coordinates separated enough to keep radius=20 m queries on their own component.
     coordinates = [(0, 0), (10000, 0), (1000000, 0), (1010000, 0)]
-    strings = ['', 'highway', 'residential', 'maxspeed', '36', 'oneway', 'yes']
+    strings = ['', 'highway', 'residential', 'maxspeed', maxspeed, 'oneway', 'yes']
+    directional = []
+    for field, value in [('maxspeed:forward', forward), ('maxspeed:backward', backward)]:
+        if value is not None:
+            directional.append((len(strings), len(strings) + 1))
+            strings.extend([field, value])
     table = b''.join(blob(1, value.encode()) for value in strings)
     group = b''
     for identity, (lon, lat) in enumerate(coordinates, 1):
@@ -40,6 +45,8 @@ def generate(path: Path):
         group += blob(1, node)
     for identity, first in [(10, 1), (20, 3)]:
         keys, values = (b'\x01\x03\x05', b'\x02\x04\x06') if first == 1 else (b'\x01\x03', b'\x02\x04')
+        keys += b''.join(varint(key) for key, _ in directional)
+        values += b''.join(varint(value) for _, value in directional)
         way = (number(1, identity) + blob(2, keys) + blob(3, values)
                + blob(8, varint(first * 2) + varint(2)))
         group += blob(3, way)
