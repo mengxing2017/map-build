@@ -44,7 +44,8 @@ def file_records(directory: Path) -> dict:
 
 class RoutingService:
     def __init__(self, tool: RouteWeftPort, root: Path, workdir: Path,
-                 region: str, day: str, session: str | None = None, config: Path | None = None):
+                 region: str, day: str, session: str | None = None, config: Path | None = None,
+                 invalid_maxspeed: str | None = None):
         region_id = RegionId(region)
         default = SessionId.for_build(region_id, BuildDate(day)).value
         self.session = SessionId(session or default).value
@@ -76,6 +77,13 @@ class RoutingService:
             self.config = document.get('regions', {}).get(region)
             if not self.config or self.config.get('enabled') is not True:
                 raise RouteWeftError(f'routing region not enabled: {region}')
+        self.maxspeed_policy = (invalid_maxspeed if invalid_maxspeed is not None else
+            self.config.get('invalid_maxspeed', os.environ.get('ROUTING_INVALID_MAXSPEED', 'reject')))
+        if self.maxspeed_policy not in ('reject', 'use_default'):
+            raise RouteWeftError('invalid maxspeed policy; use reject or use_default')
+        self.config_sha256 = hashlib.sha256(json.dumps({
+            'base_config_sha256': self.config_sha256, 'invalid_maxspeed': self.maxspeed_policy,
+        }, sort_keys=True).encode()).hexdigest()
         self.external = self.config.get('builder', 'memory') == 'external'
         if self.config.get('builder', 'memory') not in ('memory', 'external'):
             raise RouteWeftError('unsupported routing builder')
@@ -266,6 +274,8 @@ class RoutingService:
         ready = json.loads(self.ready.read_text())
         if ready.get('schema') != 1 or ready.get('region') != self.region:
             raise RouteWeftError('ready schema/region mismatch')
+        if ready.get('invalid_maxspeed') != self.maxspeed_policy:
+            raise RouteWeftError('ready maxspeed policy mismatch; rebuild required')
         if ready.get('invalid_restrictions') != self.policy:
             raise RouteWeftError('ready restriction policy mismatch; rebuild required')
         dataset_id = ready.get('dataset_id', '')
@@ -282,10 +292,13 @@ class RoutingService:
         if manifest['dataset_id'] != dataset_id:
             raise RouteWeftError('ready dataset identity mismatch')
         receipt = json.loads((dataset / 'routing-build.json').read_text())
+        if (receipt.get('invalid_maxspeed') != self.maxspeed_policy
+                or ready.get('maxspeed_diagnostics') != receipt.get('build_result', {}).get('report', {}).get('maxspeed_diagnostics')):
+            raise RouteWeftError('ready maxspeed audit mismatch')
         if receipt.get('invalid_restrictions') != self.policy:
             raise RouteWeftError('ready restriction policy mismatch')
         build_report(receipt.get('build_result', {}), ready['source_sha256'], self.policy,
-                     manifest=manifest, review=self.review)
+                     manifest=manifest, review=self.review, maxspeed_policy=self.maxspeed_policy)
         if self.external:
             if (receipt.get('preflight') != {'mode': 'external-build-validation'}
                     or receipt.get('graph_capacity') != self.graph_capacity
@@ -321,7 +334,8 @@ class RoutingService:
                 input_provenance = provenance(frozen)
                 version = capabilities(self.tool)
                 arguments = ['--input', str(frozen), '--profile', 'driving',
-                             '--invalid-restrictions', self.policy, '--json']
+                             '--invalid-restrictions', self.policy,
+                             '--invalid-maxspeed', self.maxspeed_policy, '--json']
                 dataset = attempt / 'dataset'
                 if self.external:
                     caps = version.get('capabilities', {})
@@ -337,7 +351,7 @@ class RoutingService:
                 else:
                     preflight = self.tool.call('preflight', arguments, self.config.get(
                         'preflight_timeout_s', self.config['build_timeout_s']))
-                    report = build_report(preflight, before, self.policy, review=self.review)
+                    report = build_report(preflight, before, self.policy, review=self.review, maxspeed_policy=self.maxspeed_policy)
                     write_json(attempt / 'preflight.json', preflight)
                     if sha256(frozen) != before:
                         raise RouteWeftError('frozen input changed during preflight')
@@ -351,7 +365,7 @@ class RoutingService:
                 manifest = self.verify_dataset(dataset, before)
                 if built.get('manifest') != manifest:
                     raise RouteWeftError('build/verify manifest mismatch')
-                actual_report = build_report(built, before, self.policy, manifest=manifest, review=self.review)
+                actual_report = build_report(built, before, self.policy, manifest=manifest, review=self.review, maxspeed_policy=self.maxspeed_policy)
                 if self.external:
                     if built.get('build', {}).get('builder') != 'external':
                         raise RouteWeftError('external build identity missing')
@@ -379,6 +393,7 @@ class RoutingService:
                 build['input_provenance'] = input_provenance
                 build.update({'capabilities': version, 'invalid_restrictions': self.policy,
                               'restriction_review': self.review, 'graph_capacity': self.graph_capacity,
+                              'invalid_maxspeed': self.maxspeed_policy,
                               'preflight': preflight, 'build_result': built})
                 # Receipts live inside immutable version, so failed rebuilds cannot invalidate old ready.
                 write_json(dataset / 'routing-build.json', build)
@@ -402,12 +417,15 @@ class RoutingService:
                 ready = {'schema': 1, 'dataset_id': manifest['dataset_id'], 'region': self.region,
                          'source_sha256': before, 'tool': self.tool.identity, 'config_sha256': self.config_sha256,
                          'invalid_restrictions': self.policy,
+                         'invalid_maxspeed': self.maxspeed_policy,
+                         'maxspeed_diagnostics': report['maxspeed_diagnostics'],
                          'files': file_records(destination)}
                 write_json(self.ready, ready)
                 return ready
             except RouteWeftError as error:
                 write_json(attempt / 'failure.json', {'error': str(error), 'response': error.response,
-                                                      'command': error.command, 'exit_code': error.exit_code})
+                                                      'command': error.command, 'exit_code': error.exit_code,
+                                                      'invalid_maxspeed': self.maxspeed_policy})
                 raise
             finally:
                 write_json(attempt / 'process-log.json', getattr(self.tool, 'logs', []))
