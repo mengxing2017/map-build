@@ -127,6 +127,6 @@ release 不执行 fetch。未设置 RELEASE_WORKDIR 时，它将目录切换到 
 - `package.json`：`huavd-map-package/v1` 包级清单，声明 routing.required=true、格式/profile、同源 SHA-256、限制策略及逐文件哈希。
 - `SHA256SUMS`、`SHA512SUMS`：覆盖地图、路网和清单。
 
-消费者必须识别 package.json.required_capabilities 中的 routeweft-dataset-v1，并将必需路网与地图共同安装。只识别旧 install.json 的客户端不具备联合安装保证；旧地图 import 工作流也不能作为已验收的地图＋路网安装入口。生成完整 bundle 不代表外部客户端已升级。
+消费者必须识别 package.json.required_capabilities 中的 routeweft-dataset-v2，并将必需路网与地图共同安装。只识别旧 install.json 的客户端不具备联合安装保证；旧地图 import 工作流也不能作为已验收的地图＋路网安装入口。生成完整 bundle 不代表外部客户端已升级。
 
 `build-routing`、`pack-routing` 仍是独立路网审核接口，不生成地图；底层 Python execute-vector/raster-bake 也只处理各自地图分支。正式完整交付采用本页 Make build/pack 或 release 流程。
