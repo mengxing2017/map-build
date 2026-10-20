@@ -12,7 +12,7 @@ from huavd_map_build.production.south.adapter.process.routeweft import sha256
 from huavd_map_build.production.south.port.routeweft import RouteWeftError
 
 
-def unpack(archive: Path, destination: Path, max_bytes=2 * 1024**3, max_entries=100):
+def unpack(archive: Path, destination: Path, max_bytes=3 * 1024**3, max_entries=100):
     """Extract only unique, bounded, flat regular files into an empty directory."""
     destination.mkdir(exist_ok=False)
     seen, total = set(), 0
@@ -77,6 +77,7 @@ class RoutingDelivery:
                     'region': service.region, 'session': service.session,
                     'dataset_id': manifest['dataset_id'], 'format': manifest['format'],
                     'profile': manifest['profile'], 'source_sha256': ready['source_sha256'],
+                    'graph_capacity': service.graph_capacity,
                     'invalid_restrictions': service.policy,
                     'restriction_review': service.review,
                     'coverage_notice': ('Invalid restriction ways were conservatively excluded; '
