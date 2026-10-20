@@ -1,0 +1,122 @@
+schema: 1
+regions:
+  china/guangxi:
+    enabled: true
+    profile: driving
+    builder: external
+    graph_capacity: regional
+    source_sha256: eea0eb47bba0640b2c6468a1b82cb2c5f8ea1261a5333f47420e6d569f0b769d
+    max_input_bytes: 536870912
+    build_timeout_s: 7200
+    preflight_timeout_s: 7200
+    verify_timeout_s: 600
+    query_timeout_s: 600
+    max_scratch_bytes: 17179869184
+    max_load_bytes: 8589934592
+    invalid_maxspeed: use_default
+    invalid_restrictions: block_ways
+    restriction_review:
+      reason: Reviewed against the exact Guangxi 2026-08-03 PBF and complete strict
+        diagnostics. Conservatively exclude all 21 existing way members of 14 malformed
+        or unresolved driving restrictions; do not infer missing turns or ignore restrictions.
+        The user requested continuation through a verified routing package. Accept
+        reduced coverage only for this source-bound audit package; no claim of full
+        provincial reachability.
+      blocked_way_ids:
+      - 33677319
+      - 226672185
+      - 259020522
+      - 259020535
+      - 259020536
+      - 264931322
+      - 264940316
+      - 264943904
+      - 389190340
+      - 389194568
+      - 459580304
+      - 463383946
+      - 538394321
+      - 625702143
+      - 645864447
+      - 917246626
+      - 917246627
+      - 967763328
+      - 967763330
+      - 1014107014
+      - 1037875354
+      diagnostics:
+      - relation_id: 3476437
+        code: MissingFromTo
+      - relation_id: 3476439
+        code: MissingFromTo
+      - relation_id: 3560455
+        code: MissingVia
+      - relation_id: 3560457
+        code: MissingVia
+      - relation_id: 6792958
+        code: MissingFromTo
+      - relation_id: 6843783
+        code: MissingVia
+      - relation_id: 6843784
+        code: MissingVia
+      - relation_id: 6843785
+        code: MissingVia
+      - relation_id: 8700340
+        code: MissingFromTo
+      - relation_id: 8700341
+        code: MissingFromTo
+      - relation_id: 8973946
+        code: UnresolvedRestriction
+      - relation_id: 8974482
+        code: UnresolvedRestriction
+      - relation_id: 13023860
+        code: MissingFromTo
+      - relation_id: 13023861
+        code: MissingFromTo
+    query_budget:
+      radius-m: 50
+      timeout-ms: 10000
+    diagnostic_max:
+      invalid_restrictions_blocked: 14
+      invalid_restriction_ways_blocked: 21
+      maxspeed_fallback_values: 2
+    smoke:
+    - command: nearest
+      coordinates: 108.32,22.82
+      expect: ok
+    - command: route
+      coordinates: 108.32,22.82;108.33,22.82
+      expect: ok
+      distance_m:
+      - 100
+      - 10000
+      duration_s:
+      - 1
+      - 3600
+    - command: route
+      coordinates: 108.2532541,22.7745994;108.2534996,22.7738817
+      query_budget:
+        radius-m: 0.01
+      expect: ok
+      distance_m:
+      - 3000
+      - 4000
+      duration_s:
+      - 150
+      - 300
+    - command: route
+      coordinates: 108.33204270000002,22.865449050000002;108.3321354,22.8654055
+      query_budget:
+        radius-m: 0.01
+      expect: ok
+      distance_m:
+      - 1
+      - 10000
+      duration_s:
+      - 1
+      - 3600
+    - command: route
+      coordinates: 108.322792424000,22.820050097000;108.319669596000,22.819790838000
+      expect: NoRoute
+      query_budget:
+        radius-m: 0.01
