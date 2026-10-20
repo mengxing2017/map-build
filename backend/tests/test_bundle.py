@@ -19,6 +19,8 @@ class _Viewport:
 class _Routing:
     policy = 'reject'
     review = None
+    graph_capacity = 'regional'
+    dataset_format = 1
 
     def __init__(self, root, source='a' * 64):
         self.dataset = root / 'dataset'
@@ -32,7 +34,7 @@ class _Routing:
 
     def current(self):
         from huavd_map_build.production.north.local.routing import file_records
-        manifest = {'dataset_id': 'fixture', 'format': 1, 'profile': 'driving-v1',
+        manifest = {'dataset_id': 'fixture', 'format': self.dataset_format, 'profile': 'driving-v1',
                     'attribution': 'OpenStreetMap contributors'}
         return self.dataset, manifest, {'source_sha256': self.source,
                                       'files': file_records(self.dataset)}
@@ -51,6 +53,11 @@ class BundleServiceTest(unittest.TestCase):
 
     def test_raster_vector_packages_routing_by_default(self):
         self._pack('base_raster')
+
+    def test_v2_package_declares_consumer_capability(self):
+        from unittest.mock import patch
+        with patch.object(_Routing, 'dataset_format', 2):
+            self._pack('both')
 
     def test_source_mismatch_refuses_archive(self):
         self._pack('both', mismatch=True)
@@ -135,6 +142,10 @@ class BundleServiceTest(unittest.TestCase):
                 members = set(package.namelist())
                 contract = json.loads(package.read('package.json'))
                 self.assertTrue(contract['routing']['required'])
+                self.assertEqual(['offline-maps', f'routeweft-dataset-v{routing.dataset_format}'],
+                                 contract['required_capabilities'])
+                self.assertEqual(routing.dataset_format, contract['routing']['format'])
+                self.assertEqual('regional', contract['routing']['graph_capacity'])
                 self.assertEqual('a' * 64, contract['source_sha256'])
                 self.assertIn('routing/graph.bin', package.read('SHA256SUMS').decode())
             with tarfile.open(outputs / f'{session}.bundle.tar.gz') as package:
