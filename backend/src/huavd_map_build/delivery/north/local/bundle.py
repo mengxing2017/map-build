@@ -137,6 +137,8 @@ class BundleService:
                             'profile': manifest['profile'],
                             'graph_capacity': getattr(service, 'graph_capacity', 'city'),
                             'invalid_restrictions': service.policy,
+                            'invalid_maxspeed': service.maxspeed_policy,
+                            'maxspeed_diagnostics': ready['maxspeed_diagnostics'],
                             'restriction_review': service.review, 'files': file_records(destination)}})
 
     def _offline_map(self, role: Role, paths: ArtifactPaths, manifest: dict) -> dict:
