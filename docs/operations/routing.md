@@ -33,7 +33,7 @@ setup 会生成工具及 receipt.json，正常使用不需要手填 SHA-256。�
 
 ## REGION 与执行
 
-普通构建直接复用 config/regions.yaml 的 REGION、同一份原始 PBF 和内置驾车参数，不读取额外区域白名单，也不需要 ROUTING_CONFIG。默认使用 external 磁盘构建、format 2 和 regional 图容量。预算为输入不超过 512 MiB、scratch 16 GiB、查询加载分配估算 8 GiB；build/preflight 3600 秒，verify 和单次查询进程各 300 秒。查询计算本身仍限 10 秒。无效转向限制和无效 maxspeed 均采用 reject。
+普通构建直接复用 config/regions.yaml 的 REGION、同一份原始 PBF 和内置驾车参数，不读取额外区域白名单，也不需要 ROUTING_CONFIG。默认使用 external 磁盘构建、format 2 和 regional 图容量。预算为输入不超过 512 MiB、scratch 16 GiB、查询加载分配估算 8 GiB；build/preflight 3600 秒，verify 和单次查询进程各 300 秒。查询计算本身仍限 10 秒。无效限速和异常转向采用 `config/regions.yaml` 中的通用业务策略，详见下文。
 
 external 构建自身完成语义检查，不调用仍受 200 万对象限制的内存 preflight。独立 preflight-routing 执行一次 external 试构建与 verify，保留 attempt 审计但不发布 ready；正式 build-routing 不重复建图。显式审核配置可设置 builder: external、graph_capacity: regional、max_scratch_bytes 和 max_load_bytes；未指定 builder 的历史审核夹具继续使用 memory/v1。regional 仍受上游对象、图大小、跨度和数据质量限制，不保证任意省域成功。
 
@@ -55,7 +55,7 @@ make pack-routing FORMAT=both
 
 ### 专项测试夹具
 
-backend/tests/fixtures/routing/nanning-audit.yaml 仅用于固定南宁切片的回归测试，包含人工限制审核与查询案例。生产 Make 构建不读取它。诊断 CLI 的 --config 仅用于显式审核测试，不是地图包构建要求；普通入口只需 REGION。
+backend/tests/fixtures/routing/nanning-audit.yaml 仅用于固定南宁切片的回归测试，包含人工限制审核与查询案例。生产 Make 构建不读取它。诊断 CLI 的 --config 仅用于显式审核测试，不是地图包构建要求；普通入口的区域 ID 仅来自 `config/regions.yaml`，不使用日期或源快照白名单。
 
 ## 产物与恢复
 
@@ -87,27 +87,31 @@ ROUTEWEFT_TEST_BIN=/absolute/routeweft ROUTEWEFT_TEST_SHA256=<sha256> PYTHONPATH
 
 升级此版本后执行 `make setup-routeweft ROUTEWEFT_SOURCE=/absolute/path/to/routeweft` 安装锁定的新工具，再重新构建路网。新标准包声明 `routeweft-dataset-v2` 与 `routing.graph_capacity=regional`，消费者必须支持相应格式和容量；旧 ready 不可跨构建配置复用。
 
-## 无效限速的显式回退
+## 数据质量业务策略
 
-默认 `reject` 会拒绝 `maxspeed=辅路` 等不可解析值。需要采用上游道路类别默认速度估算成本时，显式设置 `ROUTING_INVALID_MAXSPEED=use_default`；构建、验证、查询和打包必须保持同一策略：
+区域 ID 唯一来自 `config/regions.yaml`。该文件顶层 `routing` 定义所有区域、所有日期的默认策略，区域条目的 `routing` 可覆盖单个字段，不按父区域隐式继承：
 
-```bash
-export ROUTING_INVALID_MAXSPEED=use_default
-make build-routing WORKDIR=/home/dev/data/map/test REGION=china/guangxi YYYYMMDD=20260803 INPUT=/home/dev/data/map/test/staging/china-guangxi-20260803/source.osm.pbf
-make verify-routing WORKDIR=/home/dev/data/map/test REGION=china/guangxi YYYYMMDD=20260803
-make smoke-routing WORKDIR=/home/dev/data/map/test REGION=china/guangxi YYYYMMDD=20260803
-make pack-routing WORKDIR=/home/dev/data/map/test REGION=china/guangxi YYYYMMDD=20260803 FORMAT=both
+```yaml
+routing:
+  invalid_maxspeed: use_default
+  invalid_restrictions: block_ways
 ```
 
-同一环境变量也适用于标准 `make build`、`make pack` 和 `make release`，联合包会检查 ready 中的策略。诊断 CLI 支持 `--invalid-maxspeed reject|use_default`，审核 YAML 支持区域字段 `invalid_maxspeed`。优先级为 CLI 显式参数、审核配置、环境变量、默认 reject；无效值直接报错。
+- `invalid_maxspeed: use_default`：无法解析的通用限速使用道路类别默认速度估算成本，方向限速回退到已解析的通用速度。有效限速保持上游语义。默认速度不代表核实后的法定限速。设为 `reject` 可要求严格拒绝。
+- `invalid_restrictions: block_ways`：由上游根据当前输入识别异常转向关系，保守排除其现存关联道路并重建图；不忽略限制，不猜测缺失转向。无法安全排除时构建仍失败。设为 `reject` 可要求严格拒绝。
 
-策略参与配置摘要；改变策略必须重建，不能复用旧 ready。ready、routing-build.json、独立包 routing-package.json 和标准包 package.json.routing 保存 `invalid_maxspeed` 与限速审计（构建回执的逐项诊断位于 build_result.report.maxspeed_diagnostics）。报告策略、回退条数、原始字段值、有效速度及 manifest 计数必须一致；缺失或超限审计阻止发布。
+普通 Make/CLI 无需额外开关、日期白名单或人工道路 ID 清单。缺少 routing 配置时兼容回落到 reject。字段拼写错误、未知策略及错误类型会在目录加载时拒绝。
 
-通用限速的无效值回退到道路类别默认速度；方向限速回退到已解析的通用速度。有效值仍由上游按 driving-v1 处理。默认速度只用于预计耗时，不能当作核实后的法定限速。该策略不会自动切换转向限制的 reject/block_ways，也不保证广西全部数据问题均已消除。
+生产限速策略优先级：CLI `--invalid-maxspeed`、显式环境变量 `ROUTING_INVALID_MAXSPEED`、区域字段、目录默认字段、reject。Make 不再注入 reject 覆盖目录设置。显式 `--config` 是独立审核模式，其配置优先于环境变量，可保留源哈希和 restriction_review 做精确回归；生产流程不会自动加载它。
 
+构建报告必须与 manifest 一致：限制计数须匹配完整诊断及去重后的排除道路集合，每条排除道路须有关系成员证据。诊断重复、缺失、截断、未知错误代码或计数不一致均阻止 ready 发布。限速审计上限为 256 项且估算文本大小不超过 64 KiB，转向诊断上限为 256 项、每关系最多 256 个成员；超限失败，不截断后继续发布。上游自身的资源和安全排除限制仍生效。
+
+实际策略参与配置摘要。ready、构建回执、独立包和标准联合包均记录策略、限速回退、`blocked_way_ids`、`restriction_diagnostics`，包中注明可能减少道路覆盖和可达性。策略改变或旧 ready 缺少完整审计字段时必须重建，不能手工改 ready。无异常输入不产生排除清单。
+
+独立 `pack-routing` 仍生成 `installable=false` 的审计包；标准地图联合包通过原有 `make pack` 入口生成。本次业务策略不改变安装协议。
 
 ### 广西 20260803 已审核交付
 
 `config/routing/china-guangxi-20260803-audit.yaml` 绑定广西输入 SHA-256，显式选择 external/regional/v2、use_default 及 block_ways，核对 14 个异常关系和 21 条道路的完整排除集合。它包含省域正常路线、绕行和真实不连通分量的 NoRoute 查询，不可用于其他源快照。
 
-使用 `routing build/verify/smoke/pack --config=config/routing/china-guangxi-20260803-audit.yaml`，并保持 REGION、YYYYMMDD 和 WORKDIR 一致。该配置用于独立路网审计交付，pack 输出 `installable=false` 的审计包。发布证据见 [广西发布记录](../../report/routeweft-guangxi-release-20261020.md)。
+该配置仅供显式 `routing build/verify/smoke/pack --config=config/routing/china-guangxi-20260803-audit.yaml` 审核使用，不被普通 Make/CLI 自动加载，也不是区域业务配置。所有步骤保持 REGION、YYYYMMDD 和 WORKDIR 一致。该配置用于独立路网审计交付，pack 输出 `installable=false` 的审计包。发布证据见 [广西发布记录](../../report/routeweft-guangxi-release-20261020.md)。
