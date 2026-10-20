@@ -27,13 +27,14 @@ def sha256(path: Path) -> str:
 
 class RouteWeftProcess:
     def __init__(self, binary: Path, expected_sha256: str, *, limit: int = 4 * 1024 * 1024,
-                 commit: str | None = None):
+                 commit: str | None = None, require_build_identity: bool = False):
         if not binary.is_absolute() or not binary.is_file() or not os.access(binary, os.X_OK):
             raise RouteWeftError('ROUTEWEFT_BIN must be an absolute executable file')
         if len(expected_sha256) != 64 or sha256(binary) != expected_sha256:
             raise RouteWeftError('RouteWeft binary SHA-256 mismatch')
         self.binary, self.limit = binary, limit
         self.identity = {'binary_sha256': expected_sha256, 'commit': commit}
+        self.require_build_identity = require_build_identity
         self.logs: list[dict] = []
 
     def call(self, command, arguments, timeout, expected_error=None):
