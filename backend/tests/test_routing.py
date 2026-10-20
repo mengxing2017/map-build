@@ -39,11 +39,17 @@ class FakeTool:
         self.outputs = []
         self.calls = []
         self.blocked = False
+        self.speed_audit = []
     def report(self, arguments):
+        speed_policy = arguments[arguments.index('--invalid-maxspeed') + 1] if '--invalid-maxspeed' in arguments else 'reject'
+        counts = {'maxspeed_policy_use_default': 1} if speed_policy == 'use_default' else {}
+        if self.speed_audit:
+            counts['maxspeed_fallback_values'] = len(self.speed_audit)
         return {'valid': True, 'failure_code': None,
+                'maxspeed_policy': speed_policy, 'maxspeed_diagnostics': self.speed_audit,
                 'policy': arguments[arguments.index('--invalid-restrictions') + 1],
                 'source_sha256': sha256(Path(arguments[1])), 'source_snapshot': None,
-                'nodes': 2, 'edges': 2, 'restrictions': 0, 'diagnostics': {},
+                'nodes': 2, 'edges': 2, 'restrictions': 0, 'diagnostics': counts,
                 'blocked_way_ids': [42] if self.blocked else [],
                 'restriction_diagnostics': [{'relation_id': 99, 'code': 'MissingVia',
                     'action': 'blocked_ways', 'members_truncated': False,
@@ -58,7 +64,8 @@ class FakeTool:
                     'dataset_formats': [1, 2], 'profiles': ['driving-v1'],
                     'capabilities': {'build_modes': ['memory', 'external'], 'external_build_formats': [2],
                                      'graph_capacity_profiles': {'city': {}, 'regional': {}}},
-                    'invalid_restriction_policies': ['reject','block_ways']}
+                    'invalid_restriction_policies': ['reject','block_ways'],
+                    'invalid_maxspeed_policies': ['reject', 'use_default']}
         if command == 'preflight':
             return {'schema': 1, 'status': 'ok', 'report': self.report(arguments)}
         if command == 'build':
@@ -69,7 +76,7 @@ class FakeTool:
             write_json(output / 'graph.json', {'nodes': [{'lon': 0, 'lat': 0}, {'lon': 0.001, 'lat': 0}],
                                                'edges': [{'from': 0, 'to': 1, 'distance_mm': 100000}]})
             manifest = {'dataset_id': 'fixture', 'format': 1, 'profile': 'driving-v1',
-                        'source_sha256': sha256(Path(arguments[1])), 'diagnostics': {},
+                        'source_sha256': sha256(Path(arguments[1])), 'diagnostics': self.report(arguments)['diagnostics'],
                         'nodes': 2, 'edges': 2, 'restrictions': 0,
                         'source_snapshot': None, 'attribution': 'OSM contributors'}
             if '--builder' in arguments:
@@ -334,6 +341,40 @@ class LifecycleTests(unittest.TestCase):
             if command in ('preflight', 'build'):
                 self.assertEqual('block_ways', args[args.index('--invalid-restrictions') + 1])
 
+    def test_speed_policy_configuration_and_ready_cannot_be_reused(self):
+        with patch.dict(os.environ, {'ROUTING_INVALID_MAXSPEED': 'use_default'}):
+            service = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019')
+        self.assertEqual('use_default', service.maxspeed_policy)
+        config = configuration()
+        config['regions']['monaco']['invalid_maxspeed'] = 'reject'
+        self.config.write_text(yaml.safe_dump(config))
+        with patch.dict(os.environ, {'ROUTING_INVALID_MAXSPEED': 'use_default'}):
+            configured = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019', config=self.config)
+            overridden = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019',
+                                        config=self.config, invalid_maxspeed='use_default')
+        self.assertEqual('reject', configured.maxspeed_policy)
+        self.assertEqual('use_default', overridden.maxspeed_policy)
+        self.tool.speed_audit = [{'way_id': 42, 'field': 'maxspeed', 'value': '辅路',
+                                 'action': 'use_default', 'effective_kmh': 30.0}]
+        service.build(self.input)
+        dataset, _, ready = service.current()
+        self.assertEqual(self.tool.speed_audit, ready['maxspeed_diagnostics'])
+        strict = RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019', invalid_maxspeed='reject')
+        self.assertNotEqual(service.config_sha256, strict.config_sha256)
+        with self.assertRaisesRegex(RouteWeftError, 'maxspeed policy'):
+            strict.verify()
+        for archive in RoutingDelivery(service).pack('both'):
+            destination = unpack(Path(archive), self.work / Path(archive).suffix)
+            package = json.loads((destination / 'routing-package.json').read_text())
+            self.assertEqual('use_default', package['invalid_maxspeed'])
+            self.assertEqual(self.tool.speed_audit, package['maxspeed_diagnostics'])
+        ready.pop('maxspeed_diagnostics')
+        write_json(service.ready, ready)
+        with self.assertRaisesRegex(RouteWeftError, 'maxspeed audit'):
+            service.verify()
+        with self.assertRaisesRegex(RouteWeftError, 'maxspeed policy'):
+            RoutingService(self.tool, ROOT, self.work, 'monaco', '20261019', invalid_maxspeed='ignore')
+
     def test_query_budget_can_be_narrowed_for_reviewed_no_route(self):
         self.service.config['query_budget'] = {'radius-m': 50, 'timeout-ms': 1000}
         self.service.config['smoke'][-1]['query_budget'] = {'radius-m': 0.01}
@@ -432,7 +473,8 @@ class ContractTests(unittest.TestCase):
         baseline = FakeTool().call('version', [], 1)
         mutations = [('cli_schema', 2), ('dataset_formats', [True]),
                      ('profiles', ['driving']), ('commands', ['build']),
-                     ('invalid_restriction_policies', ['reject'])]
+                     ('invalid_restriction_policies', ['reject']),
+                     ('invalid_maxspeed_policies', ['reject'])]
         for key, value in mutations:
             with self.subTest(key=key):
                 tool = FakeTool()
@@ -447,7 +489,8 @@ class ContractTests(unittest.TestCase):
         baseline = {'valid': True, 'failure_code': None, 'policy': 'reject',
                     'source_sha256': 'a' * 64, 'source_snapshot': None,
                     'nodes': 2, 'edges': 2, 'restrictions': 0, 'diagnostics': {},
-                    'blocked_way_ids': [], 'restriction_diagnostics': []}
+                    'blocked_way_ids': [], 'restriction_diagnostics': [],
+                    'maxspeed_policy': 'reject', 'maxspeed_diagnostics': []}
         for key, value in [('valid', False), ('source_sha256', 'b' * 64),
                            ('policy', 'block_ways'), ('diagnostics', {'count': -1}),
                            ('nodes', True), ('blocked_way_ids', [42]),
@@ -458,6 +501,30 @@ class ContractTests(unittest.TestCase):
                 report[key] = value
                 with self.assertRaises(RouteWeftError):
                     build_report({'report': report}, 'a' * 64, 'reject')
+
+    def test_speed_audit_is_complete_and_matches_manifest_counts(self):
+        from huavd_map_build.production.south.adapter.process.routeweft_contract import build_report
+        entry = {'way_id': 42, 'field': 'maxspeed:forward', 'value': '辅路',
+                 'action': 'use_default', 'effective_kmh': 20.0}
+        report = {'valid': True, 'failure_code': None, 'policy': 'reject',
+                  'source_sha256': 'a' * 64, 'source_snapshot': None,
+                  'nodes': 2, 'edges': 2, 'restrictions': 0,
+                  'diagnostics': {'maxspeed_policy_use_default': 1, 'maxspeed_fallback_values': 1},
+                  'blocked_way_ids': [], 'restriction_diagnostics': [],
+                  'maxspeed_policy': 'use_default', 'maxspeed_diagnostics': [entry]}
+        build_report({'report': report}, 'a' * 64, 'reject', maxspeed_policy='use_default')
+        mutations = [dict(maxspeed_policy='reject'), dict(maxspeed_diagnostics=None),
+                     dict(maxspeed_diagnostics=[]), dict(diagnostics={'maxspeed_fallback_values': 1}),
+                     dict(maxspeed_diagnostics=[entry, entry]),
+                     dict(maxspeed_diagnostics=[{**entry, 'effective_kmh': float('nan')}]),
+                     dict(maxspeed_diagnostics=[{**entry, 'value': 'a' * 65536}]),
+                     dict(maxspeed_diagnostics=[{**entry, 'action': 'rejected'}])]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                with self.assertRaises(RouteWeftError):
+                    build_report({'report': {**report, **mutation}}, 'a' * 64, 'reject', maxspeed_policy='use_default')
+        with self.assertRaises(RouteWeftError):
+            build_report({'report': report}, 'a' * 64, 'reject')
 
 
 class ArchiveTests(unittest.TestCase):
@@ -505,6 +572,61 @@ class ProvenanceTests(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get('ROUTEWEFT_TEST_BIN'), 'explicit real CLI binary required')
 class RealCLITests(unittest.TestCase):
+    def test_real_maxspeed_reject_fallback_directional_and_pack(self):
+        from huavd_map_build.production.south.adapter.process.routeweft_probe import generate
+        process = RouteWeftProcess(Path(os.environ['ROUTEWEFT_TEST_BIN']), os.environ['ROUTEWEFT_TEST_SHA256'])
+        with tempfile.TemporaryDirectory(prefix='real speed audit ') as temp:
+            root = Path(temp)
+            source = root / 'input.osm.pbf'
+            generate(source, maxspeed='辅路')
+            strict = RoutingService(process, ROOT, root / 'strict', 'monaco', '20261019')
+            with self.assertRaises(RouteWeftError) as caught:
+                strict.build(source)
+            self.assertEqual('InvalidMaxspeed', caught.exception.response['error']['details']['failure_code'])
+            self.assertFalse(strict.ready.exists())
+            failure = next(strict.workdir.glob('staging/routing/*/failure.json'))
+            self.assertEqual('reject', json.loads(failure.read_text())['invalid_maxspeed'])
+            fallback = RoutingService(process, ROOT, root / 'fallback', 'monaco', '20261019',
+                                      invalid_maxspeed='use_default')
+            fallback.build(source)
+            dataset, manifest, ready = fallback.current()
+            self.assertEqual(2, manifest['diagnostics']['maxspeed_fallback_values'])
+            self.assertEqual({'辅路'}, {e['value'] for e in ready['maxspeed_diagnostics']})
+            for archive in RoutingDelivery(fallback).pack('both'):
+                out = unpack(Path(archive), root / Path(archive).suffix)
+                package = json.loads((out / 'routing-package.json').read_text())
+                self.assertEqual(ready['maxspeed_diagnostics'], package['maxspeed_diagnostics'])
+            generate(source, maxspeed='20', forward='辅路', backward='10 mph')
+            directional = RoutingService(process, ROOT, root / 'directional', 'monaco', '20261019',
+                                         invalid_maxspeed='use_default')
+            directional.build(source)
+            dataset, manifest, ready = directional.current()
+            self.assertTrue(ready['maxspeed_diagnostics'])
+            for item in ready['maxspeed_diagnostics']:
+                self.assertEqual('maxspeed:forward', item['field'])
+                self.assertEqual(20, item['effective_kmh'])
+            payload = (dataset / 'graph.bin').read_bytes()
+            _, _, nodes, edges, _, _, _, dictionary = struct.unpack_from('<8s7Q', payload)
+            speeds = []
+            for index in range(edges):
+                source_id, target, way, distance, duration, *_ = struct.unpack_from(
+                    '<QQqQQIIQ', payload, 64 + dictionary + 16 * nodes + index * 56)
+                if way == 20:
+                    speeds.append(distance / duration * 3.6)
+            self.assertEqual(2, len(speeds))
+            self.assertAlmostEqual(16.09344, min(speeds), delta=0.02)
+            self.assertAlmostEqual(20, max(speeds), delta=0.02)
+            generate(source)
+            payloads = []
+            for policy in ('reject', 'use_default'):
+                service = RoutingService(process, ROOT, root / ('valid-' + policy), 'monaco', '20261019',
+                                         invalid_maxspeed=policy)
+                service.build(source)
+                dataset, _, ready = service.current()
+                self.assertEqual([], ready['maxspeed_diagnostics'])
+                payloads.append((dataset / 'graph.bin').read_bytes())
+            self.assertEqual(*payloads)
+
     def test_contract_probe(self):
         from huavd_map_build.production.south.adapter.process.routeweft_tools import doctor
         binary = Path(os.environ['ROUTEWEFT_TEST_BIN'])
