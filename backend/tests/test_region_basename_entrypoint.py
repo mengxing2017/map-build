@@ -29,7 +29,7 @@ class RegionBasenameEntrypointTest(unittest.TestCase):
 
     def test_region_without_basename_keeps_input_error_exit_code(self) -> None:
         result = subprocess.run(
-            [str(self.entrypoint), "china/shanghai"],
+            [str(self.entrypoint), "china/taiwan/taipei"],
             cwd="/tmp",
             text=True,
             capture_output=True,

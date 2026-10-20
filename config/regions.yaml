@@ -11234,9 +11234,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/beijing-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/beijing-latest.osm.pbf.md5"
+      basename: "beijing-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11251,9 +11251,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/chongqing-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/chongqing-latest.osm.pbf.md5"
+      basename: "chongqing-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11268,9 +11268,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/shanghai-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/shanghai-latest.osm.pbf.md5"
+      basename: "shanghai-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11285,9 +11285,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/tianjin-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/tianjin-latest.osm.pbf.md5"
+      basename: "tianjin-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11302,9 +11302,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/anhui-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/anhui-latest.osm.pbf.md5"
+      basename: "anhui-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11319,9 +11319,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/fujian-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/fujian-latest.osm.pbf.md5"
+      basename: "fujian-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11336,9 +11336,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/gansu-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/gansu-latest.osm.pbf.md5"
+      basename: "gansu-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11393,9 +11393,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/hainan-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/hainan-latest.osm.pbf.md5"
+      basename: "hainan-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11410,9 +11410,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/hebei-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/hebei-latest.osm.pbf.md5"
+      basename: "hebei-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11427,9 +11427,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/heilongjiang-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/heilongjiang-latest.osm.pbf.md5"
+      basename: "heilongjiang-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11444,9 +11444,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/henan-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/henan-latest.osm.pbf.md5"
+      basename: "henan-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11461,9 +11461,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/hubei-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/hubei-latest.osm.pbf.md5"
+      basename: "hubei-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11478,9 +11478,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/hunan-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/hunan-latest.osm.pbf.md5"
+      basename: "hunan-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11495,9 +11495,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/jiangsu-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/jiangsu-latest.osm.pbf.md5"
+      basename: "jiangsu-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11512,9 +11512,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/jiangxi-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/jiangxi-latest.osm.pbf.md5"
+      basename: "jiangxi-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11529,9 +11529,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/jilin-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/jilin-latest.osm.pbf.md5"
+      basename: "jilin-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11546,9 +11546,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/liaoning-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/liaoning-latest.osm.pbf.md5"
+      basename: "liaoning-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11563,9 +11563,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/qinghai-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/qinghai-latest.osm.pbf.md5"
+      basename: "qinghai-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11580,9 +11580,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/shaanxi-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/shaanxi-latest.osm.pbf.md5"
+      basename: "shaanxi-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11597,9 +11597,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/shandong-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/shandong-latest.osm.pbf.md5"
+      basename: "shandong-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11614,9 +11614,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/shanxi-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/shanxi-latest.osm.pbf.md5"
+      basename: "shanxi-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11631,9 +11631,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/sichuan-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/sichuan-latest.osm.pbf.md5"
+      basename: "sichuan-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -11980,9 +11980,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/zhejiang-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/zhejiang-latest.osm.pbf.md5"
+      basename: "zhejiang-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -12020,9 +12020,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/inner-mongolia-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/inner-mongolia-latest.osm.pbf.md5"
+      basename: "inner-mongolia-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -12037,9 +12037,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/ningxia-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/ningxia-latest.osm.pbf.md5"
+      basename: "ningxia-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -12071,9 +12071,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/tibet-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/tibet-latest.osm.pbf.md5"
+      basename: "tibet-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
@@ -12088,9 +12088,9 @@ regions:
     priority: "global-skeleton"
     direct_tippecanoe: true
     geofabrik:
-      pbf_url: null
-      md5_url: null
-      basename: null
+      pbf_url: "https://download.geofabrik.de/asia/china/hong-kong-latest.osm.pbf"
+      md5_url: "https://download.geofabrik.de/asia/china/hong-kong-latest.osm.pbf.md5"
+      basename: "hong-kong-latest.osm.pbf"
       parent_region: "china"
       fallback: null
     huavd:
