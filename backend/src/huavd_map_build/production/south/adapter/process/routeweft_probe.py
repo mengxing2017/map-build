@@ -29,7 +29,7 @@ def block(kind, payload):
     return struct.pack('>I', len(header)) + header + body
 
 
-def generate(path: Path, maxspeed='36', forward=None, backward=None):
+def generate(path: Path, maxspeed='36', forward=None, backward=None, invalid_restriction=False):
     # Coordinates separated enough to keep radius=20 m queries on their own component.
     coordinates = [(0, 0), (10000, 0), (1000000, 0), (1010000, 0)]
     strings = ['', 'highway', 'residential', 'maxspeed', maxspeed, 'oneway', 'yes']
@@ -38,6 +38,9 @@ def generate(path: Path, maxspeed='36', forward=None, backward=None):
         if value is not None:
             directional.append((len(strings), len(strings) + 1))
             strings.extend([field, value])
+    relation_strings = len(strings)
+    if invalid_restriction:
+        strings.extend(['type', 'restriction', 'no_left_turn', 'from', 'to'])
     table = b''.join(blob(1, value.encode()) for value in strings)
     group = b''
     for identity, (lon, lat) in enumerate(coordinates, 1):
@@ -50,6 +53,17 @@ def generate(path: Path, maxspeed='36', forward=None, backward=None):
         way = (number(1, identity) + blob(2, keys) + blob(3, values)
                + blob(8, varint(first * 2) + varint(2)))
         group += blob(3, way)
+    if invalid_restriction:
+        # Both from/to refer to existing way 10; the missing via is invalid.
+        # Way 20 survives as a separate routable component after conservative exclusion.
+        offset = relation_strings
+        relation = (number(1, 99)
+                    + blob(2, varint(offset) + varint(offset + 1))
+                    + blob(3, varint(offset + 1) + varint(offset + 2))
+                    + blob(8, varint(offset + 3) + varint(offset + 4))
+                    + blob(9, varint(20) + varint(0))
+                    + blob(10, varint(1) + varint(1)))
+        group += blob(4, relation)
     path.write_bytes(block('OSMHeader', blob(4, b'OsmSchema-V0.6'))
                      + block('OSMData', blob(1, table) + blob(2, group)))
 
