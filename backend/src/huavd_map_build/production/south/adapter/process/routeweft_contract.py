@@ -1,5 +1,6 @@
 """Validate the locked CLI capabilities and bounded build audit contract."""
 import re
+import math
 from huavd_map_build.production.south.port.routeweft import RouteWeftError
 
 
@@ -9,6 +10,7 @@ def capabilities(tool):
         'commands': {'version', 'preflight', 'build', 'verify', 'inspect', 'nearest', 'route'},
         'dataset_formats': {1}, 'profiles': {'driving-v1'},
         'invalid_restriction_policies': {'reject', 'block_ways'},
+        'invalid_maxspeed_policies': {'reject', 'use_default'},
     }
     if type(value.get('cli_schema')) is not int or value['cli_schema'] != 1:
         raise RouteWeftError('incompatible RouteWeft CLI capabilities')
@@ -39,7 +41,7 @@ def capabilities(tool):
     return value
 
 
-def build_report(value, source_sha256, policy, *, manifest=None, review=None):
+def build_report(value, source_sha256, policy, *, manifest=None, review=None, maxspeed_policy="reject"):
     report = value.get('report')
     if (not isinstance(report, dict) or report.get('valid') is not True
             or report.get('failure_code') is not None or report.get('policy') != policy
@@ -48,6 +50,7 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None):
     counts = report.get('diagnostics')
     if not isinstance(counts, dict) or any(type(v) is not int or v < 0 for v in counts.values()):
         raise RouteWeftError('invalid report diagnostic counts')
+    maxspeed_audit(report, maxspeed_policy)
     for key in ('nodes', 'edges', 'restrictions'):
         if type(report.get(key)) is not int or report[key] < (0 if key == 'restrictions' else 1):
             raise RouteWeftError(f'invalid report {key}')
@@ -79,3 +82,33 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None):
                     review['diagnostics'], key=lambda x: (x['relation_id'], x['code']))):
             raise RouteWeftError('restriction audit differs from reviewed policy')
     return report
+
+
+def maxspeed_audit(report, policy):
+    """Require complete bounded successful speed audit and matching counters."""
+    if policy not in ('reject', 'use_default') or report.get('maxspeed_policy') != policy:
+        raise RouteWeftError('maxspeed report policy mismatch')
+    entries = report.get('maxspeed_diagnostics')
+    counts = report['diagnostics']
+    if not isinstance(entries, list) or len(entries) > 256:
+        raise RouteWeftError('missing or invalid maxspeed diagnostics')
+    if (counts.get('maxspeed_policy_use_default', 0) != (1 if policy == 'use_default' else 0)
+            or counts.get('maxspeed_fallback_values', 0) != len(entries)
+            or (policy == 'reject' and entries)):
+        raise RouteWeftError('maxspeed audit count/policy mismatch')
+    seen, size = set(), 0
+    for entry in entries:
+        if (not isinstance(entry, dict) or type(entry.get('way_id')) is not int
+                or entry.get('field') not in ('maxspeed', 'maxspeed:forward', 'maxspeed:backward')
+                or not isinstance(entry.get('value'), str) or not entry['value'].strip()
+                or entry.get('action') != 'use_default'
+                or type(entry.get('effective_kmh')) not in (int, float)
+                or not math.isfinite(entry['effective_kmh']) or not 0 < entry['effective_kmh'] <= 300):
+            raise RouteWeftError('invalid maxspeed diagnostic')
+        identity = (entry['way_id'], entry['field'])
+        if identity in seen:
+            raise RouteWeftError('duplicate maxspeed diagnostic')
+        seen.add(identity)
+        size += len(entry['field'].encode('utf-8')) + len(entry['value'].encode('utf-8')) + 128
+        if size > 64 * 1024:
+            raise RouteWeftError('maxspeed diagnostic byte limit exceeded')
