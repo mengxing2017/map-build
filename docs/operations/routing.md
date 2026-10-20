@@ -86,3 +86,28 @@ ROUTEWEFT_TEST_BIN=/absolute/routeweft ROUTEWEFT_TEST_SHA256=<sha256> PYTHONPATH
 当前独立接口不将历史地图包与路由包自动配对。地图和路由资产配对时必须具有一致的原始 PBF SHA-256 证据。
 
 升级此版本后执行 `make setup-routeweft ROUTEWEFT_SOURCE=/absolute/path/to/routeweft` 安装锁定的新工具，再重新构建路网。新标准包声明 `routeweft-dataset-v2` 与 `routing.graph_capacity=regional`，消费者必须支持相应格式和容量；旧 ready 不可跨构建配置复用。
+
+## 无效限速的显式回退
+
+默认 `reject` 会拒绝 `maxspeed=辅路` 等不可解析值。需要采用上游道路类别默认速度估算成本时，显式设置 `ROUTING_INVALID_MAXSPEED=use_default`；构建、验证、查询和打包必须保持同一策略：
+
+```bash
+export ROUTING_INVALID_MAXSPEED=use_default
+make build-routing WORKDIR=/home/dev/data/map/test REGION=china/guangxi YYYYMMDD=20260803 INPUT=/home/dev/data/map/test/staging/china-guangxi-20260803/source.osm.pbf
+make verify-routing WORKDIR=/home/dev/data/map/test REGION=china/guangxi YYYYMMDD=20260803
+make smoke-routing WORKDIR=/home/dev/data/map/test REGION=china/guangxi YYYYMMDD=20260803
+make pack-routing WORKDIR=/home/dev/data/map/test REGION=china/guangxi YYYYMMDD=20260803 FORMAT=both
+```
+
+同一环境变量也适用于标准 `make build`、`make pack` 和 `make release`，联合包会检查 ready 中的策略。诊断 CLI 支持 `--invalid-maxspeed reject|use_default`，审核 YAML 支持区域字段 `invalid_maxspeed`。优先级为 CLI 显式参数、审核配置、环境变量、默认 reject；无效值直接报错。
+
+策略参与配置摘要；改变策略必须重建，不能复用旧 ready。ready、routing-build.json、独立包 routing-package.json 和标准包 package.json.routing 保存 `invalid_maxspeed` 与限速审计（构建回执的逐项诊断位于 build_result.report.maxspeed_diagnostics）。报告策略、回退条数、原始字段值、有效速度及 manifest 计数必须一致；缺失或超限审计阻止发布。
+
+通用限速的无效值回退到道路类别默认速度；方向限速回退到已解析的通用速度。有效值仍由上游按 driving-v1 处理。默认速度只用于预计耗时，不能当作核实后的法定限速。该策略不会自动切换转向限制的 reject/block_ways，也不保证广西全部数据问题均已消除。
+
+
+### 广西 20260803 已审核交付
+
+`config/routing/china-guangxi-20260803-audit.yaml` 绑定广西输入 SHA-256，显式选择 external/regional/v2、use_default 及 block_ways，核对 14 个异常关系和 21 条道路的完整排除集合。它包含省域正常路线、绕行和真实不连通分量的 NoRoute 查询，不可用于其他源快照。
+
+使用 `routing build/verify/smoke/pack --config=config/routing/china-guangxi-20260803-audit.yaml`，并保持 REGION、YYYYMMDD 和 WORKDIR 一致。该配置用于独立路网审计交付，pack 输出 `installable=false` 的审计包。发布证据见 [广西发布记录](../../report/routeweft-guangxi-release-20261020.md)。
