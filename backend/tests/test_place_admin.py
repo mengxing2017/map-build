@@ -2,6 +2,7 @@ from copy import deepcopy
 import unittest
 
 from huavd_map_build.bootstrap import build_configuration_service, repository_root
+from huavd_map_build.production.domain.normalize import NormalizationPolicy, normalize_feature
 from huavd_map_build.production.domain.place_admin import (
     AdministrativeRelation,
     apply_admin_display_name,
@@ -71,6 +72,53 @@ class PlaceAdminDomainTest(unittest.TestCase):
         self.assertTrue(changed)
         for field in ("name:zh-Hans", "name:zh", "name"):
             self.assertEqual("龙胜各族自治县", feature["properties"][field])
+
+    def test_official_name_survives_conflicting_normalized_local_name(self) -> None:
+        feature = {
+            "type": "Feature",
+            "properties": {
+                "@id": 3057536627, "place": "town", "name": "茶尔乡",
+                "name:zh-Hans": "查尔乡", "name:zh": "茶尔乡",
+                "official_name": "茶尔乡", "name:en": "Car",
+            },
+            "geometry": {"type": "Point", "coordinates": [89.3141844, 29.3888707]},
+        }
+        normalized = normalize_feature(feature, NormalizationPolicy(
+            "place_label", ("name:zh-Hans", "name:zh", "name", "name:en"),
+            tuple(feature["properties"]), {},
+        ))
+        self.assertEqual("查尔乡", normalized["properties"]["name"])
+        result = enrich_place_labels([normalized], (), {}, {}, self.hierarchy)
+        properties = result.features[0]["properties"]
+        for field in self.hierarchy["admin_display_name"]["target_fields"]:
+            self.assertEqual("茶尔乡", properties[field])
+        self.assertEqual("Car", properties["name:en"])
+        self.assertEqual(1, result.report["summary"]["admin_display_name_override_count"])
+
+    def test_local_name_evidence_preserves_display_name_policy_guards(self) -> None:
+        base = self.hierarchy["admin_display_name"]
+        cases = (
+            ({"enabled": False}, "township", "茶尔乡", "茶尔乡", False),
+            ({}, "village", "茶尔乡", "茶尔乡", False),
+            ({}, "township", "茶尔乡/Car", "茶尔乡/Car", False),
+            ({}, "township", "官方名称", "其他名称", False),
+            ({}, "township", "乡", "乡", False),
+            ({}, "locality", "龙胜各族自治县", "龙胜县", True),
+        )
+        for overrides, tier, official, localized, allowed in cases:
+            with self.subTest(overrides=overrides, tier=tier, official=official):
+                policy = {**base, **overrides}
+                feature = {"properties": {
+                    "name": "不同名称", "name:zh": localized,
+                    "official_name": official, "name:en": official,
+                }}
+                original = deepcopy(feature)
+                self.assertEqual(allowed, apply_admin_display_name(feature, tier, policy))
+                if allowed:
+                    for field in policy["target_fields"]:
+                        self.assertEqual(official, feature["properties"][field])
+                else:
+                    self.assertEqual(original, feature)
 
     def test_complete_selection_fallback_dedup_and_audit(self) -> None:
         def point(node_id, name, place, population_value=0, coordinates=None, **extra):

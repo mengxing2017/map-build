@@ -169,8 +169,11 @@ def apply_admin_display_name(
     locality_match = isinstance(official, str) and any(
         keyword in official for keyword in policy.get("locality_keywords", [])
     )
-    if (tier not in policy.get("tiers", []) and not locality_match) or not display_name_allowed(
-        properties.get("name"), official
+    if tier not in policy.get("tiers", []) and not locality_match:
+        return False
+    if not any(
+        display_name_allowed(properties.get(field), official)
+        for field in ("name", *policy.get("target_fields", []))
     ):
         return False
     for field in policy.get("target_fields", []):
