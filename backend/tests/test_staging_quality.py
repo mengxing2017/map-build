@@ -1,4 +1,5 @@
 import hashlib
+from copy import deepcopy
 import tempfile
 import unittest
 from pathlib import Path
@@ -88,6 +89,30 @@ def valid_reports():
             },
         },
     }
+
+
+def island_reader(polygon_count, flagged_count):
+    polygons = tuple({
+        "type": "Feature",
+        "properties": {"in_water": True} if index < flagged_count else {},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]],
+        },
+    } for index in range(polygon_count))
+    anchors = tuple({
+        "type": "Feature",
+        "properties": {"island_anchor": True, "island_area_km2": 0.5},
+        "geometry": {"type": "Point", "coordinates": [1, 1]},
+    } for _ in range(polygon_count))
+    reports = valid_reports()
+    reports["island_water_report"]["inputs"]["island_polygon_count"] = polygon_count
+    reports["island_water_report"]["summary"]["in_water_count"] = flagged_count
+    reports["island_anchor_report"]["summary"].update(
+        polygon_count=polygon_count, anchor_count=polygon_count,
+        tier={"centroid": 0, "grid": polygon_count, "vertex": 0},
+    )
+    return MemoryLayerReader(features={"island": (*polygons, *anchors)}, reports=reports)
 
 
 class BaseStagingQualityGateTest(unittest.TestCase):
@@ -234,7 +259,7 @@ class BaseStagingQualityGateTest(unittest.TestCase):
             "geometry": {"type": "Polygon", "coordinates": []},
         }
         reports = valid_reports()
-        reports["island_water_report"]["inputs"]["island_polygon_count"] = 10
+        reports["island_water_report"]["inputs"]["island_polygon_count"] = 1
         reports["island_water_report"]["summary"]["in_water_count"] = 1
         reports["island_anchor_report"]["summary"].update(
             {"polygon_count": 1, "anchor_count": 1}
@@ -243,32 +268,67 @@ class BaseStagingQualityGateTest(unittest.TestCase):
         report = BaseStagingQualityGate(self.configuration, reader).inspect(self.build)
         self.assertTrue(report.passed, report.as_dict())
 
-    def test_small_island_sample_skips_percentage_anomaly_check(self) -> None:
-        island = {
-            "type": "Feature", "properties": {"in_water": True},
-            "geometry": {"type": "Polygon", "coordinates": []},
-        }
-        other = {
-            "type": "Feature", "properties": {},
-            "geometry": {"type": "Polygon", "coordinates": []},
-        }
-        reports = valid_reports()
-        reports["island_water_report"]["inputs"]["island_polygon_count"] = 2
-        reports["island_water_report"]["summary"]["in_water_count"] = 1
-        reports["island_anchor_report"]["summary"].update(
-            {"polygon_count": 2, "anchor_count": 2}
+    def test_water_island_percentage_is_not_a_failure_condition(self) -> None:
+        for polygons, flagged in ((0, 0), (1, 1), (2, 1), (10, 10), (52, 7)):
+            with self.subTest(polygons=polygons, flagged=flagged):
+                report = BaseStagingQualityGate(
+                    self.configuration, island_reader(polygons, flagged)
+                ).inspect(self.build)
+                self.assertTrue(report.passed, report.as_dict())
+                self.assertEqual(polygons * 2, report.feature_count)
+
+    def test_counts_multipolygons_and_preserves_report_checks(self) -> None:
+        reader = island_reader(2, 1)
+        polygon = reader.documents["island"][0]["geometry"]
+        polygon.update(type="MultiPolygon", coordinates=[polygon["coordinates"]])
+        result = BaseStagingQualityGate(self.configuration, reader).inspect(self.build)
+        self.assertTrue(result.passed, result.as_dict())
+        for failure in ("area", "hash", "missing"):
+            with self.subTest(failure=failure):
+                invalid = deepcopy(reader)
+                report = invalid.reports["island_water_report"]
+                if failure == "area":
+                    report["checks"]["max_in_water_area_within_limit"] = False
+                elif failure == "hash":
+                    report["summary"]["water_geojsonseq_sha512"] = "stale-water"
+                else:
+                    del invalid.reports["island_water_report"]
+                result = BaseStagingQualityGate(self.configuration, invalid).inspect(self.build)
+                self.assertTrue(any(item.layer == "island_water" for item in result.findings))
+                self.assertFalse(result.passed)
+
+    def test_island_report_counts_must_be_integers_matching_staged_polygons(self) -> None:
+        cases = (
+            ("inputs", "island_polygon_count", 4),
+            ("inputs", "island_polygon_count", 1),
+            ("inputs", "island_polygon_count", 2.0),
+            ("inputs", "island_polygon_count", True),
+            ("inputs", "island_polygon_count", -1),
+            ("summary", "in_water_count", 0),
+            ("summary", "in_water_count", 3),
+            ("summary", "in_water_count", 1.0),
+            ("summary", "in_water_count", True),
+            ("summary", "in_water_count", -1),
         )
-        reports["island_anchor_report"]["summary"]["tier"]["grid"] = 2
-        anchors = tuple({
-            "type": "Feature",
-            "properties": {"island_anchor": True, "island_area_km2": 0.5},
-            "geometry": {"type": "Point", "coordinates": [1, 2]},
-        } for _ in range(2))
-        reader = MemoryLayerReader(
-            features={"island": (island, other, *anchors)}, reports=reports
-        )
-        report = BaseStagingQualityGate(self.configuration, reader).inspect(self.build)
-        self.assertTrue(report.passed, report.as_dict())
+        for section, field, value in cases:
+            with self.subTest(section=section, value=value):
+                reader = island_reader(2, 1)
+                reader.reports["island_water_report"][section][field] = value
+                result = BaseStagingQualityGate(self.configuration, reader).inspect(self.build)
+                self.assertTrue(any(
+                    item.code == "report-invalid" and item.layer == "island_water"
+                    for item in result.findings
+                ), result.as_dict())
+
+    def test_rejects_in_water_flag_on_anchor_even_when_report_count_matches(self) -> None:
+        reader = island_reader(2, 0)
+        reader.documents["island"][-1]["properties"]["in_water"] = True
+        reader.reports["island_water_report"]["summary"]["in_water_count"] = 1
+        result = BaseStagingQualityGate(self.configuration, reader).inspect(self.build)
+        self.assertTrue(any(
+            item.code == "report-invalid" and item.layer == "island_water"
+            for item in result.findings
+        ), result.as_dict())
 
     def test_accepts_place_label_semantic_contract(self) -> None:
         feature = {
@@ -309,7 +369,8 @@ class BaseStagingQualityGateTest(unittest.TestCase):
 
     def test_reports_place_label_semantic_violations(self) -> None:
         common = {
-            "name": "重复名称", "name:zh": "官方名称", "official_name": "官方名称",
+            "name": "龙胜县", "name:zh": "龙胜各族自治县",
+            "official_name": "龙胜各族自治县",
             "place": "city", "label_tier": "county", "label_rank": 1,
         }
         first = {
@@ -336,6 +397,42 @@ class BaseStagingQualityGateTest(unittest.TestCase):
             "feature-id-leak", "place-label-zoom", "place-duplicate",
             "place-display-name",
         }.issubset(codes), result.as_dict())
+
+    def test_display_name_gate_uses_production_rules_without_mutating_features(self) -> None:
+        cases = (
+            ({"name": "查尔乡", "name:zh-Hans": "查尔乡", "name:zh": "茶尔乡",
+              "official_name": "茶尔乡"}, True),
+            ({"name": "茶尔乡", "name:zh-Hans": "茶尔乡", "name:zh": "茶尔乡",
+              "official_name": "茶尔乡"}, False),
+            ({"name": "龙胜各族自治县", "official_name": "龙胜各族自治县"}, True),
+            ({"name": "龙胜县", "name:zh": "龙胜各族自治县",
+              "official_name": "龙胜各族自治县"}, True),
+            ({"name": "其他名称", "name:zh": "官方名称", "official_name": "另一地名"}, False),
+            ({"name": "茶尔乡", "name:zh": "茶尔乡/Car",
+              "official_name": "茶尔乡/Car"}, False),
+        )
+        for names, invalid in cases:
+            with self.subTest(names=names):
+                feature = {
+                    "type": "Feature",
+                    "properties": {
+                        **names, "place": "town", "label_tier": "township",
+                        "label_rank": 200_000_000_000,
+                    },
+                    "geometry": {"type": "Point", "coordinates": [89.3141844, 29.3888707]},
+                    "tippecanoe": {"minzoom": 9},
+                }
+                original = deepcopy(feature)
+                reports = valid_reports()
+                reports["place_label_dedup_report"]["summary"]["output_feature_count"] = 1
+                report = BaseStagingQualityGate(
+                    self.configuration,
+                    MemoryLayerReader(features={"place_label": (feature,)}, reports=reports),
+                ).inspect(self.build)
+                self.assertEqual(invalid, not report.passed, report.as_dict())
+                if invalid:
+                    self.assertEqual(["place-display-name"], [item.code for item in report.findings])
+                self.assertEqual(original, feature)
 
     def test_reports_configured_field_type_violation(self) -> None:
         road = {

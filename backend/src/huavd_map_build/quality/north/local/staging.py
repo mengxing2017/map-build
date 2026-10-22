@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from typing import Any
 
 from huavd_map_build.catalog.north.local.configuration import BuildConfigurationService
 from huavd_map_build.production.domain.model import BuildPlan
+from huavd_map_build.production.domain.place_admin import apply_admin_display_name
 from huavd_map_build.quality.domain.staging import (
     BaseDeepVerificationError,
     BaseStagingQualityReport,
@@ -57,7 +59,9 @@ class BaseStagingQualityGate:
             allowed_fields, allowed_geometry = policies[layer]
             stats = {
                 "count": 0,
+                "polygons": 0,
                 "in_water": 0,
+                "invalid_in_water": 0,
                 "anchors": 0,
                 "invalid_anchors": 0,
             }
@@ -66,10 +70,19 @@ class BaseStagingQualityGate:
                 for line_number, feature in self._reader.features(path):
                     feature_count += 1
                     stats["count"] += 1
+                    geometry = feature.get("geometry")
+                    is_polygon = (
+                        isinstance(geometry, dict)
+                        and geometry.get("type") in {"Polygon", "MultiPolygon"}
+                    )
+                    if is_polygon:
+                        stats["polygons"] += 1
                     properties = feature.get("properties")
                     if isinstance(properties, dict):
                         if properties.get("in_water") is True:
                             stats["in_water"] += 1
+                            if not is_polygon:
+                                stats["invalid_in_water"] += 1
                         if properties.get("island_anchor") is True:
                             stats["anchors"] += 1
                             geometry = feature.get("geometry")
@@ -128,7 +141,7 @@ class BaseStagingQualityGate:
                 "island_water",
                 f"{root}/staging/{session}/island_water_report.json",
                 lambda value: self._valid_island_water_report(
-                    value, stats.get("island", {}).get("in_water", 0)
+                    value, stats.get("island", {})
                 ),
             ),
             (
@@ -421,12 +434,15 @@ class BaseStagingQualityGate:
         return None if valid else "place_label schema 3 enrichment report contract is invalid"
 
     @classmethod
-    def _valid_island_water_report(cls, value: dict[str, Any], flagged: int) -> str | None:
+    def _valid_island_water_report(
+        cls, value: dict[str, Any], stats: dict[str, int]
+    ) -> str | None:
         try:
             thresholds = value["thresholds"]
             inputs = value["inputs"]
             summary = value["summary"]
             polygons = inputs["island_polygon_count"]
+            flagged = summary["in_water_count"]
             valid = (
                 value.get("schema_version") == 1 and value.get("layer") == "island"
                 and all(
@@ -437,10 +453,12 @@ class BaseStagingQualityGate:
                         "max_in_water_area_km2",
                     )
                 )
-                and cls._nonnegative(polygons)
-                and summary["in_water_count"] == flagged
+                and type(polygons) is int and polygons >= 0
+                and polygons == stats.get("polygons", 0)
+                and type(flagged) is int and 0 <= flagged <= polygons
+                and flagged == stats.get("in_water", 0)
+                and stats.get("invalid_in_water", 0) == 0
                 and value.get("checks", {}).get("max_in_water_area_within_limit") is True
-                and (polygons < 10 or flagged * 10 <= polygons)
             )
         except (KeyError, TypeError):
             valid = False
@@ -458,6 +476,7 @@ class BaseStagingQualityGate:
                 and cls._number(value["thresholds"]["grid_divisions"])
                 and cls._nonnegative(polygons)
                 and summary["anchor_count"] == polygons == stats.get("anchors", 0)
+                and polygons == stats.get("polygons", 0)
                 and all(
                     cls._nonnegative(tier[key])
                     for key in ("centroid", "grid", "vertex")
@@ -612,17 +631,17 @@ class BaseStagingQualityGate:
                 ))
 
         display = policy["admin_display_name"]
-        official = properties.get("official_name")
-        if display.get("enabled") and official is not None:
-            values = [
-                properties[field] for field in display.get("target_fields", [])
-                if properties.get(field) is not None
+        expected = deepcopy(feature)
+        if apply_admin_display_name(expected, tier, display):
+            mismatches = [
+                field for field in display.get("target_fields", [])
+                if properties.get(field) != expected["properties"].get(field)
             ]
-            matches = sum(value == official for value in values)
-            if matches not in {0, len(values)}:
+            if mismatches:
                 findings.append(StagingFinding(
                     "place-display-name", "place_label",
-                    f"line {line_number} applies official_name to only some target fields",
+                    f"line {line_number} does not apply official_name to target fields: "
+                    + ", ".join(mismatches),
                 ))
 
     @staticmethod
