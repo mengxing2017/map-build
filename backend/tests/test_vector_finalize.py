@@ -1,4 +1,6 @@
 import os
+import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +9,7 @@ from huavd_map_build.bootstrap import (
     catalog_service,
     repository_root,
     vector_finalization_service,
+    vector_quality_gate,
 )
 from huavd_map_build.delivery.domain.integrity import (
     ArtifactIntegrityReport,
@@ -36,7 +39,10 @@ class RecordingManifest:
 
     def run(self, request) -> str:
         self.calls.append("manifest")
-        return "/tmp/maps/outputs/map.manifest.json"
+        path = Path(request.workdir) / "outputs/map.manifest.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"source": {"vendor": "local", "url": None}}))
+        return str(path)
 
 
 class RecordingAttribution:
@@ -45,8 +51,9 @@ class RecordingAttribution:
 
     def write(self, paths, document) -> str:
         self.calls.append("attribution")
-        if document.sources[0].vendor != "geofabrik":
-            raise AssertionError("unexpected attribution source")
+        source = document.sources[0]
+        if (source.vendor == "geofabrik") != (source.url is not None):
+            raise AssertionError("inconsistent attribution source")
         return paths.attribution
 
 
@@ -69,6 +76,9 @@ class RecordingIntegrity:
 
 
 class VectorFinalizationServiceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
     def service(
         self, semantic: VectorQualityReport, integrity: ArtifactIntegrityReport
     ) -> tuple[VectorFinalizationService, list[str]]:
@@ -81,11 +91,10 @@ class VectorFinalizationServiceTest(unittest.TestCase):
         )
         return service, calls
 
-    @staticmethod
-    def request() -> VectorFinalizationRequest:
+    def request(self) -> VectorFinalizationRequest:
         return VectorFinalizationRequest(
             RegionId("china/guangxi"), BuildDate("20261003"),
-            SessionId("china-guangxi-20261003"), Role.BASE, "/tmp/maps",
+            SessionId("china-guangxi-20261003"), Role.BASE, self.directory.name,
         )
 
     def test_runs_delivery_and_gates_in_fixed_order(self) -> None:
@@ -99,7 +108,7 @@ class VectorFinalizationServiceTest(unittest.TestCase):
             calls,
         )
         self.assertEqual(
-            "/tmp/maps/outputs/china-guangxi-20261003.base.pmtiles",
+            f"{self.directory.name}/outputs/china-guangxi-20261003.base.pmtiles",
             result.paths.pmtiles,
         )
 
@@ -151,6 +160,12 @@ class VectorFinalizationServiceTest(unittest.TestCase):
             output = workspace / "outputs/china-guangxi-20261003.base.pmtiles"
             output.parent.mkdir()
             write_header(output, max_zoom=14)
+            manual = workspace / "manual/custom.osm.pbf"
+            manual.parent.mkdir()
+            manual.write_bytes(b"local input in a region with catalog URL")
+            staged = workspace / "staging/china-guangxi-20261003/source.osm.pbf"
+            staged.parent.mkdir(parents=True)
+            staged.symlink_to(manual)
             old_path = os.environ.get("PATH", "")
             os.environ["PATH"] = f"{tools}:{old_path}"
             try:
@@ -158,9 +173,24 @@ class VectorFinalizationServiceTest(unittest.TestCase):
                     RegionId("china/guangxi"), BuildDate("20261003"),
                     SessionId("china-guangxi-20261003"), Role.BASE, directory,
                 ))
+                rewrite = subprocess.run(
+                    [str(repository_root(Path(__file__)) / "scripts/attribution.sh"),
+                     "--region=china/guangxi", "--yyyymmdd=20261003", "--role=base",
+                     f"--workdir={directory}"], capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(0, rewrite.returncode, rewrite.stderr)
+                rechecked = vector_quality_gate().verify(
+                    region=RegionId("china/guangxi"), build_date=BuildDate("20261003"),
+                    role=Role.BASE, workdir=directory,
+                )
+                self.assertTrue(rechecked.passed, rechecked.as_dict())
             finally:
                 os.environ["PATH"] = old_path
             self.assertTrue(result.passed, result.as_dict())
             self.assertTrue(Path(result.paths.manifest).is_file())
             self.assertTrue(Path(result.paths.attribution).is_file())
             self.assertTrue(Path(result.paths.sha512).is_file())
+            self.assertEqual(
+                [{"vendor": "local", "url": None}],
+                json.loads(Path(result.paths.attribution).read_text())["sources"],
+            )

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from huavd_map_build.delivery.domain.metadata import PmtilesHeader
+from huavd_map_build.delivery.domain.attribution import AttributionDocument
 from huavd_map_build.quality.domain.vector import QualityFinding
 
 
@@ -22,6 +23,8 @@ class RasterContractExpectations:
     plan_sha512: str
     tiles_sha512: str
     input_fingerprint: str
+    base_source: dict[str, Any]
+    source_revision: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,13 +45,30 @@ class RasterQualityReport:
 
 def verify_raster_contract(
     *, header: PmtilesHeader, metadata: dict[str, Any],
-    manifest: dict[str, Any], expectations: RasterContractExpectations,
+    manifest: dict[str, Any], attribution: dict[str, Any],
+    expectations: RasterContractExpectations,
 ) -> RasterQualityReport:
     findings: list[QualityFinding] = []
 
     def check(code: str, condition: bool, detail: str) -> None:
         if not condition:
             findings.append(QualityFinding(code, detail))
+
+    source = manifest.get("source")
+    check("source-base-consistency", source == expectations.base_source,
+          "raster source must equal verified base source")
+    try:
+        if not isinstance(source, dict) or "vendor" not in source or "url" not in source:
+            raise ValueError("raster manifest source is incomplete")
+        expected_attribution = AttributionDocument.osm(source["vendor"], source["url"]).as_dict()
+        check("attribution-contract", attribution == expected_attribution,
+              "attribution does not match raster source")
+    except ValueError as error:
+        check("attribution-contract", False, str(error))
+    record = manifest.get("huavd_record")
+    check("manifest-source-revision", isinstance(record, dict)
+          and record.get("source_revision") == expectations.source_revision,
+          "raster source_revision does not match verified base lineage")
 
     check("header-tile-type", header.tile_type == 4,
           f"expected WebP (4), got {header.tile_type}")

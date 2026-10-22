@@ -49,7 +49,9 @@ class VectorQualityDomainTest(unittest.TestCase):
             "china/guangxi", "20261003", "base",
             "china-guangxi-20261003.base",
             "outputs/china-guangxi-20261003.base.pmtiles", 0, 15,
+            "geofabrik",
             "https://download.geofabrik.de/asia/china/guangxi-latest.osm.pbf",
+            "geofabrik-guangxi-2026-10-03",
             "osm-china-guangxi", "cn-45-base", "20261003.base", "osm-dev",
             ("zh-Hans", "en", "ja", "ko"),
             ("zh-Hans", "en", "ja", "ko"),
@@ -166,11 +168,13 @@ class VectorQualityGateTest(unittest.TestCase):
             stem = "china-guangxi-20261003.base"
             source = Path(directory) / "staging/china-guangxi-20261003/source.osm.pbf"
             source.parent.mkdir(parents=True)
-            source.write_bytes(b"manual-pbf-fixture")
-            md5 = Path(directory) / "mirror/guangxi-latest.osm.pbf.md5"
-            md5.parent.mkdir()
+            mirror = Path(directory) / "mirror/guangxi-latest.osm.pbf"
+            mirror.parent.mkdir()
+            mirror.write_bytes(b"manual-pbf-fixture")
+            source.symlink_to(mirror)
+            md5 = Path(f"{mirror}.md5")
             md5.write_text(
-                "0123456789abcdef0123456789abcdef  guangxi-latest.osm.pbf\n",
+                f"{hashlib.md5(mirror.read_bytes()).hexdigest()}  guangxi-latest.osm.pbf\n",
                 encoding="ascii",
             )
             evidence_reader = FileSystemManifestEvidenceReader()
@@ -247,11 +251,18 @@ class VectorQualityGateTest(unittest.TestCase):
             gate = VectorQualityGate(
                 catalog_service(root), configuration, FileSystemPmtilesHeaderReader(),
                 FileSystemVectorQualityReader(), FixedMetadataReader(metadata),
-                FileDigestAdapter(), evidence_reader,
+                FileDigestAdapter(),
             )
             report = gate.verify(
                 region=region, build_date=date, role=Role.BASE, workdir=directory
             )
+            for invalid in ("not-a-checksum", "0" * 32):
+                md5.write_text(invalid)
+                failed = gate.verify(
+                    region=region, build_date=date, role=Role.BASE, workdir=directory
+                )
+                self.assertFalse(failed.passed)
+                self.assertIn("source-evidence", {item.code for item in failed.findings})
         self.assertTrue(report.passed, report.as_dict())
 
 

@@ -11,6 +11,7 @@ from huavd_map_build.delivery.domain.manifest import RasterManifestRequest
 from huavd_map_build.delivery.domain.metadata import RasterMetadataRequest
 from huavd_map_build.delivery.north.local.attribution import AttributionWriterService
 from huavd_map_build.delivery.north.local.manifest import RasterManifestService
+from huavd_map_build.delivery.north.local.source import read_manifest_source
 from huavd_map_build.delivery.north.local.metadata import RasterMetadataService
 from huavd_map_build.delivery.north.local.publication import ArtifactPublicationService
 from huavd_map_build.delivery.north.local.verification import ArtifactFileVerifier
@@ -88,9 +89,9 @@ class RasterFinalizationService:
                 request.bundle_id, request.activation,
             )
             self._manifest.run(manifest_request)
+            source = read_manifest_source(staged.manifest)
             self._attribution.write(
-                staged,
-                AttributionDocument.geofabrik_osm(self._catalog.source_pbf_url(request.region)),
+                staged, AttributionDocument.osm(source.vendor, source.url)
             )
             semantic = self._quality.verify(manifest_request)
             staged_integrity = self._integrity.verify(staged)

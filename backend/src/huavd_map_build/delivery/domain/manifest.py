@@ -41,7 +41,8 @@ class RasterManifestRequest:
 
 def compile_vector_manifest(
     *, request: ManifestRequest, header: PmtilesHeader, output_path: str,
-    output_size: int, sha512: str, source_url: str, evidence: SourceEvidence,
+    output_size: int, sha512: str, source_vendor: str, source_url: str | None,
+    source_revision: str, evidence: SourceEvidence,
     tools: dict[str, str], tippecanoe: dict[str, Any], vector_layers: list[str],
     source_id: str, offline_map_id: str, package_version: str, style_id: str,
     available_locales: tuple[str, ...], style_locales: tuple[str, ...],
@@ -62,7 +63,7 @@ def compile_vector_manifest(
         "yyyymmdd": request.build_date.value,
         "build_id": build_id,
         "source": {
-            "vendor": "geofabrik", "url": source_url,
+            "vendor": source_vendor, "url": source_url,
             "downloaded_at": evidence.downloaded_at,
             "size_bytes": evidence.size_bytes, "md5": evidence.md5,
             "osm_timestamp": None,
@@ -82,11 +83,7 @@ def compile_vector_manifest(
             "name": f"{request.session.value}.{request.role.value}",
             "source_id": source_id, "asset_role": asset_role,
             "source_type": "osm-pbf", "package_version": package_version,
-            "source_revision": (
-                f"geofabrik-{request.region.value.rsplit('/', 1)[-1]}-"
-                f"{request.build_date.value[:4]}-{request.build_date.value[4:6]}-"
-                f"{request.build_date.value[6:]}"
-            ),
+            "source_revision": source_revision,
             "transport": "offline", "coord_system": "EPSG:3857",
             "style_id": style_id, "format": "pmtiles",
             "available_locales": list(available_locales),
@@ -110,7 +107,8 @@ def compile_vector_manifest(
 def compile_raster_manifest(
     *, request: RasterManifestRequest, header: PmtilesHeader,
     output_path: str, output_size: int, sha512: str,
-    source_url: str, evidence: SourceEvidence, tools: dict[str, str],
+    source_vendor: str, source_url: str | None, evidence: SourceEvidence,
+    tools: dict[str, str],
     source_id: str, offline_map_id: str, package_version: str, style_id: str,
     available_locales: tuple[str, ...], style_locales: tuple[str, ...],
     build_id: str, source_revision: str, base_input: dict[str, Any],
@@ -131,7 +129,7 @@ def compile_raster_manifest(
         "yyyymmdd": request.build_date.value,
         "build_id": build_id,
         "source": {
-            "vendor": "geofabrik", "url": source_url,
+            "vendor": source_vendor, "url": source_url,
             "downloaded_at": evidence.downloaded_at,
             "size_bytes": evidence.size_bytes, "md5": evidence.md5,
             "osm_timestamp": None,

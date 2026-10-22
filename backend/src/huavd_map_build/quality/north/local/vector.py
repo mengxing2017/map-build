@@ -1,10 +1,14 @@
 from huavd_map_build.catalog.north.local.service import CatalogService
 from huavd_map_build.catalog.north.local.configuration import BuildConfigurationService
 from huavd_map_build.delivery.domain.artifact import ArtifactIdentity, ArtifactPaths
-from huavd_map_build.delivery.south.port.manifest import ManifestEvidenceReader
+from huavd_map_build.delivery.north.local.source import (
+    resolve_source,
+    source_revision,
+)
 from huavd_map_build.delivery.south.port.digest import DigestPort
 from huavd_map_build.delivery.south.port.metadata import PmtilesHeaderReader
 from huavd_map_build.quality.domain.vector import (
+    QualityFinding,
     VectorContractExpectations,
     VectorQualityReport,
     verify_vector_contract,
@@ -21,11 +25,10 @@ class VectorQualityGate:
         self, catalog: CatalogService, configuration: BuildConfigurationService,
         headers: PmtilesHeaderReader, files: VectorQualityFileReader,
         metadata: EmbeddedMetadataReader, digest: DigestPort,
-        evidence: ManifestEvidenceReader,
     ) -> None:
         self._catalog, self._configuration = catalog, configuration
         self._headers, self._files = headers, files
-        self._metadata, self._digest, self._evidence = metadata, digest, evidence
+        self._metadata, self._digest = metadata, digest
 
     def verify(
         self, *, region: RegionId, build_date: BuildDate, role: Role, workdir: str
@@ -56,11 +59,13 @@ class VectorQualityGate:
             if role is Role.BASE else None
         )
         stem = paths.identity.stem
-        root = workdir.rstrip("/")
-        source_evidence = self._evidence.source(
-            f"{root}/staging/{paths.identity.session.value}/source.osm.pbf",
-            f"{root}/mirror/{self._catalog.pbf_basename(region)}.md5",
-        )
+        try:
+            source = resolve_source(
+                self._catalog, region=region, workdir=workdir,
+                session=paths.identity.session,
+            )
+        except ValueError as error:
+            return VectorQualityReport((QualityFinding("source-evidence", str(error)),))
         return verify_vector_contract(
             header=header, metadata=metadata, manifest=manifest,
             attribution=attribution,
@@ -81,13 +86,15 @@ class VectorQualityGate:
                 output_path=f"outputs/{stem}.pmtiles",
                 min_zoom=int(tippecanoe["min_zoom"]),
                 max_zoom=int(tippecanoe["max_zoom"]),
-                source_url=self._catalog.source_pbf_url(region),
+                source_vendor=source.vendor,
+                source_url=source.url,
+                source_revision=source_revision(source, region, build_date, role),
                 source_id=str(settings.get("source_id") or ""),
                 offline_map_id=str(settings.get("region_id") or ""),
                 package_version=str(settings.get("package_version") or ""),
                 style_id=str(settings.get("style_id") or ""),
                 available_locales=available_locales,
                 style_locales=style_locales,
-                source_evidence=source_evidence,
+                source_evidence=source.evidence,
             ),
         )

@@ -10,6 +10,7 @@ from huavd_map_build.delivery.domain.manifest import ManifestRequest
 from huavd_map_build.delivery.domain.metadata import MetadataRequest
 from huavd_map_build.delivery.north.local.attribution import AttributionWriterService
 from huavd_map_build.delivery.north.local.manifest import VectorManifestService
+from huavd_map_build.delivery.north.local.source import read_manifest_source
 from huavd_map_build.delivery.north.local.metadata import VectorMetadataService
 from huavd_map_build.delivery.north.local.verification import ArtifactFileVerifier
 from huavd_map_build.quality.domain.vector import VectorQualityReport
@@ -71,15 +72,13 @@ class VectorFinalizationService:
             request.region, request.build_date, request.session, request.role,
             request.workdir,
         ))
-        self._manifest.run(ManifestRequest(
+        manifest_path = self._manifest.run(ManifestRequest(
             request.region, request.build_date, request.session, request.role,
             request.workdir, request.bundle_id, request.activation,
         ))
+        source = read_manifest_source(manifest_path)
         self._attribution.write(
-            paths,
-            AttributionDocument.geofabrik_osm(
-                self._catalog.source_pbf_url(request.region)
-            ),
+            paths, AttributionDocument.osm(source.vendor, source.url)
         )
         semantic = self._quality.verify(
             region=request.region, build_date=request.build_date,

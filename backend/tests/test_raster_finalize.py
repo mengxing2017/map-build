@@ -1,4 +1,5 @@
 import tempfile
+import json
 import unittest
 from pathlib import Path
 
@@ -22,6 +23,10 @@ class RecordingComponent:
 
     def run(self, request):
         self.calls.append(self.name)
+        if self.name == "manifest":
+            path = Path(request.manifest_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"source": {"vendor": "local", "url": None}}))
         return self.result
 
     def write(self, paths, document):
@@ -54,6 +59,11 @@ class RecordingCandidates:
 
 
 class RasterFinalizationServiceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.workdir = directory.name
+
     def test_quality_failure_never_promotes_candidate(self) -> None:
         from huavd_map_build.delivery.domain.artifact import ArtifactIdentity, ArtifactPaths
         from huavd_map_build.shared.kernel import Role
@@ -62,8 +72,8 @@ class RasterFinalizationServiceTest(unittest.TestCase):
         identity = ArtifactIdentity(
             RegionId("china/guangxi"), BuildDate("20261003"), Role.RASTER_BAKE
         )
-        staged = ArtifactPaths(identity, "/tmp/maps/outputs/.staging/test")
-        failed = RasterQualityReport((QualityFinding("bad", "bad"),))
+        staged = ArtifactPaths(identity, f"{self.workdir}/outputs/.staging/test")
+        failed = RasterQualityReport((QualityFinding("source-base-consistency", "bad source"),))
         service = RasterFinalizationService(
             catalog_service(repository_root(Path(__file__))),
             RecordingComponent(calls, "metadata", "/tmp/metadata.json"),
@@ -75,7 +85,7 @@ class RasterFinalizationServiceTest(unittest.TestCase):
         )
         result = service.run(RasterFinalizationRequest(
             identity.region, identity.build_date, SessionId("china-guangxi-20261003"),
-            "/tmp/maps", "/tmp/candidate.pmtiles", 2, 256,
+            self.workdir, "/tmp/candidate.pmtiles", 2, 256,
         ))
         self.assertFalse(result.published)
         self.assertEqual(
@@ -83,6 +93,8 @@ class RasterFinalizationServiceTest(unittest.TestCase):
              "integrity", "discard"], calls,
         )
         self.assertNotIn("promote", calls)
+        self.assertNotIn("publish", calls)
+        self.assertFalse(Path(result.paths.ready).exists())
 
     def test_success_promotes_before_ready_publication_and_rechecks_final(self) -> None:
         from huavd_map_build.delivery.domain.artifact import ArtifactIdentity, ArtifactPaths
@@ -92,7 +104,7 @@ class RasterFinalizationServiceTest(unittest.TestCase):
         identity = ArtifactIdentity(
             RegionId("china/guangxi"), BuildDate("20261003"), Role.RASTER_BAKE
         )
-        staged = ArtifactPaths(identity, "/tmp/maps/outputs/.staging/test")
+        staged = ArtifactPaths(identity, f"{self.workdir}/outputs/.staging/test")
         passed = ArtifactIntegrityReport((), ())
         service = RasterFinalizationService(
             catalog_service(repository_root(Path(__file__))),
@@ -106,7 +118,7 @@ class RasterFinalizationServiceTest(unittest.TestCase):
         )
         result = service.run(RasterFinalizationRequest(
             identity.region, identity.build_date, SessionId("china-guangxi-20261003"),
-            "/tmp/maps", "/tmp/candidate.pmtiles", 2, 256,
+            self.workdir, "/tmp/candidate.pmtiles", 2, 256,
         ))
         self.assertTrue(result.published)
         self.assertEqual(

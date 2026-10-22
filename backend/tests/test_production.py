@@ -32,3 +32,10 @@ class BuildPlannerTest(unittest.TestCase):
             input_path=explicit,
         )
         self.assertEqual(str(explicit), plan.input_path)
+
+    def test_hainan_keeps_default_mirror_input(self) -> None:
+        plan = self.planner.plan(
+            region=RegionId("china/hainan"), build_date=BuildDate("20261022"),
+            role="base", workdir=Path("/tmp/maps"),
+        )
+        self.assertEqual("/tmp/maps/mirror/hainan-latest.osm.pbf", plan.input_path)

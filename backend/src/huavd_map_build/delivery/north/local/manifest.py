@@ -10,8 +10,15 @@ from huavd_map_build.delivery.domain.artifact import ArtifactIdentity
 from huavd_map_build.delivery.domain.manifest import (
     ManifestRequest,
     RasterManifestRequest,
+    SourceEvidence,
     compile_raster_manifest,
     compile_vector_manifest,
+)
+from huavd_map_build.delivery.north.local.source import (
+    raster_source_revision,
+    resolve_source,
+    source_revision,
+    validated_base_source,
 )
 from huavd_map_build.delivery.south.port.digest import DigestPort
 from huavd_map_build.delivery.south.port.manifest import (
@@ -42,10 +49,9 @@ class VectorManifestService:
         root = request.workdir.rstrip("/")
         pmtiles = f"{root}/outputs/{identity.stem}.pmtiles"
         header = self._headers.read(pmtiles)
-        pbf_basename = self._catalog.pbf_basename(request.region)
-        source = self._evidence.source(
-            f"{root}/staging/{request.session.value}/source.osm.pbf",
-            f"{root}/mirror/{pbf_basename}.md5",
+        source = resolve_source(
+            self._catalog, region=request.region, workdir=request.workdir,
+            session=request.session,
         )
         settings = self._catalog.region_settings(
             request.region, request.role.value, request.build_date.value
@@ -64,7 +70,11 @@ class VectorManifestService:
             output_path=f"outputs/{PurePosixPath(pmtiles).name}",
             output_size=self._evidence.size(pmtiles),
             sha512=self._digest.sha512(pmtiles),
-            source_url=self._catalog.source_pbf_url(request.region), evidence=source,
+            source_vendor=source.vendor, source_url=source.url,
+            source_revision=source_revision(
+                source, request.region, request.build_date, request.role
+            ),
+            evidence=source.evidence,
             tools=self._versions.versions(("osmium", "tippecanoe", "pmtiles")),
             tippecanoe=tippecanoe,
             vector_layers=list(tippecanoe["source_layers"]),
@@ -119,18 +129,6 @@ class RasterManifestService:
         )
         glyphs = self._configuration.glyph_manifest()
         styles = self._configuration.style(request.region.value)["config"]
-        source = self._evidence.source(
-            f"{root}/staging/{request.session.value}/source.osm.pbf",
-            f"{root}/mirror/{self._catalog.pbf_basename(request.region)}.md5",
-        )
-        source_basename = self._catalog.pbf_basename(request.region)
-        source_revision_name = source_basename.removesuffix(".osm.pbf").removesuffix(
-            "-latest"
-        )
-        dashed_date = (
-            f"{request.build_date.value[:4]}-{request.build_date.value[4:6]}-"
-            f"{request.build_date.value[6:]}"
-        )
         base_input = {
             "file": PurePosixPath(base_pmtiles).name,
             "sha512": self._digest.sha512(base_pmtiles),
@@ -139,6 +137,13 @@ class RasterManifestService:
             "min_zoom": base_header.min_zoom, "max_zoom": base_header.max_zoom,
             "vector_layers": base_manifest.get("vector_layers", []),
         }
+        source = validated_base_source(
+            base_manifest, region=request.region, build_date=request.build_date,
+            actual_size=base_input["size_bytes"], actual_sha512=base_input["sha512"],
+        )
+        revision = raster_source_revision(
+            self._catalog, base_manifest, request.region, request.build_date
+        )
         plan = {
             "plan_sha512": self._digest.sha512(plan_path),
             "tiles_sha512": self._digest.sha512(tiles_path),
@@ -153,7 +158,8 @@ class RasterManifestService:
             output_path=f"outputs/{request.session.value}.raster_bake.pmtiles",
             output_size=self._evidence.size(request.pmtiles_path),
             sha512=self._digest.sha512(request.pmtiles_path),
-            source_url=self._catalog.source_pbf_url(request.region), evidence=source,
+            source_vendor=source["vendor"], source_url=source["url"],
+            evidence=SourceEvidence(source["size_bytes"], source["downloaded_at"], source["md5"]),
             tools=self._versions.versions(("osmium", "tippecanoe", "pmtiles")),
             source_id=str(settings.get("source_id") or ""),
             offline_map_id=str(settings.get("region_id") or ""),
@@ -162,8 +168,9 @@ class RasterManifestService:
             available_locales=tuple(locale["tag"] for locale in glyphs["locales"]),
             style_locales=tuple(locale["tag"] for locale in styles["locales"]),
             build_id=self._clock(),
-            source_revision=f"geofabrik-{source_revision_name}-{dashed_date}",
+            source_revision=revision,
             base_input=base_input, plan=plan,
         )
+        document["source"] = dict(source)
         self._writer.write(request.manifest_path, document)
         return request.manifest_path

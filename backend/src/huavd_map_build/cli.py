@@ -453,6 +453,10 @@ def _parser() -> argparse.ArgumentParser:
         "attribution", help="render the canonical OSM attribution document"
     )
     attribution.add_argument("--region", required=True)
+    attribution.add_argument("--yyyymmdd", required=True)
+    attribution.add_argument("--role", choices=["base", "building", "raster_bake"], default="base")
+    attribution.add_argument("--workdir", default="/tmp/huavd-map-build")
+    attribution.add_argument("--session")
     write_attribution = artifact_commands.add_parser(
         "write-attribution", help="atomically write the canonical attribution file"
     )
@@ -462,6 +466,7 @@ def _parser() -> argparse.ArgumentParser:
         "--role", choices=["base", "building", "raster_bake"], required=True
     )
     write_attribution.add_argument("--workdir", default="/tmp/huavd-map-build")
+    write_attribution.add_argument("--session")
     write_metadata = artifact_commands.add_parser(
         "write-vector-metadata", help="write base/building PMTiles metadata"
     )
@@ -642,29 +647,25 @@ def run(arguments: list[str] | None = None) -> int:
         )
         print(json.dumps(report.as_dict(), ensure_ascii=True, indent=2, sort_keys=True))
         return 0 if report.passed else 3
-    if args.context == "artifact" and args.command == "attribution":
-        root = repository_root()
-        catalog = catalog_service(root)
-        document = artifact_query().attribution(
-            pbf_url=catalog.source_pbf_url(RegionId(args.region))
-        )
-        print(
-            json.dumps(
-                document.as_dict(), ensure_ascii=False, indent=2, sort_keys=True
-            )
-        )
-        return 0
-    if args.context == "artifact" and args.command == "write-attribution":
-        root = repository_root()
-        catalog = catalog_service(root)
+    if args.context == "artifact" and args.command in ("attribution", "write-attribution"):
+        from huavd_map_build.delivery.domain.attribution import AttributionDocument
+        from huavd_map_build.delivery.north.local.source import read_manifest_source
+
         region = RegionId(args.region)
+        catalog_service(repository_root()).region(region)
+        if args.session:
+            SessionId(args.session)
         paths = artifact_query().paths(
             region=region,
             build_date=BuildDate(args.yyyymmdd),
             role=Role(args.role),
             workdir=args.workdir,
         )
-        document = artifact_query().attribution(pbf_url=catalog.source_pbf_url(region))
+        source = read_manifest_source(paths.manifest)
+        document = AttributionDocument.osm(source.vendor, source.url)
+        if args.command == "attribution":
+            print(json.dumps(document.as_dict(), ensure_ascii=False, indent=2, sort_keys=True))
+            return 0
         output = attribution_writer_service().write(paths, document)
         print(
             json.dumps(

@@ -18,7 +18,7 @@ for arg in "$@"; do
     --session=*) SESSION="${arg#*=}" ;;
     --role=*) ROLE="${arg#*=}" ;;
     -h|--help)
-      printf 'usage: %s --region=<id> --role=<base|building|raster_bake> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]\n' "$0"
+      printf 'usage: %s --region=<id> --role=<base|building|raster_bake> [--workdir=<path>] [--yyyymmdd=YYYYMMDD] [--session=<id>]\n' "$0"
       exit 0
       ;;
     *)
@@ -54,8 +54,12 @@ if [[ -z "${python}" ]]; then
 fi
 
 export PYTHONPATH="${REPO_ROOT}/backend/src${PYTHONPATH:+:${PYTHONPATH}}"
+session_args=()
+if [[ -n "${SESSION}" ]]; then
+  session_args=(--session "${SESSION}")
+fi
 exec "${python}" -m huavd_map_build artifact write-attribution \
   --region "${REGION}" \
   --yyyymmdd "${YYYYMMDD}" \
   --role "${ROLE}" \
-  --workdir "${WORKDIR}" >/dev/null
+  --workdir "${WORKDIR}" "${session_args[@]}" >/dev/null

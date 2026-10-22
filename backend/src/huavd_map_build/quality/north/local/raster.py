@@ -3,6 +3,7 @@ from pathlib import PurePosixPath
 from huavd_map_build.catalog.north.local.service import CatalogService
 from huavd_map_build.delivery.domain.artifact import ArtifactIdentity
 from huavd_map_build.delivery.domain.manifest import RasterManifestRequest
+from huavd_map_build.delivery.north.local.source import raster_source_revision, validated_base_source
 from huavd_map_build.delivery.south.port.digest import DigestPort
 from huavd_map_build.delivery.south.port.manifest import ManifestEvidenceReader
 from huavd_map_build.delivery.south.port.metadata import PmtilesHeaderReader
@@ -35,13 +36,31 @@ class RasterQualityGate:
         plan_path, tiles_path = f"{cache}/plan.json", f"{cache}/tiles.tsv"
         base = f"{root}/outputs/{ArtifactIdentity(request.region, request.build_date, Role.BASE).stem}.pmtiles"
         manifest = self._evidence.read_json(request.manifest_path)
+        try:
+            base_sha512 = self._digest.sha512(base)
+            base_manifest = self._evidence.read_json(base.removesuffix(".pmtiles") + ".manifest.json")
+            base_source = validated_base_source(
+                base_manifest, region=request.region, build_date=request.build_date,
+                actual_size=self._evidence.size(base), actual_sha512=base_sha512,
+            )
+            revision = raster_source_revision(
+                self._catalog, base_manifest, request.region, request.build_date
+            )
+        except (OSError, ValueError, RuntimeError) as error:
+            return RasterQualityReport((QualityFinding("source-base-consistency", str(error)),))
+        try:
+            attribution = self._evidence.read_json(
+                request.manifest_path.removesuffix(".manifest.json") + ".attribution.json"
+            )
+        except (OSError, ValueError, RuntimeError) as error:
+            return RasterQualityReport((QualityFinding("attribution-contract", str(error)),))
         settings = self._catalog.region_settings(
             request.region, Role.RASTER_BAKE.value, request.build_date.value
         )
         report = verify_raster_contract(
             header=self._headers.read(request.pmtiles_path),
             metadata=self._metadata.embedded_metadata(request.pmtiles_path),
-            manifest=manifest,
+            manifest=manifest, attribution=attribution,
             expectations=RasterContractExpectations(
                 region=request.region.value,
                 stem=f"{request.session.value}.raster_bake",
@@ -51,7 +70,8 @@ class RasterQualityGate:
                 actual_size=self._evidence.size(request.pmtiles_path),
                 actual_sha512=self._digest.sha512(request.pmtiles_path),
                 base_file=PurePosixPath(base).name,
-                base_sha512=self._digest.sha512(base),
+                base_sha512=base_sha512,
+                base_source=base_source, source_revision=revision,
                 plan_sha512=self._digest.sha512(plan_path),
                 tiles_sha512=self._digest.sha512(tiles_path),
                 input_fingerprint=self._evidence.read_text(

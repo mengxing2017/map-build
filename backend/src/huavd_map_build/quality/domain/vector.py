@@ -56,7 +56,9 @@ class VectorContractExpectations:
     output_path: str
     min_zoom: int
     max_zoom: int
-    source_url: str
+    source_vendor: str
+    source_url: str | None
+    source_revision: str
     source_id: str
     offline_map_id: str
     package_version: str
@@ -109,7 +111,7 @@ def verify_vector_contract(
     source = manifest.get("source", {})
     check("manifest-source",
           source == {
-              "vendor": "geofabrik", "url": expectations.source_url,
+              "vendor": expectations.source_vendor, "url": expectations.source_url,
               "downloaded_at": expectations.source_evidence.downloaded_at,
               "size_bytes": expectations.source_evidence.size_bytes,
               "md5": expectations.source_evidence.md5,
@@ -149,11 +151,7 @@ def verify_vector_contract(
           record.get("available_locales") == list(expectations.available_locales)
           and record.get("style_locales") == list(expectations.style_locales),
           "manifest locale declarations do not match glyph/style configuration")
-    expected_revision = (
-        f"geofabrik-{expectations.region.rsplit('/', 1)[-1]}-"
-        f"{expectations.build_date[:4]}-{expectations.build_date[4:6]}-"
-        f"{expectations.build_date[6:]}"
-    )
+    expected_revision = expectations.source_revision
     check("manifest-record-release",
           record.get("source_revision") == expected_revision
           and record.get("released_at") == build_id
@@ -172,7 +170,9 @@ def verify_vector_contract(
     check("attribution-contract", attribution == {
         "data_license": "ODbL-1.0",
         "attribution": "© OpenStreetMap contributors",
-        "sources": [{"vendor": "geofabrik", "url": expectations.source_url}],
+        "sources": [
+            {"vendor": expectations.source_vendor, "url": expectations.source_url}
+        ],
     }, "attribution document does not match the configured OSM source")
     check("metadata-layers", metadata.get("vector_layers") == expected_metadata_layers,
           "PMTiles metadata vector layers do not match effective configuration")
