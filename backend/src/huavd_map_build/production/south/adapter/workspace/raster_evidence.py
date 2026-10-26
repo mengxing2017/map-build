@@ -22,6 +22,9 @@ class FileSystemRasterEvidenceStore:
     def write_failure_metrics(self, path: str, document: dict[str, object]) -> None:
         self._write(path, document)
 
+    def write_progress(self, path: str, document: dict[str, object]) -> None:
+        self._write(path, document)
+
     def write_parameters(
         self, path: str, identity: RasterCacheIdentity,
         settings: RasterRenderSettings, display: RasterDisplaySettings,

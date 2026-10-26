@@ -35,6 +35,7 @@ class RasterBakeOverrides:
     extract_pmtiles: bool | None = None
     display_mode: str | None = None
     content_samples: tuple[RasterContentSample, ...] = ()
+    batch_tiles: int | None = None
 
 
 class RasterBakeRequestFactory:
@@ -83,6 +84,7 @@ class RasterBakeRequestFactory:
             (int(settings.get("native_parallel_jobs", 1)) if native else int(settings.get("parallel_jobs", 8)))
             if overrides.parallel_jobs is None else overrides.parallel_jobs,
             settings.get("retries", 2) if overrides.retries is None else overrides.retries,
+            settings.get("batch_tiles") if overrides.batch_tiles is None else overrides.batch_tiles,
         )
         source = RasterSourceMetadata.from_header(self._headers.read(base.pmtiles))
         extract = (
@@ -145,4 +147,5 @@ class RasterBakeRequestFactory:
             str(cache / "raster_bake.mbtiles"),
             str(cache / "raster_bake.candidate.pmtiles"),
             str(cache / "parameters.json"), str(cache / "metrics.json"),
+            str(cache / "progress.json"),
         )

@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch, MagicMock
 from huavd_map_build.delivery.domain.metadata import PmtilesHeader
 
@@ -61,6 +61,41 @@ class RasterBakeRequestFactoryTest(unittest.TestCase):
         self.assertEqual("renderer 1", request.identity.renderer_identity)
         self.assertEqual(str(cache / "base-bake-subset.pmtiles"), request.runtime_request.subset_path)
         self.assertEqual(str(cache / "parameters.json"), request.parameters_path)
+        self.assertEqual(10000, request.render_settings.batch_tiles)
+        self.assertEqual(str(cache / "progress.json"), request.progress_path)
+
+    def test_batch_tiles_override_is_validated_and_kept_out_of_the_plan(self) -> None:
+        root = repository_root(Path(__file__))
+        with tempfile.TemporaryDirectory() as temporary:
+            workdir = Path(temporary)
+            session = "china-guangxi-20261004"
+            outputs, cache = workdir / "outputs", workdir / "cache/bake" / session
+            outputs.mkdir(parents=True)
+            cache.mkdir(parents=True)
+            (outputs / f"{session}.base.pmtiles").write_bytes(b"base")
+            (cache / "style-render.json").write_text("{}", encoding="utf-8")
+            factory = RasterBakeRequestFactory(
+                build_configuration_service(root), FileDigestAdapter(),
+                str(root / "config/bake.yaml"),
+                MagicMock(read=MagicMock(return_value=PmtilesHeader(1, 2, 0, 18, (0,0,1,1)))),
+            )
+            plan = create_raster_tile_plan(RasterBounds(0, 0, 1, 1), 0, 0, 0)
+            request = factory.create(
+                RegionId("china/guangxi"), BuildDate("20261004"), str(workdir),
+                plan, RasterBakeOverrides(batch_tiles=500),
+            )
+            plain = factory.create(
+                RegionId("china/guangxi"), BuildDate("20261004"), str(workdir),
+                plan, RasterBakeOverrides(),
+            )
+            self.assertEqual(500, request.render_settings.batch_tiles)
+            self.assertEqual(request.identity.digest, plain.identity.digest)
+            self.assertEqual(request.identity.run_digest, plain.identity.run_digest)
+            with self.assertRaisesRegex(ValueError, "batch_tiles"):
+                factory.create(
+                    RegionId("china/guangxi"), BuildDate("20261004"), str(workdir),
+                    plan, RasterBakeOverrides(batch_tiles=0),
+                )
 
     def test_native_automatically_uses_headless_and_conservative_parallelism(self) -> None:
         root = repository_root(Path(__file__))
@@ -198,7 +233,70 @@ class StubBakeService:
         return StubBakeResult()
 
 
+class RasterPlanEntrypointTest(unittest.TestCase):
+    @staticmethod
+    def arguments(workdir: str, budget: int | None = None) -> list[str]:
+        arguments = [
+            "build", "raster-plan", "--region", "china/guangxi",
+            "--yyyymmdd", "20261004", "--workdir", workdir,
+            "--bbox=-10,-10,10,10", "--min-zoom", "0", "--max-zoom", "14",
+        ]
+        if budget is not None:
+            arguments.extend(("--max-tiles", str(budget)))
+        return arguments
+
+    def test_outputs_full_plan_and_budget_status_without_baking(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            cli, "raster_bake_request_factory"
+        ) as factory, patch.object(cli, "raster_bake_service") as bake:
+            for budget, effective, configured, source, within_limit in (
+                (None, 1234127, 200000, "auto-headroom", True),
+                (1, 1, 1, "override", False),
+                (1121933, 1121933, 1121933, "override", True),
+                (1121934, 1121934, 1121934, "override", True),
+            ):
+                with self.subTest(budget=budget):
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        status = cli.run(self.arguments(directory, budget))
+                    document = json.loads(output.getvalue())
+                    self.assertEqual(0, status)
+                    self.assertEqual(1121933, document["tile_count"])
+                    self.assertEqual(effective, document["max_tiles"])
+                    self.assertEqual(configured, document["configured_max_tiles"])
+                    self.assertEqual(source, document["budget_source"])
+                    self.assertEqual(within_limit, document["within_limit"])
+                    self.assertEqual(14, document["max_zoom"])
+                    self.assertEqual(15, len(document["tiles_by_zoom"]))
+                    self.assertEqual(10000, document["batch_tiles"])
+                    self.assertEqual(113, document["estimated_batches"])
+            factory.assert_not_called()
+            bake.assert_not_called()
+            self.assertEqual([], list(Path(directory).iterdir()))
+
+    def test_rejects_non_positive_budgets_without_writing_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            for budget in (0, -1):
+                with self.subTest(budget=budget), self.assertRaisesRegex(
+                    ValueError, "positive integer"
+                ):
+                    cli.run(self.arguments(directory, budget))
+            self.assertEqual([], list(Path(directory).iterdir()))
+
+
 class RasterBakeEntrypointTest(unittest.TestCase):
+    def test_over_budget_fails_before_creating_request_or_writing_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            cli, "raster_bake_request_factory"
+        ) as factory, patch.object(cli, "raster_bake_service") as bake:
+            arguments = RasterPlanEntrypointTest.arguments(directory, 1)
+            arguments[1] = "raster-bake"
+            with self.assertRaisesRegex(ValueError, "planned=1121933 max_tiles=1"):
+                cli.run(arguments)
+            factory.assert_not_called()
+            bake.assert_not_called()
+            self.assertEqual([], list(Path(directory).iterdir()))
+
     def test_builds_unpublished_candidate_with_explicit_overrides(self) -> None:
         plan = create_raster_tile_plan(RasterBounds(0, 0, 1, 1), 0, 0, 0)
         planning = StubPlanningService(plan)
@@ -208,10 +306,12 @@ class RasterBakeEntrypointTest(unittest.TestCase):
             "--yyyymmdd", "20261004", "--workdir", "/tmp/maps",
             "--bbox", "0,0,1,1", "--min-zoom", "0", "--max-zoom", "0",
             "--jobs", "3", "--retries", "1", "--timeout-seconds", "9",
+            "--batch-tiles", "250",
             "--extract-pmtiles", "--renderer-command", "renderer", "--no-publish",
             "--renderer-engine", "mbgl-renderer",
         ]
         output = io.StringIO()
+        errors = io.StringIO()
         with patch.object(cli, "raster_planning_service", return_value=planning), patch.object(
             cli, "raster_bake_request_factory", return_value=factory
         ), patch.object(cli, "raster_bake_service", return_value=service), patch(
@@ -221,15 +321,21 @@ class RasterBakeEntrypointTest(unittest.TestCase):
         ), patch(
             "huavd_map_build.production.south.adapter.process.raster_preview.write_preview",
             return_value={"visual_acceptance": "not-run"},
-        ), redirect_stdout(output):
+        ), redirect_stdout(output), redirect_stderr(errors):
             status = cli.run(arguments)
         document = json.loads(output.getvalue())
         overrides = factory.calls[0][-1]
         self.assertEqual(0, status)
+        self.assertIn(
+            "raster plan: tiles=1 max_tiles=None configured_max_tiles=None "
+            "budget_source=config batch_tiles=250",
+            errors.getvalue(),
+        )
         self.assertFalse(document["published"])
         self.assertEqual("/tmp/cache/candidate.pmtiles", document["candidate_pmtiles"])
         self.assertEqual("renderer 1", overrides.renderer_identity)
         self.assertEqual(3, overrides.parallel_jobs)
+        self.assertEqual(250, overrides.batch_tiles)
         self.assertTrue(overrides.extract_pmtiles)
         self.assertEqual([factory.request], service.requests)
 

@@ -12,6 +12,8 @@ defaults:
     parallel_jobs: 8
     bbox_padding_tiles: 1
     max_tiles: 200000
+    max_tiles_headroom_ratio: 0.1
+    batch_tiles: 10000
     retries: 2
     tile_timeout_seconds: 120
     visual_grid_max_channel_difference: 8

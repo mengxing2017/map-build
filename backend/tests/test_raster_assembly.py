@@ -8,12 +8,14 @@ import subprocess
 import shutil
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from huavd_map_build.production.domain.raster import (
+    RasterAssemblyResult,
     RasterAssemblySettings,
     RasterBounds,
     RasterExecutionError,
+    RasterStageTiming,
     RasterTileCoordinate,
 )
 from huavd_map_build.production.north.local.raster_assembly import (
@@ -172,7 +174,6 @@ class RasterArchiveProcessTest(unittest.TestCase):
 class FakeAssembler:
     def assemble(self, queue_path, output_path, settings):
         Path(output_path).write_bytes(b"mbtiles")
-        from huavd_map_build.production.domain.raster import RasterAssemblyResult
         return RasterAssemblyResult(1, 1, 10)
 
 
@@ -196,9 +197,66 @@ class RasterAssemblyServiceTest(unittest.TestCase):
                 str(root / "queue"), str(root / "out.mbtiles"),
                 str(root / "out.pmtiles"), settings,
             )
-            result = RasterAssemblyService(FakeAssembler(), converter).assemble(request)
+            clock = iter((1.0, 1.125, 2.0, 2.25))
+            result = RasterAssemblyService(
+                FakeAssembler(), converter, clock=clock.__next__
+            ).assemble(request)
         self.assertEqual(1, result.inserted_tiles)
         self.assertEqual([(request.mbtiles_path, request.pmtiles_path)], converter.calls)
+        self.assertEqual(0, result.verified_tiles)
+        self.assertEqual(
+            (RasterStageTiming("mbtiles-assembly", 125), RasterStageTiming("pmtiles-convert", 250)),
+            result.timings,
+        )
+
+    def test_times_each_phase_and_keeps_full_readback(self) -> None:
+        stages = Mock()
+        stages.assembler.assemble.return_value = RasterAssemblyResult(3, 3, 42)
+        stages.verifier.verify.return_value = 3
+        settings = RasterAssemblySettings("test", RasterBounds(0, 0, 1, 1), 0, 0, "webp")
+        request = RasterAssemblyRequest("queue.tsv", "raster.mbtiles", "raster.pmtiles", settings)
+        clock = iter((1.0, 1.125, 2.0, 2.25, 3.0, 3.5))
+        result = RasterAssemblyService(
+            stages.assembler, stages.converter, stages.verifier, clock.__next__
+        ).assemble(request)
+        self.assertEqual(
+            [call.assembler.assemble("queue.tsv", "raster.mbtiles", settings),
+             call.converter.convert("raster.mbtiles", "raster.pmtiles"),
+             call.verifier.verify("raster.pmtiles", "queue.tsv", "webp", 256)],
+            stages.mock_calls,
+        )
+        self.assertEqual(3, result.verified_tiles)
+        self.assertEqual(42, result.tile_bytes)
+        self.assertEqual(
+            (RasterStageTiming("mbtiles-assembly", 125),
+             RasterStageTiming("pmtiles-convert", 250),
+             RasterStageTiming("pmtiles-readback", 500)),
+            result.timings,
+        )
+
+    def test_phase_failure_stops_later_work(self) -> None:
+        settings = RasterAssemblySettings("test", RasterBounds(0, 0, 1, 1), 0, 0, "webp")
+        request = RasterAssemblyRequest("queue.tsv", "raster.mbtiles", "raster.pmtiles", settings)
+        for failed_stage in ("assembler", "converter"):
+            with self.subTest(stage=failed_stage):
+                stages = Mock()
+                stages.assembler.assemble.return_value = RasterAssemblyResult(1, 1, 10)
+                operation = stages.assembler.assemble if failed_stage == "assembler" else stages.converter.convert
+                operation.side_effect = RasterExecutionError("disk full")
+                with self.assertRaisesRegex(RasterExecutionError, "disk full"):
+                    RasterAssemblyService(stages.assembler, stages.converter, stages.verifier).assemble(request)
+                stages.verifier.verify.assert_not_called()
+                if failed_stage == "assembler":
+                    stages.converter.convert.assert_not_called()
+
+    def test_incomplete_readback_still_fails(self) -> None:
+        stages = Mock()
+        stages.assembler.assemble.return_value = RasterAssemblyResult(3, 3, 42)
+        stages.verifier.verify.return_value = 2
+        settings = RasterAssemblySettings("test", RasterBounds(0, 0, 1, 1), 0, 0, "webp")
+        request = RasterAssemblyRequest("queue.tsv", "raster.mbtiles", "raster.pmtiles", settings)
+        with self.assertRaisesRegex(ValueError, "readback count differs"):
+            RasterAssemblyService(stages.assembler, stages.converter, stages.verifier).assemble(request)
 
 
 if __name__ == "__main__":

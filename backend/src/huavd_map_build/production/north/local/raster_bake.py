@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import math
 import time
 
 from huavd_map_build.production.domain.raster import (
@@ -10,9 +11,11 @@ from huavd_map_build.production.domain.raster import (
     RasterCacheIdentity,
     RasterDisplaySettings,
     RasterExecutionError,
+    RasterRenderBatchResult,
     RasterRenderSettings,
     RasterStageTiming,
     RasterTilePlan,
+    raster_progress_document,
 )
 from huavd_map_build.production.north.local.raster_assembly import (
     RasterAssemblyRequest,
@@ -29,6 +32,40 @@ from huavd_map_build.production.south.port.raster import (
     RasterDisplaySession,
     RasterEvidenceStore,
 )
+
+
+class _BakeProgress:
+    def __init__(
+        self, evidence: RasterEvidenceStore | None, path: str | None,
+        identity: RasterCacheIdentity, planned_tiles: int, queued_tiles: int,
+        batch_tiles: int | None,
+    ) -> None:
+        self._evidence, self._path = evidence, path
+        self._identity, self._planned = identity, planned_tiles
+        self._queued, self._batch_tiles = queued_tiles, batch_tiles
+        self._total = 0 if not queued_tiles else (
+            math.ceil(queued_tiles / batch_tiles) if batch_tiles else 1
+        )
+        self._completed = self._rendered = self._failed = 0
+        self._samples: list[str] = []
+
+    def record(self, batch: RasterRenderBatchResult) -> None:
+        self._completed += 1
+        self._rendered += batch.rendered_tiles
+        self._failed += batch.failed_tiles
+        self._samples.extend(batch.failed_samples)
+        self.write("rendering")
+
+    def write(self, status: str) -> None:
+        if self._evidence is None or self._path is None:
+            return
+        self._evidence.write_progress(self._path, raster_progress_document(
+            self._identity, status=status, planned_tiles=self._planned,
+            queued_tiles=self._queued, batch_tiles=self._batch_tiles,
+            batches_total=self._total, batches_completed=self._completed,
+            rendered_tiles=self._rendered, failed_tiles=self._failed,
+            failed_samples=tuple(self._samples),
+        ))
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +86,7 @@ class RasterBakeRequest:
     pmtiles_path: str
     parameters_path: str | None = None
     metrics_path: str | None = None
+    progress_path: str | None = None
 
 
 class RasterBakeService:
@@ -89,6 +127,12 @@ class RasterBakeService:
                             request.render_settings.tile_size,
                         ),
                     )
+                    progress = _BakeProgress(
+                        self._evidence, request.progress_path, request.identity,
+                        request.plan.tile_count, initial.missing_tiles,
+                        request.render_settings.batch_tiles,
+                    )
+                    progress.write("rendering")
                     render_result = None
                     if initial.missing_tiles:
                         settings = replace(
@@ -98,15 +142,24 @@ class RasterBakeService:
                         try:
                             render_result = self._timed(
                                 "render", timings,
-                                lambda: self._renderer.render(request.missing_path, settings),
+                                lambda: self._renderer.render(
+                                    request.missing_path, settings, on_batch=progress.record,
+                                ),
                             )
                         except RasterBatchExecutionError as error:
+                            try:
+                                progress.write("failed")
+                            except Exception as evidence_error:
+                                raise RasterExecutionError(
+                                    f"raster render failed; progress could not be written: {evidence_error}"
+                                ) from error
                             if self._evidence is not None and request.metrics_path is not None:
                                 try:
                                     self._evidence.write_failure_metrics(
                                         f"{request.metrics_path}.failed.json", {
                                             "schema_version": 1, "status": "failed",
                                             "cache_identity": request.identity.digest,
+                                            "run_identity": request.identity.run_digest,
                                             "planned_tiles": initial.planned_tiles,
                                             "render": error.metrics,
                                             "phases_ms": {item.stage: item.elapsed_ms for item in timings},
@@ -126,9 +179,11 @@ class RasterBakeService:
                         ),
                     )
                     if final.missing_tiles:
+                        progress.write("failed")
                         raise RasterExecutionError(
                             f"raster cache remains incomplete: {final.missing_tiles} tile(s)"
                         )
+                    progress.write("rendered")
             assembly_result = self._timed(
                 "assembly", timings,
                 lambda: self._assembly.assemble(RasterAssemblyRequest(
@@ -136,9 +191,11 @@ class RasterBakeService:
                     request.assembly_settings,
                 )),
             )
+            progress.write("complete")
         result = RasterBakeResult(
             preparation, initial, final, render_result, assembly_result,
             runtime.preflight, tuple(timings), runtime.evidence, runtime.source_metadata,
+            request.identity.run_digest,
         )
         if self._evidence is not None and request.metrics_path is not None:
             self._evidence.write_metrics(

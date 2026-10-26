@@ -122,7 +122,8 @@ else ifneq ($(filter $(ROLE),base_raster both_raster),)
 	  $(if $(BAKE_BBOX),--bbox="$(BAKE_BBOX)",) \
 	  $(if $(BAKE_MIN_ZOOM),--min-zoom="$(BAKE_MIN_ZOOM)",) \
 	  $(if $(BAKE_MAX_ZOOM),--max-zoom="$(BAKE_MAX_ZOOM)",) \
-	  $(if $(BAKE_MAX_TILES),--max-tiles="$(BAKE_MAX_TILES)",)
+	  $(if $(BAKE_MAX_TILES),--max-tiles="$(BAKE_MAX_TILES)",) \
+	  $(if $(BAKE_BATCH_TILES),--batch-tiles="$(BAKE_BATCH_TILES)",)
 else ifeq ($(ROLE),raster_bake)
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build raster-bake \
 	  $(BAKE_RENDERER_FLAGS) \
@@ -130,7 +131,8 @@ else ifeq ($(ROLE),raster_bake)
 	  $(if $(BAKE_BBOX),--bbox="$(BAKE_BBOX)",) \
 	  $(if $(BAKE_MIN_ZOOM),--min-zoom="$(BAKE_MIN_ZOOM)",) \
 	  $(if $(BAKE_MAX_ZOOM),--max-zoom="$(BAKE_MAX_ZOOM)",) \
-	  $(if $(BAKE_MAX_TILES),--max-tiles="$(BAKE_MAX_TILES)",)
+	  $(if $(BAKE_MAX_TILES),--max-tiles="$(BAKE_MAX_TILES)",) \
+	  $(if $(BAKE_BATCH_TILES),--batch-tiles="$(BAKE_BATCH_TILES)",)
 else
 	input="$(INPUT)"; \
 	if [ -z "$$input" ]; then \

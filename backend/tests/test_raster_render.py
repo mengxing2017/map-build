@@ -267,6 +267,59 @@ class RasterRenderServiceTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "row 1"):
                 list(FileSystemRasterWorkQueue().coordinates(str(queue)))
 
+    def test_serial_batches_bound_each_callback_and_keep_the_last_partial_batch(self) -> None:
+        coordinates = [RasterTileCoordinate(3, index, 0) for index in range(5)]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            queue = root / "tiles.tsv"
+            queue.write_text("".join(item.tsv() for item in coordinates), encoding="utf-8")
+            batches = []
+            settings = RasterRenderSettings(
+                str(root / "style.json"), str(root / "png"), str(root / "webp"),
+                parallel_jobs=2, batch_tiles=2,
+            )
+            result = RasterRenderService(
+                FileSystemRasterWorkQueue(), TrackingRenderer(), FakeEncoder()
+            ).render(str(queue), settings, on_batch=batches.append)
+        self.assertEqual([1, 2, 3], [item.index for item in batches])
+        self.assertEqual([2, 2, 1], [item.planned_tiles for item in batches])
+        self.assertEqual([2, 2, 1], [item.rendered_tiles for item in batches])
+        self.assertEqual([0, 0, 0], [item.failed_tiles for item in batches])
+        self.assertEqual(5, result.planned_tiles)
+        self.assertEqual(5, result.rendered_tiles)
+
+    def test_failed_batch_reports_progress_and_skips_remaining_batches(self) -> None:
+        coordinates = [RasterTileCoordinate(3, index, 0) for index in range(5)]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            queue = root / "tiles.tsv"
+            queue.write_text("".join(item.tsv() for item in coordinates), encoding="utf-8")
+            renderer = TrackingRenderer(coordinates[2])
+            batches = []
+            settings = RasterRenderSettings(
+                str(root / "style.json"), str(root / "png"), str(root / "webp"),
+                retries=0, batch_tiles=2,
+            )
+            with self.assertRaises(RasterBatchExecutionError) as raised:
+                RasterRenderService(
+                    FileSystemRasterWorkQueue(), renderer, FakeEncoder()
+                ).render(str(queue), settings, on_batch=batches.append)
+        self.assertEqual(2, len(batches))
+        self.assertEqual(1, batches[-1].failed_tiles)
+        self.assertEqual(1, len(batches[-1].failed_samples))
+        self.assertEqual(1, raised.exception.failed_tiles)
+        self.assertNotIn(coordinates[3], renderer.calls)
+        self.assertNotIn(coordinates[4], renderer.calls)
+
+    def test_batch_size_validation_rejects_zero_and_non_positive_values(self) -> None:
+        for batch_tiles in (0, -1, True):
+            with self.subTest(batch_tiles=batch_tiles), self.assertRaisesRegex(
+                ValueError, "batch_tiles"
+            ):
+                RasterRenderSettings(
+                    "style.json", "png", "webp", batch_tiles=batch_tiles
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

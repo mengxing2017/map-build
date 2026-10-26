@@ -23,6 +23,7 @@ from huavd_map_build.production.domain.raster import (
     RasterDisplaySettings,
     RasterExecutionError,
     RasterMvtPreflightResult,
+    RasterRenderBatchResult,
     RasterRenderResult,
     RasterRenderSettings,
     RasterStageTiming,
@@ -159,8 +160,10 @@ class FakeRenderer:
     def __init__(self, events: list[str]) -> None:
         self.events = events
 
-    def render(self, queue_path, settings):
+    def render(self, queue_path, settings, on_batch=None):
         self.events.append(f"render:{settings.style_path}")
+        if on_batch is not None:
+            on_batch(RasterRenderBatchResult(1, 1, 1, 0))
         return RasterRenderResult(1, 1, 1, 0)
 
 
@@ -183,8 +186,8 @@ class SequenceClock:
 
 
 class RasterBakeServiceTest(unittest.TestCase):
-    def request(self, root: Path) -> RasterBakeRequest:
-        plan = create_raster_tile_plan(RasterBounds(0, 0, 1, 1), 0, 0, 0)
+    def request(self, root: Path, plan=None) -> RasterBakeRequest:
+        plan = plan or create_raster_tile_plan(RasterBounds(0, 0, 1, 1), 0, 0, 0)
         identity = RasterCacheIdentity(
             "a" * 128, "b" * 128, "c" * 128, plan, 256, 1, True, 6,
             "none", "mbgl-renderer", "renderer 1",
@@ -298,6 +301,72 @@ class RasterBakeServiceTest(unittest.TestCase):
         self.assertIsNone(result.render)
         self.assertNotIn("render:runtime.json", events)
 
+    def test_batch_progress_is_written_from_rendering_to_complete(self) -> None:
+        events: list[str] = []
+        scans = [
+            RasterCacheScanResult(6, 0, 6, 0, 0),
+            RasterCacheScanResult(6, 6, 0, 0, 0),
+        ]
+        plan = create_raster_tile_plan(RasterBounds(0, 0, 180, 85), 2, 2, 0)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = replace(
+                self.request(root, plan), progress_path=str(root / "progress.json")
+            )
+            request = replace(
+                request,
+                render_settings=replace(request.render_settings, batch_tiles=2),
+            )
+            service = RasterBakeService(
+                FakeLifecycle(events), FakeCache(events, scans), FakeDisplay(events),
+                FakeRuntime(events), FakeRenderer(events), FakeAssembly(events),
+                evidence=FileSystemRasterEvidenceStore(AtomicFileWriter(), FileDigestAdapter()),
+                clock=SequenceClock(),
+            )
+            service.bake(request)
+            document = json.loads(Path(request.progress_path).read_text())
+            sidecar = Path(f"{request.progress_path}.sha512")
+            sidecar_text = sidecar.read_text().split("\n")[0]
+            expected = hashlib.sha512(
+                Path(request.progress_path).read_bytes()
+            ).hexdigest()
+        self.assertEqual("complete", document["status"])
+        self.assertEqual(request.identity.digest, document["cache_identity"])
+        self.assertEqual(request.identity.run_digest, document["run_identity"])
+        self.assertEqual(6, document["queued_tiles"])
+        self.assertEqual(6, document["planned_tiles"])
+        self.assertEqual(2, document["batch_tiles"])
+        self.assertEqual(3, document["batches_total"])
+        self.assertEqual(1, document["batches_completed"])
+        self.assertEqual(1, document["rendered_tiles"])
+        self.assertEqual(0, document["failed_tiles"])
+        self.assertEqual(
+            f"{expected}  {Path(request.progress_path).name}",
+            sidecar_text,
+        )
+
+    def test_render_failure_records_failed_progress(self) -> None:
+        events: list[str] = []
+        failure = RasterBatchExecutionError(1, ("0/0/0: failed",))
+        renderer = Mock()
+        renderer.render.side_effect = failure
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            request = replace(self.request(root), progress_path=str(root / "progress.json"))
+            service = RasterBakeService(
+                FakeLifecycle(events), FakeCache(events, [RasterCacheScanResult(1, 0, 1, 0, 0)]),
+                FakeDisplay(events), FakeRuntime(events), renderer, FakeAssembly(events),
+                evidence=FileSystemRasterEvidenceStore(AtomicFileWriter(), FileDigestAdapter()),
+                clock=SequenceClock(),
+            )
+            with self.assertRaises(RasterBatchExecutionError):
+                service.bake(request)
+            document = json.loads(Path(request.progress_path).read_text())
+        self.assertEqual("failed", document["status"])
+        self.assertEqual(1, document["queued_tiles"])
+        self.assertEqual(0, document["batches_completed"])
+        self.assertEqual(0, document["rendered_tiles"])
+
     def test_incomplete_final_scan_prevents_assembly_and_releases_resources(self) -> None:
         events: list[str] = []
         scans = [
@@ -326,7 +395,12 @@ class RasterEvidenceTest(unittest.TestCase):
                 RasterCacheScanResult(1, 1, 0, 0, 0),
                 RasterCacheScanResult(1, 1, 0, 0, 0),
                 None,
-                RasterAssemblyResult(1, 1, 20),
+                RasterAssemblyResult(
+                    1, 1, 20, 1,
+                    (RasterStageTiming("mbtiles-assembly", 0.5),
+                     RasterStageTiming("pmtiles-convert", 0.75),
+                     RasterStageTiming("pmtiles-readback", 1.0)),
+                ),
                 RasterMvtPreflightResult("http://tiles/0/0/0.mvt", 2, 1.25),
                 (RasterStageTiming("assembly", 2.5),),
             )
@@ -360,6 +434,12 @@ class RasterEvidenceTest(unittest.TestCase):
         )
         self.assertEqual(1, metrics_document["cache"]["initial_hits"])
         self.assertEqual(0, metrics_document["render"]["worker_queue_tiles"])
+        expected_phases = {"mbtiles-assembly": 0.5, "pmtiles-convert": 0.75, "pmtiles-readback": 1.0}
+        self.assertEqual(expected_phases, metrics_document["assembly_phases_ms"])
+        self.assertEqual(expected_phases, result.as_dict()["assembly_phases_ms"])
+        self.assertEqual({"assembly": 2.5}, metrics_document["phases_ms"])
+        self.assertEqual({"assembly": 2.5}, result.as_dict()["phases_ms"])
+        self.assertEqual(1, metrics_document["quality"]["readback_tiles"])
         self.assertEqual("not-run", metrics_document["quality"]["visual_grid_validation"])
         self.assertEqual({"mbtiles_bytes": 10, "pmtiles_bytes": 12}, metrics_document["artifacts"])
 

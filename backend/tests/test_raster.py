@@ -42,6 +42,16 @@ class RasterTilePlanTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exceeds max_tiles"):
             create_raster_tile_plan(RasterBounds(-10, -10, 10, 10), 5, 8, 1, 1)
 
+    def test_estimation_still_rejects_invalid_budgets(self) -> None:
+        for budget in (0, -1, True, 1.5, "200000"):
+            with self.subTest(budget=budget), self.assertRaisesRegex(
+                ValueError, "positive integer"
+            ):
+                create_raster_tile_plan(
+                    RasterBounds(0, 0, 1, 1), 0, 14, 1, budget,
+                    enforce_limit=False,
+                )
+
     def test_coordinate_tsv_contains_center_and_exact_bounds(self) -> None:
         coordinate = RasterTileCoordinate(1, 1, 0)
         fields = coordinate.tsv().rstrip().split("\t")
@@ -66,6 +76,11 @@ class RasterTilePlanTest(unittest.TestCase):
             renderer_identity="mbgl-render 1.0",
         )
         first = RasterCacheIdentity(**arguments)
+        self.assertEqual(
+            "fc6d26130291faf95461833abd50fbd3eac3666125cffa6e069a8f05913c9126"
+            "9e084c09db25a4b34086d1a93c94deb1010140f2622693f0dc08d713eaba134a",
+            first.digest,
+        )
         self.assertEqual(first.digest, RasterCacheIdentity(**arguments).digest)
         changed = RasterCacheIdentity(**{**arguments, "webp_method": 5})
         self.assertNotEqual(first.digest, changed.digest)
@@ -74,11 +89,54 @@ class RasterTilePlanTest(unittest.TestCase):
         )
         self.assertNotEqual(first.digest, changed_renderer.digest)
 
+    def test_plan_budget_and_configuration_only_change_the_run_identity(self) -> None:
+        from dataclasses import replace
+        plan = create_raster_tile_plan(RasterBounds(0, 0, 1, 1), 2, 3, 0, 1000)
+        identity = RasterCacheIdentity(
+            "a" * 128, "b" * 128, "c" * 128, plan, 256, 1, True, 6,
+            "none", "mbgl-renderer", "mbgl-render 1.0",
+        )
+        variants = (
+            replace(identity, plan=replace(plan, max_tiles=2000)),
+            replace(identity, plan=create_raster_tile_plan(
+                RasterBounds(0, 0, 2, 1), 2, 3, 0, 1000
+            )),
+            replace(identity, plan=create_raster_tile_plan(
+                RasterBounds(0, 0, 1, 1), 1, 3, 1, 1000
+            )),
+            replace(identity, configuration_sha512="d" * 128),
+        )
+        for variant in variants:
+            with self.subTest(plan=variant.plan.as_dict()):
+                self.assertEqual(identity.digest, variant.digest)
+                self.assertNotEqual(identity.run_digest, variant.run_digest)
+
+    def test_base_style_and_runtime_source_change_pixel_identity(self) -> None:
+        from dataclasses import replace
+        from huavd_map_build.production.domain.raster import RasterSourceMetadata
+        plan = create_raster_tile_plan(RasterBounds(0, 0, 1, 1), 0, 0, 0)
+        identity = RasterCacheIdentity(
+            "a" * 128, "b" * 128, "c" * 128, plan, 256, 1, True, 6,
+            "none", "native", "binary",
+        )
+        for variant in (
+            replace(identity, base_sha512="e" * 128),
+            replace(identity, style_sha512="f" * 128),
+            replace(identity, source_metadata=RasterSourceMetadata(0, 18, (0, 0, 1, 1))),
+        ):
+            with self.subTest(variant=variant.runtime_document()):
+                self.assertNotEqual(identity.digest, variant.digest)
+                self.assertNotEqual(identity.run_digest, variant.run_digest)
+
 
 class ConfigurationStub:
+    def __init__(self, max_tiles=None, headroom=0.1) -> None:
+        self.max_tiles, self.headroom = max_tiles, headroom
+
     def raster_bake(self, region: str):
         return {"min_zoom": 2, "max_zoom": 3, "bbox_padding_tiles": 0,
-                "max_tiles": None}
+                "max_tiles": self.max_tiles,
+                "max_tiles_headroom_ratio": self.headroom}
 
 
 class HeaderStub:
@@ -104,6 +162,78 @@ class RasterPlanningServiceTest(unittest.TestCase):
         self.assertEqual(
             "/tmp/maps/outputs/china-guangxi-20260803.base.pmtiles", headers.path
         )
+
+    def test_budget_below_equal_and_above_baseline(self) -> None:
+        request = RasterPlanRequest(
+            RegionId("china/guangxi"), BuildDate("20260803"), "/tmp/maps",
+            RasterBounds(0, 0, 1, 1),
+        )
+        for budget in (5, 4):
+            with self.subTest(budget=budget):
+                plan = RasterPlanningService(
+                    ConfigurationStub(budget), HeaderStub()
+                ).plan(request)
+                self.assertEqual(4, plan.tile_count)
+                self.assertEqual(budget, plan.max_tiles)
+                self.assertEqual(budget, plan.configured_max_tiles)
+                self.assertEqual("config", plan.max_tiles_source)
+                self.assertTrue(plan.within_limit)
+                self.assertEqual(3, plan.max_zoom)
+        service = RasterPlanningService(ConfigurationStub(3), HeaderStub())
+        estimate = service.estimate(request)
+        self.assertEqual(3, estimate.configured_max_tiles)
+        self.assertEqual(5, estimate.max_tiles)
+        self.assertEqual("auto-headroom", estimate.max_tiles_source)
+        self.assertTrue(estimate.within_limit)
+        self.assertEqual(estimate.as_dict(), service.plan(request).as_dict())
+
+    def test_disabled_headroom_keeps_the_baseline_strict(self) -> None:
+        request = RasterPlanRequest(
+            RegionId("china/guangxi"), BuildDate("20260803"), "/tmp/maps",
+            RasterBounds(0, 0, 1, 1),
+        )
+        service = RasterPlanningService(ConfigurationStub(3, None), HeaderStub())
+        estimate = service.estimate(request)
+        self.assertEqual(3, estimate.max_tiles)
+        self.assertEqual("config", estimate.max_tiles_source)
+        self.assertFalse(estimate.within_limit)
+        with self.assertRaisesRegex(ValueError, "exceeds max_tiles"):
+            service.plan(request)
+
+    def test_invalid_headroom_ratio_is_rejected(self) -> None:
+        request = RasterPlanRequest(
+            RegionId("china/guangxi"), BuildDate("20260803"), "/tmp/maps",
+            RasterBounds(0, 0, 1, 1),
+        )
+        for ratio in (-0.1, True, "0.1", float("nan")):
+            with self.subTest(ratio=ratio), self.assertRaisesRegex(
+                ValueError, "headroom_ratio"
+            ):
+                RasterPlanningService(
+                    ConfigurationStub(3, ratio), HeaderStub()
+                ).estimate(request)
+
+    def test_explicit_budget_is_a_hard_cap_even_with_headroom(self) -> None:
+        request = RasterPlanRequest(
+            RegionId("china/guangxi"), BuildDate("20260803"), "/tmp/maps",
+            RasterBounds(0, 0, 1, 1), max_tiles=3,
+        )
+        service = RasterPlanningService(ConfigurationStub(100, 0.1), HeaderStub())
+        estimate = service.estimate(request)
+        self.assertEqual(3, estimate.max_tiles)
+        self.assertEqual("override", estimate.max_tiles_source)
+        self.assertFalse(estimate.within_limit)
+        with self.assertRaisesRegex(ValueError, "explicit hard cap"):
+            service.plan(request)
+
+    def test_explicit_budget_overrides_configured_budget(self) -> None:
+        service = RasterPlanningService(ConfigurationStub(3), HeaderStub())
+        request = RasterPlanRequest(
+            RegionId("china/guangxi"), BuildDate("20260803"), "/tmp/maps",
+            RasterBounds(0, 0, 1, 1), max_tiles=5,
+        )
+        self.assertEqual(5, service.estimate(request).max_tiles)
+        self.assertTrue(service.plan(request).within_limit)
 
 
 class RasterCacheStoreTest(unittest.TestCase):

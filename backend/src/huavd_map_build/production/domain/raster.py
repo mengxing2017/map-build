@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import math
@@ -143,6 +143,7 @@ class RasterRenderSettings:
     timeout_seconds: int = 120
     parallel_jobs: int = 1
     retries: int = 0
+    batch_tiles: int | None = None
     display: str | None = None
 
     def __post_init__(self) -> None:
@@ -156,6 +157,7 @@ class RasterRenderSettings:
             raise ValueError("raster WebP method must be between 0 and 6")
         if self.parallel_jobs <= 0 or self.retries < 0:
             raise ValueError("raster parallel jobs must be positive and retries non-negative")
+        validate_raster_batch_tiles(self.batch_tiles)
         if self.renderer_engine == "maplibre-native-headless":
             if self.tile_size not in (256, 512):
                 raise ValueError("native headless tile size must be 256 or 512")
@@ -195,6 +197,30 @@ class RasterRenderResult:
     exit_code_counts: dict[str, int] = field(default_factory=dict)
 
 
+def validate_raster_batch_tiles(batch_tiles: int | None) -> int | None:
+    if batch_tiles is not None and (
+        isinstance(batch_tiles, bool) or not isinstance(batch_tiles, int)
+        or batch_tiles <= 0
+    ):
+        raise ValueError("raster batch_tiles must be a positive integer when set")
+    return batch_tiles
+
+
+@dataclass(frozen=True, slots=True)
+class RasterRenderBatchResult:
+    index: int
+    planned_tiles: int
+    rendered_tiles: int
+    failed_tiles: int
+    failed_samples: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.index <= 0 or self.planned_tiles < 0 or self.rendered_tiles < 0:
+            raise ValueError("raster batch counters must be non-negative with a positive index")
+        if self.rendered_tiles + self.failed_tiles > self.planned_tiles:
+            raise ValueError("raster batch counters exceed the planned tiles")
+
+
 @dataclass(frozen=True, slots=True)
 class RasterAssemblySettings:
     name: str
@@ -221,6 +247,7 @@ class RasterAssemblyResult:
     inserted_tiles: int
     tile_bytes: int
     verified_tiles: int = 0
+    timings: tuple[RasterStageTiming, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -260,11 +287,13 @@ class RasterBakeResult:
     timings: tuple[RasterStageTiming, ...]
     runtime_evidence: tuple[dict[str, Any], ...] = ()
     source_metadata: RasterSourceMetadata | None = None
+    run_identity: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "schema_version": 1,
             "cache_identity": self.cache.identity,
+            "run_identity": self.run_identity,
             "cache_invalidated": self.cache.invalidated,
             "planned_tiles": self.initial_scan.planned_tiles,
             "initial_cache_hits": self.initial_scan.cache_hits,
@@ -280,6 +309,9 @@ class RasterBakeResult:
             "runtime_source": None if self.source_metadata is None else self.source_metadata.as_dict(),
             "preflight_samples": list(self.runtime_evidence),
             "phases_ms": {item.stage: item.elapsed_ms for item in self.timings},
+            "assembly_phases_ms": {
+                item.stage: item.elapsed_ms for item in self.assembly.timings
+            },
         }
 
 
@@ -290,6 +322,7 @@ def raster_parameters_document(
     return {
         "schema_version": 1,
         "cache_identity": identity.digest,
+        "run_identity": identity.run_digest,
         "runtime_source": identity.runtime_document(),
         "plan": identity.plan.as_dict(),
         "renderer": {
@@ -301,6 +334,7 @@ def raster_parameters_document(
         "execution": {
             "parallel_jobs": settings.parallel_jobs,
             "retries": settings.retries,
+            "batch_tiles": settings.batch_tiles,
             "display": {
                 "mode": display.mode,
                 "screen": display.screen,
@@ -344,6 +378,7 @@ def raster_metrics_document(
     return {
         "schema_version": 1,
         "cache_identity": result.cache.identity,
+        "run_identity": result.run_identity,
         "cache_invalidated": result.cache.invalidated,
         "planned_tiles": result.initial_scan.planned_tiles,
         "cache": {
@@ -375,6 +410,9 @@ def raster_metrics_document(
         "runtime_source": None if result.source_metadata is None else result.source_metadata.as_dict(),
         "preflight_samples": list(result.runtime_evidence),
         "phases_ms": {item.stage: item.elapsed_ms for item in result.timings},
+        "assembly_phases_ms": {
+            item.stage: item.elapsed_ms for item in result.assembly.timings
+        },
         "quality": {"visual_grid_validation": "not-run",
                     "readback_tiles": result.assembly.verified_tiles},
         "artifacts": {
@@ -485,10 +523,16 @@ class RasterTilePlan:
     padding: int
     ranges: tuple[RasterTileRange, ...]
     max_tiles: int | None = None
+    configured_max_tiles: int | None = None
+    max_tiles_source: str = "config"
 
     @property
     def tile_count(self) -> int:
         return sum(item.tile_count for item in self.ranges)
+
+    @property
+    def within_limit(self) -> bool:
+        return self.max_tiles is None or self.tile_count <= self.max_tiles
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -499,6 +543,8 @@ class RasterTilePlan:
             "max_zoom": self.max_zoom,
             "bbox_padding_tiles": self.padding,
             "max_tiles": self.max_tiles,
+            "configured_max_tiles": self.configured_max_tiles,
+            "max_tiles_source": self.max_tiles_source,
             "tile_count": self.tile_count,
             "tiles_by_zoom": [item.as_dict() for item in self.ranges],
         }
@@ -560,11 +606,9 @@ class RasterCacheIdentity:
     @property
     def digest(self) -> str:
         document = {
-            "schema_version": 1,
+            "schema_version": 2,
             "base_sha512": self.base_sha512,
             "style_sha512": self.style_sha512,
-            "configuration_sha512": self.configuration_sha512,
-            "plan": self.plan.as_dict(),
             "tile_size": self.tile_size,
             "pixel_ratio": self.pixel_ratio,
             "webp": {
@@ -579,10 +623,49 @@ class RasterCacheIdentity:
             "tile_bounds_contract": "tile-bounds-v1",
             "runtime_source": self.runtime_document(),
         }
-        payload = json.dumps(
-            document, ensure_ascii=True, sort_keys=True, separators=(",", ":")
-        ).encode("ascii")
-        return hashlib.sha512(payload).hexdigest()
+        return _sha512_document(document)
+
+    @property
+    def run_digest(self) -> str:
+        document = {
+            "schema_version": 2,
+            "pixel_identity": self.digest,
+            "configuration_sha512": self.configuration_sha512,
+            "plan": self.plan.as_dict(),
+        }
+        return _sha512_document(document)
+
+
+def _sha512_document(document: dict[str, Any]) -> str:
+    payload = json.dumps(
+        document, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("ascii")
+    return hashlib.sha512(payload).hexdigest()
+
+
+def raster_progress_document(
+    identity: RasterCacheIdentity, *, status: str,
+    planned_tiles: int, queued_tiles: int, batch_tiles: int | None,
+    batches_total: int, batches_completed: int,
+    rendered_tiles: int, failed_tiles: int,
+    failed_samples: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    if status not in ("rendering", "rendered", "complete", "failed"):
+        raise ValueError(f"unsupported raster progress status: {status}")
+    return {
+        "schema_version": 1,
+        "status": status,
+        "cache_identity": identity.digest,
+        "run_identity": identity.run_digest,
+        "planned_tiles": planned_tiles,
+        "queued_tiles": queued_tiles,
+        "batch_tiles": batch_tiles,
+        "batches_total": batches_total,
+        "batches_completed": batches_completed,
+        "rendered_tiles": rendered_tiles,
+        "failed_tiles": failed_tiles,
+        "failed_samples": list(failed_samples),
+    }
 
 
 def webp_dimensions(payload: bytes) -> tuple[int, int]:
@@ -615,24 +698,59 @@ def webp_dimensions(payload: bytes) -> tuple[int, int]:
 def create_raster_tile_plan(
     bounds: RasterBounds, min_zoom: int, max_zoom: int, padding: int,
     max_tiles: int | None = None,
+    *, enforce_limit: bool = True,
 ) -> RasterTilePlan:
     if min_zoom < 0 or max_zoom < min_zoom or max_zoom > 30:
         raise ValueError("raster zooms must satisfy 0 <= min_zoom <= max_zoom <= 30")
     if padding < 0:
         raise ValueError("raster tile padding must be non-negative")
-    if max_tiles is not None and max_tiles <= 0:
-        raise ValueError("raster max_tiles must be positive when set")
+    if max_tiles is not None and (
+        isinstance(max_tiles, bool) or not isinstance(max_tiles, int) or max_tiles <= 0
+    ):
+        raise ValueError("raster max_tiles must be a positive integer when set")
     ranges = tuple(
         _tile_range(bounds, zoom, padding)
         for zoom in range(min_zoom, max_zoom + 1)
     )
-    plan = RasterTilePlan(bounds, min_zoom, max_zoom, padding, ranges, max_tiles)
-    if max_tiles is not None and plan.tile_count > max_tiles:
+    plan = RasterTilePlan(
+        bounds, min_zoom, max_zoom, padding, ranges, max_tiles, max_tiles,
+    )
+    if enforce_limit and not plan.within_limit:
+        coverage = ",".join(str(value) for value in bounds.as_list())
         raise ValueError(
             f"raster bake plan exceeds max_tiles: planned={plan.tile_count} "
-            f"max_tiles={max_tiles}"
+            f"max_tiles={max_tiles} bounds={coverage} "
+            f"min_zoom={min_zoom} max_zoom={max_zoom} bbox_padding_tiles={padding}; "
+            "inspect coverage with 'build raster-plan'; "
+            "set --max-tiles explicitly for the total job budget"
         )
     return plan
+
+
+def validate_raster_headroom_ratio(ratio: float | None) -> float | None:
+    if ratio is None:
+        return None
+    if (
+        isinstance(ratio, bool) or not isinstance(ratio, (int, float))
+        or not math.isfinite(ratio) or ratio < 0
+    ):
+        raise ValueError(
+            "raster max_tiles_headroom_ratio must be a non-negative finite number or null"
+        )
+    return float(ratio)
+
+
+def extend_raster_plan_budget(
+    plan: RasterTilePlan, ratio: float | None,
+) -> RasterTilePlan:
+    if ratio is None or plan.configured_max_tiles is None:
+        return plan
+    if plan.tile_count <= plan.configured_max_tiles:
+        return plan
+    effective = math.ceil(plan.tile_count * (1.0 + ratio))
+    return replace(
+        plan, max_tiles=effective, max_tiles_source="auto-headroom",
+    )
 
 
 def _tile_range(bounds: RasterBounds, zoom: int, padding: int) -> RasterTileRange:

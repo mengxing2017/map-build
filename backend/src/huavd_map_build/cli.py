@@ -203,7 +203,7 @@ def _parser() -> argparse.ArgumentParser:
     execution_plan.add_argument("--glyph", choices=["0", "1"], default="0")
     execution_plan.add_argument("--force-building", action="store_true")
     raster_plan = build_commands.add_parser(
-        "raster-plan", help="estimate the raster tile coverage without rendering"
+        "raster-plan", help="estimate raster tile coverage and budget status without rendering"
     )
     raster_plan.add_argument("--region", required=True)
     raster_plan.add_argument("--yyyymmdd", required=True)
@@ -222,6 +222,10 @@ def _parser() -> argparse.ArgumentParser:
     raster_bake.add_argument("--min-zoom", type=int)
     raster_bake.add_argument("--max-zoom", type=int)
     raster_bake.add_argument("--max-tiles", type=int)
+    raster_bake.add_argument(
+        "--batch-tiles", type=int,
+        help="render the missing queue in serial batches of this size; the total budget is unchanged",
+    )
     raster_bake.add_argument(
         "--renderer-engine", choices=["mbgl-renderer", "maplibre-native", "maplibre-native-headless"],
         default=None,
@@ -842,11 +846,24 @@ def run(arguments: list[str] | None = None) -> int:
             bounds = RasterBounds(*(float(value) for value in parts))
         from huavd_map_build.production.north.local.raster import RasterPlanRequest
 
-        plan = raster_planning_service(root).plan(RasterPlanRequest(
+        plan = raster_planning_service(root).estimate(RasterPlanRequest(
             RegionId(args.region), BuildDate(args.yyyymmdd), args.workdir,
             bounds, args.min_zoom, args.max_zoom, args.max_tiles,
         ))
-        print(json.dumps(plan.as_dict(), ensure_ascii=True, indent=2, sort_keys=True))
+        from huavd_map_build.production.domain.raster import validate_raster_batch_tiles
+
+        batch_tiles = validate_raster_batch_tiles(
+            build_configuration_service(root).raster_bake(args.region).get("batch_tiles")
+        )
+        document = plan.as_dict()
+        document["within_limit"] = plan.within_limit
+        document["budget_source"] = plan.max_tiles_source
+        document["batch_tiles"] = batch_tiles
+        document["estimated_batches"] = (
+            None if batch_tiles is None
+            else (plan.tile_count + batch_tiles - 1) // batch_tiles
+        )
+        print(json.dumps(document, ensure_ascii=True, indent=2, sort_keys=True))
         return 0
     if args.context == "build" and args.command == "raster-bake":
         from huavd_map_build.delivery.south.adapter.process.tool_versions import (
@@ -870,6 +887,25 @@ def run(arguments: list[str] | None = None) -> int:
             args.max_zoom, args.max_tiles,
         ))
         bake_settings = build_configuration_service(root).raster_bake(args.region)
+        from huavd_map_build.production.domain.raster import validate_raster_batch_tiles
+
+        batch_tiles = validate_raster_batch_tiles(
+            args.batch_tiles if args.batch_tiles is not None
+            else bake_settings.get("batch_tiles")
+        )
+        if plan.max_tiles_source == "auto-headroom":
+            print(
+                f"warning: raster plan {plan.tile_count} exceeds configured "
+                f"max_tiles {plan.configured_max_tiles}; "
+                f"using automatic headroom budget {plan.max_tiles}",
+                file=sys.stderr,
+            )
+        print(
+            f"raster plan: tiles={plan.tile_count} max_tiles={plan.max_tiles} "
+            f"configured_max_tiles={plan.configured_max_tiles} "
+            f"budget_source={plan.max_tiles_source} batch_tiles={batch_tiles}",
+            file=sys.stderr,
+        )
         args.renderer_engine = args.renderer_engine or bake_settings.get("renderer_engine", "maplibre-native-headless")
         if args.renderer_command is None:
             if args.renderer_engine == "maplibre-native-headless":
@@ -902,10 +938,16 @@ def run(arguments: list[str] | None = None) -> int:
                 args.renderer_engine, args.renderer_command, renderer_identity,
                 args.jobs, args.retries, args.timeout_seconds,
                 args.extract_pmtiles, args.display_mode, tuple(samples),
+                args.batch_tiles,
             ),
         )
         result = raster_bake_service().bake(request)
         document = result.as_dict()
+        document["budget"] = {
+            "source": plan.max_tiles_source,
+            "max_tiles": plan.max_tiles,
+            "configured_max_tiles": plan.configured_max_tiles,
+        }
         document["candidate_pmtiles"] = request.pmtiles_path
         from huavd_map_build.production.south.adapter.process.raster_preview import write_preview
 
