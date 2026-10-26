@@ -129,6 +129,7 @@ make fetch REGION=china/guangxi                   # 下载并校验 OSM PBF
 make build REGION=china/guangxi ROLE=base         # 构建基础矢量
 make build REGION=china/guangxi ROLE=base_raster  # 构建基础矢量和 WebP 图片瓦片
 make build REGION=china/guangxi ROLE=raster_bake  # 复用已有 base，只重跑图片阶段
+make raster-estimate REGION=china/guangxi          # 估算图片数量并输出预算状态
 make build-dem REGION=china/guangxi               # 从已授权输入构建 DEM
 make build-overview OVERVIEW=south-china-overview  # 构建多区域低缩放概览图
 make verify-overview OVERVIEW=south-china-overview # 验证概览图
@@ -143,6 +144,16 @@ make lint                                         # 检查样式与视口配置
 make prepare-import-all REGION=china/guangxi      # 准备离线导入包
 make diff-products REGION_A=china/guangxi REGION_B=china/guangdong
 ```
+
+已有同会话 base 时，可用 `make raster-estimate REGION=... YYYYMMDD=... WORKDIR=...` 查看完整图片计划、各级数量、生效预算与 `within_limit`；显式传入 `BAKE_BBOX` 时不需要 base。计划超过默认 20 万基线也正常输出并返回成功。`within_limit: false` 仅表示预算小于计划，来源有两类：显式 `BAKE_MAX_TILES`（`budget_source: override`），或将 `max_tiles_headroom_ratio` 置 `null` 后回落的严格基线（`budget_source: config`）；估算命令对此仍返回成功，实际烘焙才会拒绝执行。输入或预算非法仍会失败，`BAKE_MAX_TILES=0` 不表示无限制。
+
+`max_tiles`（默认 20 万）是可自动放开的基线：计划超过基线时，按计划张数的 `max_tiles_headroom_ratio`（默认 0.1）计算生效预算，估算输出会给出 `budget_source: auto-headroom`、`configured_max_tiles` 与实际生效的 `max_tiles`，无需逐省配置或每次传参。显式 `BAKE_MAX_TILES` 是硬上限，不会被自动放宽；将 `max_tiles_headroom_ratio` 置 `null` 可恢复严格基线。估算保持指定缩放与范围，不自动降级。
+
+预算、并发、批次大小与计划覆盖范围不进入像素缓存身份，调整它们仍能复用已校验的 WebP；例外是开启 `pmtiles_extract` 后的子集范围与缩放会进入身份。base、烘焙样式、编码参数、渲染器身份或实际供数来源变化才会使像素缓存失效。
+
+`make build ROLE=raster_bake` 不需要先跑估算命令：它在写缓存前自动生成完整计划、计算生效预算，并在 stderr 打印一行 `raster plan: tiles=... max_tiles=... configured_max_tiles=... budget_source=... batch_tiles=...` 摘要；`make raster-estimate` 仅用于“只看不跑”的诊断。运行参数与缓存身份细节见 [图片地图构建手册](docs/manual/raster.md)。
+
+图片渲染默认按 `batch_tiles: 10000` 分批，不需要手动计算或传入。每批串行执行并沿用 `BAKE_JOBS` 受限并发；批次只限制一次调度的工作量，不降低总数，也不绕过生效预算（显式 `BAKE_MAX_TILES` 硬上限仍会拦截）。需要更粗或更细的检查点时，用 `BAKE_BATCH_TILES` 覆盖；置 `config/bake.yaml` 的 `batch_tiles: null` 可恢复单批。估算输出同时给出 `batch_tiles` 与按完整计划估算的 `estimated_batches`（首次无缓存时的批次数上限，`batch_tiles` 为 `null` 时该字段为 `null`）。每批完成后原子写入 `${WORKDIR}/cache/bake/${SESSION}/progress.json`；中断后重跑仍按缓存扫描只补缺失或损坏的瓦片，但需先确认中断进程已退出并清理遗留的 `.bake.lock`，否则会报 `raster bake cache is already in use`。
 
 ## 环境准备
 
