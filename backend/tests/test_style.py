@@ -101,7 +101,11 @@ class StyleCompilerTest(unittest.TestCase):
         self.assertLess(ids.index("road-road-casing"), ids.index("road-road-fill"))
         road = next(layer for layer in layers if layer["id"] == "road-road-fill")
         self.assertEqual("road", road["source-layer"])
-        self.assertEqual(["!=", ["get", "tunnel"], True], road["filter"])
+        self.assertEqual(
+            ["any", ["!=", ["get", "tunnel"], True],
+             ["==", ["get", "highway"], "motorway"]],
+            road["filter"],
+        )
 
     def test_locale_and_pmtiles_url_overrides(self) -> None:
         resolved = self.configuration.style("china/guangxi", "en")

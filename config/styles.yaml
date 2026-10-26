@@ -334,7 +334,7 @@ paint_layers:
       line-opacity: ["interpolate",["linear"],["zoom"],13,0.5,15,0.8]
   - id: "road-road-casing"
     source_layer: "road"
-    filter: ["!=",["get","tunnel"],true]
+    filter: ["any",["!=",["get","tunnel"],true],["==",["get","highway"],"motorway"]]
     type: "line"
     layout:
       line-cap: "round"
@@ -345,18 +345,18 @@ paint_layers:
       line-opacity: ["interpolate",["linear"],["zoom"],6,0.35,10,0.75,13,0.95]
   - id: "road-road-fill"
     source_layer: "road"
-    filter: ["!=",["get","tunnel"],true]
+    filter: ["any",["!=",["get","tunnel"],true],["==",["get","highway"],"motorway"]]
     type: "line"
     layout:
       line-cap: "round"
       line-join: "round"
     paint:
-      line-color: ["match",["get","highway"],"motorway","#e76f2e","trunk","#ef8f35","primary","#f2b84b","secondary","#f0d26b","tertiary","#f6e6a6","residential","#ffffff","living_street","#ffffff","unclassified","#ffffff","service","#f8fafc","minor","#ffffff","track","#d6c6a9","path","#d6c6a9","#ffffff"]
+      line-color: ["match",["get","highway"],"motorway",["case",["==",["get","tunnel"],true],"#f2b58f","#e76f2e"],"trunk","#ef8f35","primary","#f2b84b","secondary","#f0d26b","tertiary","#f6e6a6","residential","#ffffff","living_street","#ffffff","unclassified","#ffffff","service","#f8fafc","minor","#ffffff","track","#d6c6a9","path","#d6c6a9","#ffffff"]
       line-width: ["interpolate",["linear"],["zoom"],5,["+",["match",["get","highway"],"motorway",1.2,"trunk",1,"primary",0.8,0.45],0],10,["+",["match",["get","highway"],"motorway",3.4,"trunk",3,"primary",2.5,"secondary",2,"tertiary",1.6,1],0],14,["+",["match",["get","highway"],"motorway",8,"trunk",7,"primary",6,"secondary",5,"tertiary",4,"residential",3,"living_street",3,"unclassified",3,"service",2,2.2],0],17,["+",["match",["get","highway"],"motorway",18,"trunk",16,"primary",14,"secondary",12,"tertiary",10,"residential",8,"living_street",8,"unclassified",8,"service",5,5],0],19,["+",["match",["get","highway"],"motorway",32,"trunk",28,"primary",24,"secondary",20,"tertiary",16,"residential",12,"living_street",12,"unclassified",12,"service",8,"footway",3,"path",2.5,"steps",3,5],0]]
       line-opacity: ["interpolate",["linear"],["zoom"],6,0.45,10,0.85,13,1]
   - id: "road-tunnel"
     source_layer: "road"
-    filter: ["==",["get","tunnel"],true]
+    filter: ["all",["==",["get","tunnel"],true],["!=",["get","highway"],"motorway"]]
     type: "line"
     layout:
       line-cap: "round"
