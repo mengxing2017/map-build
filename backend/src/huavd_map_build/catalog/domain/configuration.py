@@ -206,10 +206,11 @@ def resolve_tippecanoe(
             "min_zoom",
             "max_zoom",
             "maximum_tile_bytes",
+            "maximum_tile_features",
             "output_role",
             "source_layers",
         ):
-            resolved[key] = deepcopy(building[key])
+            resolved[key] = deepcopy(building.get(key))
 
     for override in _array(document, "high_density"):
         pattern = str(override.get("region_match", ""))
@@ -233,7 +234,18 @@ def resolve_tippecanoe(
         or not isinstance(maximum, int) or isinstance(maximum, bool)
         or not 0 <= minimum <= maximum <= 24):
         raise BuildConfigurationError("tippecanoe zooms must satisfy 0 <= min_zoom <= max_zoom <= 24")
+    validate_tile_feature_limit(resolved)
     return resolved
+
+
+def validate_tile_feature_limit(settings: dict[str, Any]) -> None:
+    value = settings.get("maximum_tile_features")
+    if (not isinstance(value, int) or isinstance(value, bool)
+        or not 1 <= value <= 10_000_000):
+        raise BuildConfigurationError(
+            "config/tippecanoe.yaml (including tier-profiles.yaml overrides): "
+            f"maximum_tile_features must be an integer in 1..10000000, got {value!r}"
+        )
 
 
 def resolve_raster_bake(document: dict[str, Any], region: str) -> dict[str, Any]:

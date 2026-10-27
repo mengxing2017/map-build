@@ -60,6 +60,7 @@ class TippecanoeService:
             f"-Z{self._integer(settings, 'min_zoom')}",
             f"-z{self._integer(settings, 'max_zoom')}",
             f"--maximum-tile-bytes={self._integer(settings, 'maximum_tile_bytes')}",
+            f"--maximum-tile-features={self._integer(settings, 'maximum_tile_features')}",
             f"--name={region.slug}-{request.build_date}.{request.role.value}",
             f"--attribution={settings.get('attribution', '© OpenStreetMap contributors')}",
             f"--output={output}",

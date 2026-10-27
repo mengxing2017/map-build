@@ -59,10 +59,25 @@ class TippecanoeServiceTest(unittest.TestCase):
             self.assertIn("-z10", plan.arguments)
             self.assertIn("--simplify-only-low-zooms", plan.arguments)
             self.assertIn("--drop-densest-as-needed", plan.arguments)
+            self.assertIn("--maximum-tile-features=1000000", plan.arguments)
+            self.assertFalse(any(arg.startswith("--limit-tile-feature-count") for arg in plan.arguments))
             self.assertEqual(
                 f"{directory}/outputs/china-20261003.base.pmtiles", plan.output_path
             )
             self.assertEqual([plan.arguments], runner.calls)
+
+    def test_building_retains_its_own_feature_budget(self) -> None:
+        runner = RecordingTippecanoeRunner()
+        with tempfile.TemporaryDirectory() as directory:
+            stage = Path(directory) / "staging/china-guangxi-20261003/layers"
+            stage.mkdir(parents=True)
+            (stage / "building.geojsonseq").write_text("")
+            plan = self._service(runner).run(TippecanoeRequest(
+                RegionId("china/guangxi"), BuildDate("20261003"),
+                SessionId("china-guangxi-20261003"), Role.BUILDING, directory,
+            ))
+        self.assertIn("--maximum-tile-features=200000", plan.arguments)
+        self.assertFalse(any(arg.startswith("--limit-tile-feature-count") for arg in plan.arguments))
 
     def test_missing_layer_prevents_tool_execution(self) -> None:
         runner = RecordingTippecanoeRunner()

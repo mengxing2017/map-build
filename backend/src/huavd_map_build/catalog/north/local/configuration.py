@@ -9,6 +9,7 @@ from huavd_map_build.catalog.domain.configuration import (
     resolve_raster_bake,
     resolve_tippecanoe,
     resolve_vector_layers,
+    validate_tile_feature_limit,
 )
 from huavd_map_build.catalog.south.port.configuration import ConfigurationRepository
 
@@ -28,16 +29,24 @@ class BuildConfigurationService:
         resolved = resolve_tippecanoe(
             self._repository.load("tippecanoe"), region, role
         )
-        return apply_tier_profile(
+        effective = apply_tier_profile(
             resolved,
             self._repository.load("tier-profiles"),
             self._repository.load("layers"),
             region,
             role,
         )
+        validate_tile_feature_limit(effective)
+        return effective
 
     def raster_bake(self, region: str) -> dict[str, Any]:
         return resolve_raster_bake(self._repository.load("bake"), region)
+
+    def low_zoom_quality(self) -> dict[str, Any]:
+        value = self._repository.load("tippecanoe").get("low_zoom_quality")
+        if not isinstance(value, dict):
+            raise ValueError("config/tippecanoe.yaml: low_zoom_quality must be an object")
+        return dict(value)
 
     def tags_filter_layers(
         self, selection: str
@@ -581,6 +590,7 @@ class BuildConfigurationService:
                 region,
                 "base",
             )
+            validate_tile_feature_limit(resolved)
             resolve_vector_layers(
                 resolved,
                 documents["tier-profiles"],

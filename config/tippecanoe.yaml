@@ -10,6 +10,7 @@ defaults:
   coalesce_densest_as_needed: true
   read_parallel: true
   maximum_tile_bytes: 1048576
+  maximum_tile_features: 200000
   no_tile_size_limit: false
   force_feature_limit: false
   attribution: "\u00a9 OpenStreetMap contributors"
@@ -36,6 +37,7 @@ defaults:
   high_density_baseline:
     max_zoom: 14
     maximum_tile_bytes: 2097152
+    maximum_tile_features: 1000000
     drop_densest_as_needed: true
     coalesce_densest_as_needed: true
     building_height_derivation: "levels * 3 + 1 meters when height is absent"
@@ -45,6 +47,14 @@ metadata:
   tile_type: "MVT"
   tile_compression: "gzip"
   vector_layer_count: 17
+
+low_zoom_quality:
+  zooms: [5, 6, 7]
+  minimum_source_features: 50
+  minimum_gap_cells: 2
+  minimum_line_pixels: 2
+  samples_per_zoom: 8
+  gap_mode: report
 
 raster_bake:
   tile_type: 4
@@ -116,6 +126,7 @@ building_vector:
   min_zoom: 12
   max_zoom: 18
   maximum_tile_bytes: 2097152
+  maximum_tile_features: 200000
   output_role: "building"
   source_layers:
     - "building"

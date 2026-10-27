@@ -668,6 +668,7 @@ effective_tippecanoe_resolve() {
     overrides="$(tier_profile_json "${profile}" | jq -c '{min_zoom, max_zoom, maximum_tile_bytes, extend_zooms_if_still_dropping, source_layers} + (.tippecanoe // {})')"
     params="$(jq -cn --argjson base "${params}" --argjson overrides "${overrides}" '$base + $overrides')"
   fi
+  tippecanoe_feature_limit_validate "${params}"
   jq -c '.' <<< "${params}"
 }
 
@@ -843,6 +844,13 @@ vector_layers_json() {
   rm -f "${tmp}"
 }
 
+tippecanoe_feature_limit_validate() {
+  local settings="$1"
+  jq -e '.maximum_tile_features | type == "number" and floor == . and . >= 1 and . <= 10000000' \
+    <<< "${settings}" >/dev/null \
+    || die "${HUAVD_EXIT_INPUT}" "config/tippecanoe.yaml (including tier-profiles.yaml overrides): maximum_tile_features must be an integer in 1..10000000, got $(jq -c '.maximum_tile_features' <<< "${settings}")"
+}
+
 tippecanoe_resolve() {
   local region="$1"
   local role="${2:-base}"
@@ -865,6 +873,7 @@ tippecanoe_resolve() {
       min_zoom: .[1].building_vector.min_zoom,
       max_zoom: .[1].building_vector.max_zoom,
       maximum_tile_bytes: .[1].building_vector.maximum_tile_bytes,
+      maximum_tile_features: .[1].building_vector.maximum_tile_features,
       output_role: .[1].building_vector.output_role,
       source_layers: .[1].building_vector.source_layers
     }' <(printf '%s\n' "${resolved}") "${tip_json}")"
@@ -885,5 +894,6 @@ tippecanoe_resolve() {
     | ($min | type == "number" and floor == . and . >= 0)
       and ($max | type == "number" and floor == . and . >= $min and . <= 24)' <<< "${resolved}" >/dev/null \
     || die "${HUAVD_EXIT_INPUT}" "invalid tippecanoe zoom range"
+  tippecanoe_feature_limit_validate "${resolved}"
   printf '%s\n' "${resolved}" | jq -c '.'
 }

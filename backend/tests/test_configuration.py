@@ -1,5 +1,9 @@
 from local_extract_fixture import local_extract_repository
 from copy import deepcopy
+import json
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,10 +14,12 @@ from huavd_map_build.catalog.domain.configuration import (
     inspect_layer_export_contracts,
     resolve_tippecanoe,
     resolve_vector_layers,
+    validate_tile_feature_limit,
 )
 from huavd_map_build.catalog.south.adapter.yaml.loader import (
     PyYamlConfigurationRepository,
 )
+from huavd_map_build.catalog.north.local.configuration import BuildConfigurationService
 
 
 class BuildConfigurationTest(unittest.TestCase):
@@ -28,6 +34,64 @@ class BuildConfigurationTest(unittest.TestCase):
         self.assertEqual(18, result["max_zoom"])
         self.assertEqual(["building"], result["source_layers"])
         self.assertEqual("building", result["output_role"])
+        self.assertEqual(200000, result["maximum_tile_features"])
+
+    def test_feature_budget_survives_region_and_country_profiles(self) -> None:
+        for region in ("china/sichuan", "china/guangxi", "china/shanghai", "china"):
+            with self.subTest(region=region):
+                self.assertEqual(1000000, self.configuration.tippecanoe(region, "base")["maximum_tile_features"])
+
+    def test_invalid_feature_budget_is_rejected_after_every_override(self) -> None:
+        root = repository_root(Path(__file__))
+        original = PyYamlConfigurationRepository(root / "config")
+        for value in (None, 0, -1, True, "1000000", 1.5, 10000001):
+            with self.subTest(value=value):
+                document = original.load("tippecanoe")
+                document["high_density"].append({"region_match": "china", "maximum_tile_features": value})
+                with self.assertRaisesRegex(BuildConfigurationError, "tippecanoe.yaml.*maximum_tile_features"):
+                    resolve_tippecanoe(document, "china", "base")
+                tier = original.load("tier-profiles")
+                tier["profiles"]["country-low"]["tippecanoe"]["maximum_tile_features"] = value
+
+                class Repository:
+                    def load(self, name):
+                        return tier if name == "tier-profiles" else original.load(name)
+
+                with self.assertRaisesRegex(BuildConfigurationError, "maximum_tile_features"):
+                    BuildConfigurationService(Repository()).tippecanoe("china", "base")
+        with self.assertRaisesRegex(BuildConfigurationError, "maximum_tile_features"):
+            validate_tile_feature_limit({})
+
+    def test_locked_jq_rejects_invalid_raw_and_effective_feature_limits(self) -> None:
+        root = repository_root(Path(__file__))
+        locked = root / ".devbox/nix/profile/default/bin"
+        for value in (None, 0, -1, True, "1000000", 1.5, 10000001):
+            for effective in (False, True):
+                with self.subTest(value=value, effective=effective), tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "settings.json"
+                    if effective:
+                        path.write_text(json.dumps({"tippecanoe": {"maximum_tile_features": value}}))
+                        command = '''set -euo pipefail
+source scripts/lib/config.sh
+tippecanoe_resolve() { printf '%s\\n' '{"maximum_tile_features":1000000}'; }
+effective_build_profile() { printf '%s\\n' country-low; }
+tier_profile_json() { cat "$HUAVD_TEST_SETTINGS"; }
+effective_tippecanoe_resolve china base
+'''
+                    else:
+                        settings = PyYamlConfigurationRepository(root / "config").load("tippecanoe")
+                        settings["defaults"]["high_density_baseline"]["maximum_tile_features"] = value
+                        path.write_text(json.dumps(settings))
+                        command = '''set -euo pipefail
+source scripts/lib/config.sh
+tippecanoe_json() { printf '%s\\n' "$HUAVD_TEST_SETTINGS"; }
+tippecanoe_resolve china/sichuan base
+'''
+                    result = subprocess.run(["bash", "-c", command], cwd=root, capture_output=True, text=True,
+                        env={**os.environ, "PATH": f"{locked}:{os.environ['PATH']}", "WORKDIR": directory,
+                             "HUAVD_TEST_SETTINGS": str(path)}, timeout=30, check=False)
+                    self.assertNotEqual(0, result.returncode)
+                    self.assertIn("maximum_tile_features", result.stderr)
 
     def test_tippecanoe_high_density_region_overrides_baseline(self) -> None:
         result = self.configuration.tippecanoe("china/shanghai", "base")
