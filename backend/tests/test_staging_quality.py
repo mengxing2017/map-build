@@ -134,6 +134,22 @@ class BaseStagingQualityGateTest(unittest.TestCase):
         self.assertEqual(0, report.feature_count)
         self.assertIn("road", report.checked_layers)
 
+    def test_mixed_road_geometries_do_not_abort_staging_scan(self) -> None:
+        geometries = [
+            {"type": "Point", "coordinates": [104, 30]},
+            {"type": "MultiPolygon", "coordinates": [[[[104, 30], [105, 30], [105, 31], [104, 30]]]]},
+            {"type": "LineString", "coordinates": [[104, 30], [105, 31]]},
+        ]
+        features = [{"type": "Feature", "properties": {}, "geometry": geometry}
+                    for geometry in geometries]
+        report = BaseStagingQualityGate(
+            self.configuration, MemoryLayerReader(features={"road": features})
+        ).inspect(self.build)
+        self.assertTrue(report.passed, report.as_dict())
+        self.assertEqual(3, report.feature_count)
+        self.assertEqual(3, report.coverage.road_features)
+        self.assertTrue(all(count == 1 for _, count in report.coverage.eligible_features))
+
     def test_accepts_schema_3_place_label_audit_with_matching_output_hash(self) -> None:
         reports = valid_reports()
         reports["place_label_dedup_report"] = {

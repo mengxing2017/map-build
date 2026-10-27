@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import gzip
 import subprocess
+import zlib
 from typing import Any
 
-from huavd_map_build.quality.domain.tile import TileCoordinate
+from huavd_map_build.quality.domain.tile import TileCoordinate, VectorTilePayload
 
 
 class ProcessVectorTileReader:
     def decode(self, archive: str, coordinate: TileCoordinate) -> dict[str, Any]:
+        return self.read(archive, coordinate).decoded
+
+    def read(self, archive: str, coordinate: TileCoordinate) -> VectorTilePayload:
         result = subprocess.run(
             [
                 "pmtiles", "tile", archive, str(coordinate.zoom),
@@ -24,7 +28,7 @@ class ProcessVectorTileReader:
                 f"{message or f'exit {result.returncode}'}"
             )
         if not result.stdout:
-            return {}
+            return VectorTilePayload({}, 0, 0)
         try:
             import mapbox_vector_tile
         except ImportError as error:
@@ -36,7 +40,7 @@ class ProcessVectorTileReader:
         if payload.startswith(b"\x1f\x8b"):
             try:
                 payload = gzip.decompress(payload)
-            except OSError as error:
+            except (OSError, EOFError, zlib.error) as error:
                 raise RuntimeError(
                     f"invalid gzip vector tile for "
                     f"{coordinate.zoom}/{coordinate.x}/{coordinate.y}: {error}"
@@ -50,4 +54,4 @@ class ProcessVectorTileReader:
             ) from error
         if not isinstance(decoded, dict):
             raise RuntimeError("decoded vector tile must be an object")
-        return decoded
+        return VectorTilePayload(decoded, len(result.stdout), len(payload))

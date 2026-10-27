@@ -7,6 +7,7 @@ from typing import Any
 from huavd_map_build.catalog.north.local.configuration import BuildConfigurationService
 from huavd_map_build.production.domain.model import BuildPlan
 from huavd_map_build.production.domain.place_admin import apply_admin_display_name
+from huavd_map_build.quality.domain.coverage import CoveragePolicy, RoadCoverageAccumulator
 from huavd_map_build.quality.domain.staging import (
     BaseDeepVerificationError,
     BaseStagingQualityReport,
@@ -31,6 +32,10 @@ class BaseStagingQualityGate:
         if build.roles != (Role.BASE,):
             raise ValueError("base staging quality gate requires a base-only build")
         settings = self._configuration.tippecanoe(build.region.value, "base")
+        coverage = RoadCoverageAccumulator(
+            build.session.value, settings,
+            CoveragePolicy.from_settings(self._configuration.low_zoom_quality()),
+        )
         layers = tuple(settings["source_layers"])
         policies = {
             name: (set(fields), geometry)
@@ -98,6 +103,8 @@ class BaseStagingQualityGate:
                         layer, line_number, feature, allowed_fields,
                         allowed_geometry, field_types[layer], findings,
                     )
+                    if layer == "road":
+                        coverage.add(feature)
                     if layer == "place_label":
                         self._inspect_place_label(
                             line_number, feature, place_policy, place_state, findings
@@ -112,7 +119,7 @@ class BaseStagingQualityGate:
                 findings.append(StagingFinding("layer-read", layer, str(error)))
         self._finish_place_label(place_state, place_policy, findings)
         self._inspect_derivation_reports(build, layer_stats, findings)
-        return BaseStagingQualityReport(layers, feature_count, tuple(findings))
+        return BaseStagingQualityReport(layers, feature_count, tuple(findings), coverage.finish())
 
     def _inspect_derivation_reports(
         self, build: BuildPlan, stats: dict[str, dict[str, int]],

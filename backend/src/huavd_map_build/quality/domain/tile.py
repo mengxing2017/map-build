@@ -15,6 +15,13 @@ class TileCoordinate:
 
 
 @dataclass(frozen=True, slots=True)
+class VectorTilePayload:
+    decoded: dict[str, Any]
+    compressed_bytes: int
+    uncompressed_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
 class TileSamplePlan:
     island: tuple[TileCoordinate, ...]
     river: tuple[TileCoordinate, ...]
@@ -28,13 +35,14 @@ class TileSamplePlan:
 class TileSamplingReport:
     sampled_tiles: tuple[TileCoordinate, ...]
     findings: tuple[QualityFinding, ...]
+    coverage_audit: dict[str, Any] | None = None
 
     @property
     def passed(self) -> bool:
         return not self.findings
 
     def as_dict(self) -> dict[str, object]:
-        return {
+        result = {
             "schema_version": "1",
             "status": "passed" if self.passed else "failed",
             "sampled_tiles": [
@@ -43,6 +51,9 @@ class TileSamplingReport:
             ],
             "findings": [finding.as_dict() for finding in self.findings],
         }
+        if self.coverage_audit is not None:
+            result["low_zoom_coverage"] = self.coverage_audit
+        return result
 
 
 def representative_lonlat(feature: dict[str, Any]) -> tuple[float, float] | None:

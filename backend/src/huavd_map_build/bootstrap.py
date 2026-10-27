@@ -460,16 +460,17 @@ def style_quality_gate(root: Path | None = None) -> StyleQualityGate:
     )
 
 
-def vector_tile_sampling_gate() -> VectorTileSamplingGate:
+def vector_tile_sampling_gate(root: Path | None = None) -> VectorTileSamplingGate:
     return VectorTileSamplingGate(
-        FileSystemStagedLayerReader(), ProcessVectorTileReader(), FileSystemPmtilesHeaderReader()
+        FileSystemStagedLayerReader(), ProcessVectorTileReader(), FileSystemPmtilesHeaderReader(),
+        build_configuration_service(root or repository_root()),
     )
 
 
 def base_deep_quality_gate(root: Path | None = None) -> BaseDeepQualityGate:
     resolved_root = root or repository_root()
     return BaseDeepQualityGate(
-        base_staging_quality_gate(resolved_root), vector_tile_sampling_gate()
+        base_staging_quality_gate(resolved_root), vector_tile_sampling_gate(resolved_root)
     )
 
 

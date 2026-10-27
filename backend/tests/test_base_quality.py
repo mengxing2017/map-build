@@ -1,4 +1,6 @@
 import unittest
+import json
+import tempfile
 from pathlib import Path
 
 from huavd_map_build.bootstrap import (
@@ -59,11 +61,26 @@ class BaseDeepQualityGateTest(unittest.TestCase):
             "region": self.build.region,
             "build_date": self.build.build_date,
             "workdir": "/tmp/maps",
+            "source_coverage": staging.report.coverage,
+            "session": self.build.session,
         }, tiles.calls[0])
 
     def test_production_base_executor_uses_combined_deep_gate(self) -> None:
         executor = base_build_executor(repository_root(Path(__file__)))
         self.assertIsInstance(executor._deep_verifier, BaseDeepQualityGate)
+
+    def test_successful_build_persists_its_deep_audit_report(self):
+        staging = StubStagingGate(BaseStagingQualityReport(("road",), 0, ()))
+        tiles = StubTileGate(TileSamplingReport((), (), {"status": "no-low-zoom-samples"}))
+        with tempfile.TemporaryDirectory() as directory:
+            build = build_planner(repository_root(Path(__file__))).plan(
+                region=self.build.region, build_date=self.build.build_date,
+                role="base", workdir=Path(directory),
+            )
+            BaseDeepQualityGate(staging, tiles).verify(build)
+            report = json.loads((Path(directory) / "staging" / build.session.value / "quality/base-deep.json").read_text())
+        self.assertEqual("passed", report["status"])
+        self.assertEqual("no-low-zoom-samples", report["tiles"]["low_zoom_coverage"]["status"])
 
     def test_aggregates_both_failures_before_raising(self) -> None:
         staging = StubStagingGate(BaseStagingQualityReport(
