@@ -550,10 +550,19 @@ def run(arguments: list[str] | None = None) -> int:
             )
             files = artifact_file_verifier().verify(paths)
             role_passed = quality.passed and files.passed
+            deep = None
+            if role is Role.BASE and role_passed:
+                build = build_planner(repository_root()).plan(
+                    region=region, build_date=build_date, role="base", workdir=Path(args.workdir),
+                    input_path=Path(args.workdir) / "staging" / paths.identity.session.value / "source.osm.pbf",
+                )
+                deep = base_deep_quality_gate(repository_root()).inspect(build)
+                role_passed = deep.passed
             passed = passed and role_passed
             reports.append({
                 "role": role.value, "status": "passed" if role_passed else "failed",
                 "quality": quality.as_dict(), "files": files.as_dict(),
+                "deep": deep.as_dict() if deep is not None else None,
             })
         print(json.dumps({
             "schema_version": 1, "status": "passed" if passed else "failed",

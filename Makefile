@@ -196,6 +196,9 @@ verify:
 ifneq ($(filter $(ROLE),base building both),)
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build quality release --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(ROLE)" --workdir="$(WORKDIR)"
 else
+ifneq ($(filter $(ROLE),base_raster both_raster all),)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build quality release --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --role="$(if $(filter base_raster,$(ROLE)),base,both)" --workdir="$(WORKDIR)"
+endif
 	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)"
 endif
 

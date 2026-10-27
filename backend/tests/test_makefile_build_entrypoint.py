@@ -103,6 +103,15 @@ class MakefileBuildEntrypointTest(unittest.TestCase):
         self.assertNotIn("scripts/pack.sh", output)
         self.assertNotIn("scripts/verify.sh", output)
 
+    def test_mixed_verify_runs_python_deep_release_before_legacy_raster_checks(self):
+        for role, vector_role in (("base_raster", "base"), ("both_raster", "both"), ("all", "both")):
+            with self.subTest(role=role):
+                result = subprocess.run(["make", "--no-print-directory", "-n", "verify", f"ROLE={role}",
+                                         "REGION=china/sichuan", "YYYYMMDD=20261026"],
+                                        cwd=self.root, capture_output=True, text=True, check=True)
+                self.assertIn(f'--role="{vector_role}"', result.stdout)
+                self.assertLess(result.stdout.index("quality release"), result.stdout.index("scripts/verify.sh"))
+
     def test_raster_release_checks_environment_and_inherits_output_directory(self) -> None:
         for directory, expected in (
             ("WORKDIR_ROOT=/tmp/maps", "/tmp/maps/china-guangxi-20260818"),
