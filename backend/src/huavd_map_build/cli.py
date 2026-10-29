@@ -48,6 +48,7 @@ from huavd_map_build.bootstrap import (
     raster_planning_service,
     raster_bake_service,
     raster_bake_request_factory,
+    raster_manifest_service,
     raster_finalization_service,
     bundle_service,
 )
@@ -71,7 +72,7 @@ from huavd_map_build.delivery.domain.metadata import (
     MetadataVerificationError,
     MissingPmtilesToolError,
 )
-from huavd_map_build.delivery.domain.manifest import ManifestRequest
+from huavd_map_build.delivery.domain.manifest import ManifestRequest, RasterManifestRequest
 from huavd_map_build.production.north.local.vector_finalize import (
     VectorFinalizationRequest,
 )
@@ -504,6 +505,20 @@ def _parser() -> argparse.ArgumentParser:
     write_manifest.add_argument("--workdir", default="/tmp/huavd-map-build")
     write_manifest.add_argument("--bundle-id")
     write_manifest.add_argument("--activation", default="manual")
+    write_manifest.add_argument("--allow-missing-source", action="store_true")
+    write_raster_manifest = artifact_commands.add_parser(
+        "write-raster-manifest", help="write raster_bake manifest from verified base lineage"
+    )
+    write_raster_manifest.add_argument("--region", required=True)
+    write_raster_manifest.add_argument("--yyyymmdd", required=True)
+    write_raster_manifest.add_argument("--session")
+    write_raster_manifest.add_argument("--workdir", default="/tmp/huavd-map-build")
+    write_raster_manifest.add_argument("--pmtiles", required=True)
+    write_raster_manifest.add_argument("--manifest", required=True)
+    write_raster_manifest.add_argument("--tile-count", type=int, required=True)
+    write_raster_manifest.add_argument("--tile-size", type=int, required=True)
+    write_raster_manifest.add_argument("--bundle-id")
+    write_raster_manifest.add_argument("--activation", default="manual")
     finalize_vector = artifact_commands.add_parser(
         "finalize-vector", help="write and verify vector delivery documents"
     )
@@ -747,6 +762,19 @@ def run(arguments: list[str] | None = None) -> int:
         output = vector_manifest_service(repository_root()).run(ManifestRequest(
             region, build_date, session, Role(args.role), args.workdir,
             args.bundle_id, args.activation,
+            require_source=not args.allow_missing_source,
+        ))
+        print(output)
+        return 0
+    if args.context == "artifact" and args.command == "write-raster-manifest":
+        region = RegionId(args.region)
+        build_date = BuildDate(args.yyyymmdd)
+        session = SessionId(args.session) if args.session else SessionId.for_build(
+            region, build_date
+        )
+        output = raster_manifest_service(repository_root()).run(RasterManifestRequest(
+            region, build_date, session, args.workdir, args.pmtiles, args.manifest,
+            args.tile_count, args.tile_size, args.bundle_id, args.activation,
         ))
         print(output)
         return 0

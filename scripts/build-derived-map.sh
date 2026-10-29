@@ -46,7 +46,7 @@ if [[ -n "$(effective_build_profile "${REGION}" base)" ]]; then
 fi
 "${SCRIPT_DIR}/tippecanoe.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=base --workdir="${WORKDIR}"
 "${SCRIPT_DIR}/metadata.sh" --pmtiles="${pmtiles}" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=base --workdir="${WORKDIR}"
-"${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=base --workdir="${WORKDIR}"
+"${SCRIPT_DIR}/manifest.sh" --region="${REGION}" --yyyymmdd="${YYYYMMDD}" --role=base --workdir="${WORKDIR}" --allow-missing-source
 
 report="$(derived_map_report_path)"
 report_sha512="$(sha512_value "${report}")"
