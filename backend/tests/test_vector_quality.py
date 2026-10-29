@@ -179,6 +179,9 @@ class VectorQualityGateTest(unittest.TestCase):
             )
             evidence_reader = FileSystemManifestEvidenceReader()
             evidence = evidence_reader.source(str(source), str(md5))
+            self.assertEqual(
+                hashlib.sha256(b"manual-pbf-fixture").hexdigest(), evidence.sha256
+            )
             pmtiles = outputs / f"{stem}.pmtiles"
             write_header(pmtiles, max_zoom=14)
             digest = hashlib.sha512(pmtiles.read_bytes()).hexdigest()
@@ -252,7 +255,7 @@ class VectorQualityGateTest(unittest.TestCase):
             gate = VectorQualityGate(
                 catalog_service(root), configuration, FileSystemPmtilesHeaderReader(),
                 FileSystemVectorQualityReader(), FixedMetadataReader(metadata),
-                FileDigestAdapter(),
+                FileDigestAdapter(), evidence_reader,
             )
             report = gate.verify(
                 region=region, build_date=date, role=Role.BASE, workdir=directory
@@ -264,6 +267,24 @@ class VectorQualityGateTest(unittest.TestCase):
                 )
                 self.assertFalse(failed.passed)
                 self.assertIn("source-evidence", {item.code for item in failed.findings})
+            md5.write_text(
+                f"{hashlib.md5(b'manual-pbf-fixture').hexdigest()}  guangxi-latest.osm.pbf\n",
+                encoding="ascii",
+            )
+            manifest_path = outputs / f"{stem}.manifest.json"
+            original = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for invalid in (None, "0" * 63, "A" * 64):
+                tampered = json.loads(json.dumps(original))
+                tampered["source"]["sha256"] = invalid
+                manifest_path.write_text(json.dumps(tampered), encoding="utf-8")
+                failed = gate.verify(
+                    region=region, build_date=date, role=Role.BASE, workdir=directory
+                )
+                self.assertFalse(failed.passed)
+                self.assertIn(
+                    "manifest-source-sha256", {item.code for item in failed.findings}
+                )
+            manifest_path.write_text(json.dumps(original), encoding="utf-8")
         self.assertTrue(report.passed, report.as_dict())
 
 

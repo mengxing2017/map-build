@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import json
 import os
 import struct
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -175,6 +176,10 @@ class VectorManifestServiceTest(unittest.TestCase):
             self.assertEqual(len(manual.read_bytes()), document["source"]["size_bytes"])
             self.assertEqual(hashlib.md5(manual.read_bytes()).hexdigest(), document["source"]["md5"])
             self.assertEqual(
+                hashlib.sha256(manual.read_bytes()).hexdigest(),
+                document["source"]["sha256"],
+            )
+            self.assertEqual(
                 "local-custom-2026-10-03",
                 document["huavd_record"]["source_revision"],
             )
@@ -186,12 +191,62 @@ class VectorManifestServiceTest(unittest.TestCase):
             self.assertEqual("python", document["tools"]["huavd-map-build"])
             self.assertEqual("20261003.base", document["huavd_record"]["package_version"])
 
-    def test_missing_manual_source_keeps_nullable_lineage_fields(self) -> None:
+    def test_missing_manual_source_is_rejected_instead_of_null_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            evidence = FileSystemManifestEvidenceReader().source(
-                f"{directory}/missing.pbf", f"{directory}/missing.md5"
+            with self.assertRaisesRegex(ValueError, "source PBF is missing"):
+                FileSystemManifestEvidenceReader().source(
+                    f"{directory}/missing.pbf", f"{directory}/missing.md5"
+                )
+
+    def test_missing_source_does_not_overwrite_existing_manifest(self) -> None:
+        root = repository_root(Path(__file__))
+        service = VectorManifestService(
+            catalog_service(root), build_configuration_service(root),
+            FileSystemPmtilesHeaderReader(), FileSystemManifestEvidenceReader(),
+            FixedVersions(), FileDigestAdapter(), JsonManifestWriter(AtomicFileWriter()),
+            lambda: "2026-10-03T00:00:00Z",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            session = "china-guangxi-20261003"
+            output = workspace / f"outputs/{session}.base.pmtiles"
+            output.parent.mkdir()
+            write_header(output)
+            manifest = output.with_suffix(".manifest.json")
+            manifest.write_text('{"schema": "previous"}\n', encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "source PBF is missing"):
+                service.run(ManifestRequest(
+                    RegionId("china/guangxi"), BuildDate("20261003"),
+                    SessionId(session), Role.BASE, directory,
+                ))
+            self.assertEqual(
+                '{"schema": "previous"}\n', manifest.read_text(encoding="utf-8")
             )
-        self.assertEqual(SourceEvidence(None, None, None), evidence)
+
+    def test_optional_source_mode_keeps_derived_manifest_compatible(self) -> None:
+        root = repository_root(Path(__file__))
+        service = VectorManifestService(
+            catalog_service(root), build_configuration_service(root),
+            FileSystemPmtilesHeaderReader(), FileSystemManifestEvidenceReader(),
+            FixedVersions(), FileDigestAdapter(), JsonManifestWriter(AtomicFileWriter()),
+            lambda: "2026-10-03T00:00:00Z",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            session = "china-guangxi-20261003"
+            output = workspace / f"outputs/{session}.base.pmtiles"
+            output.parent.mkdir()
+            write_header(output)
+            manifest = service.run(ManifestRequest(
+                RegionId("china/guangxi"), BuildDate("20261003"),
+                SessionId(session), Role.BASE, directory, require_source=False,
+            ))
+            document = json.loads(Path(manifest).read_text(encoding="utf-8"))
+        self.assertEqual({
+            "vendor": "local", "url": None, "downloaded_at": None,
+            "size_bytes": None, "md5": None, "sha256": None,
+            "osm_timestamp": None,
+        }, document["source"])
 
 
 @contextmanager
@@ -217,7 +272,8 @@ def raster_workspace(region="china/guangxi", vendor="local"):
             "source": {"vendor": vendor,
                        "url": catalog.pbf_url(RegionId(region)) if vendor == "geofabrik" else None,
                        "size_bytes": 3, "downloaded_at": "2026-10-03T00:00:00Z",
-                       "md5": None, "osm_timestamp": "2026-10-02T12:00:00Z"},
+                       "md5": None, "sha256": "e" * 64,
+                       "osm_timestamp": "2026-10-02T12:00:00Z"},
             "output": {"path": f"outputs/{base.name}", "size_bytes": base.stat().st_size,
                        "sha512": hashlib.sha512(base.read_bytes()).hexdigest()},
             "huavd_record": {"name": f"{session}.base", "asset_role": "base-vector",
@@ -257,6 +313,7 @@ class RasterManifestServiceTest(unittest.TestCase):
                 self.assertEqual(request.manifest_path, service.run(request))
                 document = json.loads(Path(request.manifest_path).read_text())
                 self.assertEqual(base_document["source"], document["source"])
+                self.assertEqual("e" * 64, document["source"]["sha256"])
                 self.assertEqual(revision, document["huavd_record"]["source_revision"])
                 self.assertEqual(2, document["raster_bake"]["plan"]["requested_tile_count"])
                 self.assertEqual(["road", "water"], document["raster_bake"]["base_input"]["vector_layers"])
@@ -270,7 +327,8 @@ class RasterManifestServiceTest(unittest.TestCase):
             ("huavd_record.source_revision", ""),
             ("output.sha512", "0" * 128), ("output.size_bytes", 1),
             ("source.vendor", "unknown"), ("source.url", "https://example.test/other"),
-            ("source.md5", "invalid"),
+            ("source.md5", "invalid"), ("source.sha256", None),
+            ("source.sha256", "0" * 63), ("source.sha256", "A" * 64),
         )
         for key, value in changes:
             with self.subTest(key=key), raster_workspace() as fixture:
@@ -281,3 +339,102 @@ class RasterManifestServiceTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     service.run(request)
                 self.assertFalse(Path(request.manifest_path).exists())
+
+
+class DerivedManifestShellEntrypointTest(unittest.TestCase):
+    def test_shell_entry_allows_missing_source_for_derived_lineage(self) -> None:
+        root = repository_root(Path(__file__))
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            session = "china-guangxi-20261003"
+            output = workspace / f"outputs/{session}.base.pmtiles"
+            output.parent.mkdir()
+            write_header(output, max_zoom=14)
+            environment = {
+                key: value for key, value in os.environ.items()
+                if key not in {"HUAVD_MAP_BUNDLE_ID", "HUAVD_MAP_ACTIVATION"}
+            }
+            result = subprocess.run(
+                ["bash", "scripts/manifest.sh", "--region=china/guangxi",
+                 "--yyyymmdd=20261003", "--role=base",
+                 f"--workdir={directory}", "--allow-missing-source"],
+                cwd=root, text=True, capture_output=True, timeout=120, env=environment,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            document = json.loads(
+                (workspace / f"outputs/{session}.base.manifest.json").read_text()
+            )
+        self.assertEqual("local", document["source"]["vendor"])
+        self.assertIsNone(document["source"]["sha256"])
+
+
+class RasterManifestShellEntrypointTest(unittest.TestCase):
+    def test_shell_entry_forwards_to_canonical_service(self) -> None:
+        root = repository_root(Path(__file__))
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            session = "china-guangxi-20261003"
+            source = workspace / f"staging/{session}/source.osm.pbf"
+            source.parent.mkdir(parents=True)
+            source.write_bytes(b"local-pbf-fixture")
+            sha256 = hashlib.sha256(source.read_bytes()).hexdigest()
+            outputs = workspace / "outputs"
+            outputs.mkdir()
+            base = outputs / f"{session}.base.pmtiles"
+            write_header(base, 0, 15)
+            base_source = {
+                "vendor": "local", "url": None,
+                "size_bytes": len(source.read_bytes()),
+                "downloaded_at": "2026-10-03T00:00:00Z", "md5": None,
+                "sha256": sha256, "osm_timestamp": None,
+            }
+            (outputs / f"{session}.base.manifest.json").write_text(json.dumps({
+                "schema": "huavd-map-build/v1", "region": "china/guangxi",
+                "yyyymmdd": "20261003", "vector_layers": ["road"],
+                "source": base_source,
+                "output": {"path": f"outputs/{base.name}",
+                           "size_bytes": base.stat().st_size,
+                           "sha512": hashlib.sha512(base.read_bytes()).hexdigest()},
+                "huavd_record": {
+                    "asset_role": "base-vector", "source_type": "osm-pbf",
+                    "source_revision": "local-fixture-2026-10-03",
+                },
+            }), encoding="utf-8")
+            cache = workspace / f"cache/bake/{session}"
+            cache.mkdir(parents=True)
+            (cache / "plan.json").write_text(json.dumps({
+                "tile_count": 2,
+                "tiles_by_zoom": [{"zoom": 3, "x_range": [1, 1],
+                                   "y_range": [1, 2], "tile_count": 2}],
+                "bounds": [100, 20, 110, 30], "bbox_padding_tiles": 1,
+            }), encoding="utf-8")
+            (cache / "tiles.tsv").write_text("3\t1\t1\n3\t1\t2\n", encoding="utf-8")
+            (cache / "inputs.sha512").write_text("fingerprint\n", encoding="utf-8")
+            (cache / "parameters.json").write_text(
+                json.dumps({"effective": {"tile_size": 256}}), encoding="utf-8"
+            )
+            candidate = outputs / f"{session}.raster_bake.pmtiles"
+            write_header(candidate, 3, 8, tile_type=4, tile_compression=1, tile_count=2)
+            environment = {
+                key: value for key, value in os.environ.items()
+                if key not in {"HUAVD_MAP_BUNDLE_ID", "HUAVD_MAP_ACTIVATION"}
+            }
+            result = subprocess.run(
+                ["bash", "scripts/manifest.sh", "--region=china/guangxi",
+                 "--yyyymmdd=20261003", "--role=raster_bake",
+                 f"--workdir={directory}"],
+                cwd=root, text=True, capture_output=True, timeout=120, env=environment,
+                check=False,
+            )
+            self.assertEqual(0, result.returncode, result.stderr)
+            document = json.loads(
+                (outputs / f"{session}.raster_bake.manifest.json").read_text()
+            )
+        self.assertEqual(base_source, document["source"])
+        self.assertEqual(sha256, document["source"]["sha256"])
+        self.assertEqual("python", document["tools"]["huavd-map-build"])
+        self.assertEqual(2, document["raster_bake"]["tile_count"])
+        self.assertEqual(
+            "fingerprint", document["raster_bake"]["plan"]["input_fingerprint"]
+        )
