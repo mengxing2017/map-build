@@ -26,7 +26,7 @@ def sha256(path: Path) -> str:
 
 
 class RouteWeftProcess:
-    def __init__(self, binary: Path, expected_sha256: str, *, limit: int = 4 * 1024 * 1024,
+    def __init__(self, binary: Path, expected_sha256: str, *, limit: int = 32 * 1024 * 1024,
                  commit: str | None = None, require_build_identity: bool = False):
         if not binary.is_absolute() or not binary.is_file() or not os.access(binary, os.X_OK):
             raise RouteWeftError('ROUTEWEFT_BIN must be an absolute executable file')
