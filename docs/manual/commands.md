@@ -191,7 +191,7 @@ make build-derived-map DERIVED_MAP=new-country-base YYYYMMDD=20260818
 | `./scripts/normalize.sh` | `--region=<id> [--layers=all\|layer[,layer...]] [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
 | `./scripts/tippecanoe.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
 | `./scripts/metadata.sh` | `--pmtiles=<path> --region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
-| `./scripts/manifest.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
+| `./scripts/manifest.sh` | `--region=<id> --role=<base\|building\|raster_bake> [--workdir=<path>] [--yyyymmdd=YYYYMMDD] [--allow-missing-source]` |
 | `./scripts/attribution.sh` | `--region=<id> --role=<base\|building> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]` |
 | `./scripts/profile-transform.sh` | `--region=<id> --layers=<layer[,layer...]> [--workdir=<path>] [--yyyymmdd=YYYYMMDD]`；通常仅由 `build.sh` 在 profile region 中调用 |
 
