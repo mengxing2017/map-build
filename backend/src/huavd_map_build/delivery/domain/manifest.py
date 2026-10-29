@@ -1,10 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from huavd_map_build.delivery.domain.metadata import PmtilesHeader
 from huavd_map_build.shared.kernel import BuildDate, RegionId, Role, SessionId
+
+
+_SHA256 = re.compile(r"[0-9a-f]{64}")
+
+
+def valid_source_sha256(value: object) -> bool:
+    return isinstance(value, str) and _SHA256.fullmatch(value) is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +24,7 @@ class ManifestRequest:
     workdir: str
     bundle_id: str | None = None
     activation: str = "manual"
+    require_source: bool = True
 
 
 @dataclass(frozen=True, slots=True)

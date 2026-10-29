@@ -5,7 +5,7 @@ from datetime import datetime
 import re
 from typing import Any
 
-from huavd_map_build.delivery.domain.manifest import SourceEvidence
+from huavd_map_build.delivery.domain.manifest import SourceEvidence, valid_source_sha256
 from huavd_map_build.delivery.domain.metadata import PmtilesHeader
 
 
@@ -108,7 +108,8 @@ def verify_vector_contract(
     build_id = manifest.get("build_id")
     check("manifest-build-time", _is_utc_timestamp(build_id),
           "manifest build id is not a valid UTC timestamp")
-    source = manifest.get("source", {})
+    source = manifest.get("source")
+    source = source if isinstance(source, dict) else {}
     check("manifest-source",
           source == {
               "vendor": expectations.source_vendor, "url": expectations.source_url,
@@ -118,6 +119,10 @@ def verify_vector_contract(
               "sha256": expectations.source_evidence.sha256,
               "osm_timestamp": None,
           }, "manifest source evidence does not match the configured input")
+    check("manifest-source-sha256",
+          valid_source_sha256(source.get("sha256"))
+          and valid_source_sha256(expectations.source_evidence.sha256),
+          "manifest source SHA-256 is missing or invalid")
     check("manifest-size", manifest.get("output", {}).get("size_bytes") == actual_size,
           "manifest output size does not match PMTiles")
     check("manifest-sha512", manifest.get("output", {}).get("sha512") == actual_sha512,

@@ -6,6 +6,7 @@ from huavd_map_build.delivery.north.local.source import (
     source_revision,
 )
 from huavd_map_build.delivery.south.port.digest import DigestPort
+from huavd_map_build.delivery.south.port.manifest import ManifestEvidenceReader
 from huavd_map_build.delivery.south.port.metadata import PmtilesHeaderReader
 from huavd_map_build.quality.domain.vector import (
     QualityFinding,
@@ -25,10 +26,12 @@ class VectorQualityGate:
         self, catalog: CatalogService, configuration: BuildConfigurationService,
         headers: PmtilesHeaderReader, files: VectorQualityFileReader,
         metadata: EmbeddedMetadataReader, digest: DigestPort,
+        evidence: ManifestEvidenceReader,
     ) -> None:
         self._catalog, self._configuration = catalog, configuration
         self._headers, self._files = headers, files
         self._metadata, self._digest = metadata, digest
+        self._evidence = evidence
 
     def verify(
         self, *, region: RegionId, build_date: BuildDate, role: Role, workdir: str
@@ -62,7 +65,7 @@ class VectorQualityGate:
         try:
             source = resolve_source(
                 self._catalog, region=region, workdir=workdir,
-                session=paths.identity.session,
+                session=paths.identity.session, evidence=self._evidence,
             )
         except ValueError as error:
             return VectorQualityReport((QualityFinding("source-evidence", str(error)),))

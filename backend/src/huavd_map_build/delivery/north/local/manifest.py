@@ -51,7 +51,8 @@ class VectorManifestService:
         header = self._headers.read(pmtiles)
         source = resolve_source(
             self._catalog, region=request.region, workdir=request.workdir,
-            session=request.session,
+            session=request.session, evidence=self._evidence,
+            require_source=request.require_source,
         )
         settings = self._catalog.region_settings(
             request.region, request.role.value, request.build_date.value
@@ -159,7 +160,10 @@ class RasterManifestService:
             output_size=self._evidence.size(request.pmtiles_path),
             sha512=self._digest.sha512(request.pmtiles_path),
             source_vendor=source["vendor"], source_url=source["url"],
-            evidence=SourceEvidence(source["size_bytes"], source["downloaded_at"], source["md5"]),
+            evidence=SourceEvidence(
+                source["size_bytes"], source["downloaded_at"], source["md5"],
+                source["sha256"],
+            ),
             tools=self._versions.versions(("osmium", "tippecanoe", "pmtiles")),
             source_id=str(settings.get("source_id") or ""),
             offline_map_id=str(settings.get("region_id") or ""),

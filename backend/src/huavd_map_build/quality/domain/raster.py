@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from huavd_map_build.delivery.domain.manifest import valid_source_sha256
 from huavd_map_build.delivery.domain.metadata import PmtilesHeader
 from huavd_map_build.delivery.domain.attribution import AttributionDocument
 from huavd_map_build.quality.domain.vector import QualityFinding
@@ -55,8 +56,11 @@ def verify_raster_contract(
             findings.append(QualityFinding(code, detail))
 
     source = manifest.get("source")
+    source = source if isinstance(source, dict) else {}
     check("source-base-consistency", source == expectations.base_source,
           "raster source must equal verified base source")
+    check("source-sha256", valid_source_sha256(source.get("sha256")),
+          "raster source SHA-256 is missing or invalid")
     try:
         if not isinstance(source, dict) or "vendor" not in source or "url" not in source:
             raise ValueError("raster manifest source is incomplete")

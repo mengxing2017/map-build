@@ -433,7 +433,7 @@ def vector_quality_gate(root: Path | None = None) -> VectorQualityGate:
         catalog_service(resolved_root), build_configuration_service(resolved_root),
         FileSystemPmtilesHeaderReader(),
         FileSystemVectorQualityReader(), ProcessPmtilesMetadataReader(),
-        FileDigestAdapter(),
+        FileDigestAdapter(), FileSystemManifestEvidenceReader(),
     )
 
 
