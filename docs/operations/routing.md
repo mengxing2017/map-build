@@ -73,6 +73,32 @@ backend/tests/fixtures/routing/nanning-audit.yaml 仅用于固定南宁切片的
 
 ## 验证与当前限制
 
+### 新版转向审计兼容与预算
+
+RouteWeft alpha.2 的完整审计报告可超过旧版 256 条限制。本项目按新版
+`restriction_audit` 校验完整扫描、无截断、观察/保留数量、实际序列化字节数、
+限额和完成轮次，并按 `(attempt, relation_id)` 校验诊断顺序及唯一性。
+固定硬边界为 32,768 条、16 MiB 审计 JSON、64 MiB 逻辑内存计费和 257 轮，
+不信任报告自行声明的更大限额。未携带新版摘要的旧报告仍限 256 条。
+单条诊断的成员上限与 maxspeed 审计边界不变。进程 stdout/stderr 各自有
+32 MiB 上限，以容纳审计及结果包络；超限仍终止子进程并拒绝发布。
+
+显式 `ROUTING_CONFIG` / `--config` 区域配置可选以下字段（普通入口继续使用工具默认值）：
+
+```yaml
+max_restriction_diagnostics: 8192   # 1..32768，工具默认 4096
+max_restriction_audit_bytes: 16777216  # 1..16777216
+max_blockways_attempts: 80         # 1..257，仅用于 block_ways，工具默认 64
+```
+
+以上字段传给 full preflight 与 build；external 路径由 build 执行验证。
+配置越界或工具未声明所需预算能力时，在建图前拒绝执行。增加预算不能解决
+缺少安全 from/to 成员等关系语义错误，也不能绕过 verify、审计及 smoke 门禁。
+
+`restriction_review.diagnostics[]` 可增加 `attempt` 以审核具体轮次；一旦使用，
+所有条目都须显式填写。未填写轮次的旧审查配置仍按完整的关系/错误列表比较，
+不会自动去重跨轮次事件。
+
 ```bash
 PYTHONPATH=backend/src python3 -m unittest discover -s backend/tests -p test_routing.py -v
 ROUTEWEFT_TEST_BIN=/absolute/routeweft ROUTEWEFT_TEST_SHA256=<sha256> PYTHONPATH=backend/src python3 -m unittest discover -s backend/tests -p test_routing.py -v
