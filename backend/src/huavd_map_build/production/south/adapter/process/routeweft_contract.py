@@ -1,7 +1,52 @@
 """Validate the locked CLI capabilities and bounded build audit contract."""
 import re
 import math
+import json
 from huavd_map_build.production.south.port.routeweft import RouteWeftError
+
+
+AUDIT_LIMITS = {'max_restriction_diagnostics': ('max_records', 32768),
+                'max_restriction_audit_bytes': ('max_bytes', 16 * 1024**2),
+                'max_blockways_attempts': ('max_blockways_attempts', 257)}
+
+
+def restriction_audit_summary(report, diagnostics):
+    """Validate new summaries without trusting their declared resource bounds."""
+    summary = report.get('restriction_audit')
+    if summary is None:
+        # Legacy reports remain readable, within the original bound only.
+        if len(diagnostics) > 256:
+            raise RouteWeftError('missing restriction audit summary')
+        return None
+    if not isinstance(summary, dict):
+        raise RouteWeftError('invalid restriction audit summary')
+    limits = summary.get('limits')
+    bounds = {'max_diagnostics': 32768, 'max_audit_bytes': 16 * 1024**2,
+              'max_blockways_attempts': 257}
+    if not isinstance(limits, dict) or any(
+            type(limits.get(k)) is not int or not 0 < limits[k] <= bound
+            for k, bound in bounds.items()):
+        raise RouteWeftError('invalid restriction audit limits')
+    for key in ('attempt', 'attempts_completed', 'records_observed', 'records_retained',
+                'retained_bytes', 'retained_memory_bytes'):
+        if type(summary.get(key)) is not int or summary[key] < 0:
+            raise RouteWeftError('invalid restriction audit counters')
+    if (summary.get('scan_complete') is not True or summary.get('truncated') is not False
+            or not 0 < summary['attempt'] <= limits['max_blockways_attempts']
+            or summary['attempts_completed'] != summary['attempt']
+            or summary['records_observed'] != len(diagnostics)
+            or summary['records_retained'] != len(diagnostics)
+            or len(diagnostics) > limits['max_diagnostics']
+            or summary['retained_memory_bytes'] > 64 * 1024**2):
+        raise RouteWeftError('incomplete or over-budget restriction audit')
+    try:
+        size = sum(len(json.dumps(item, ensure_ascii=False, separators=(',', ':'),
+                                  allow_nan=False).encode('utf-8')) for item in diagnostics)
+    except (TypeError, ValueError, UnicodeError) as error:
+        raise RouteWeftError('invalid restriction audit serialization') from error
+    if size != summary['retained_bytes'] or size > limits['max_audit_bytes']:
+        raise RouteWeftError('restriction audit byte count mismatch')
+    return summary
 
 
 def capabilities(tool):
@@ -60,13 +105,16 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None, ma
     blocked, diagnostics = report.get('blocked_way_ids'), report.get('restriction_diagnostics')
     if (not isinstance(blocked, list) or len(blocked) > 2_000_000
             or any(type(v) is not int for v in blocked) or len(set(blocked)) != len(blocked)
-            or not isinstance(diagnostics, list) or len(diagnostics) > 256):
+            or not isinstance(diagnostics, list) or len(diagnostics) > 32768):
         raise RouteWeftError('invalid restriction audit')
+    summary = restriction_audit_summary(report, diagnostics)
     codes = {'MissingVia', 'MissingFromTo', 'MissingReference', 'InvalidMemberType',
              'UnsupportedMultiplicity', 'UnsupportedViaShape', 'UnsupportedRestriction',
              'UnresolvedRestriction', 'RestrictionLimitExceeded'}
     observed = []
+    review_attempts = review is not None and any('attempt' in d for d in review['diagnostics'])
     relation_ids, member_ways = set(), set()
+    previous = None
     for item in diagnostics:
         if (not isinstance(item, dict) or type(item.get('relation_id')) is not int
                 or item.get('code') not in codes or item.get('action') != 'blocked_ways'
@@ -74,9 +122,18 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None, ma
                 or not isinstance(item.get('members'), list) or len(item['members']) > 256
                 or not isinstance(item.get('tags'), dict)):
             raise RouteWeftError('invalid or incomplete restriction diagnostic')
-        if item['relation_id'] in relation_ids:
+        identity = item['relation_id']
+        if summary is not None:
+            attempt = item.get('attempt')
+            if type(attempt) is not int or not 0 < attempt <= summary['attempt']:
+                raise RouteWeftError('invalid restriction diagnostic attempt')
+            identity = (attempt, item['relation_id'])
+            if previous is not None and identity <= previous:
+                raise RouteWeftError('unordered restriction diagnostics')
+            previous = identity
+        if identity in relation_ids:
             raise RouteWeftError('duplicate restriction diagnostic')
-        relation_ids.add(item['relation_id'])
+        relation_ids.add(identity)
         for member in item['members']:
             if (not isinstance(member, dict) or type(member.get('id')) is not int
                     or member.get('kind') not in ('node', 'way', 'relation', 'unknown')
@@ -84,7 +141,10 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None, ma
                 raise RouteWeftError('invalid restriction member')
             if member['kind'] == 'way':
                 member_ways.add(member['id'])
-        observed.append({'relation_id': item['relation_id'], 'code': item['code']})
+        entry = {'relation_id': item['relation_id'], 'code': item['code']}
+        if review_attempts:
+            entry['attempt'] = item.get('attempt')
+        observed.append(entry)
     if (counts.get('invalid_restrictions_blocked', 0) != len(diagnostics)
             or counts.get('invalid_restriction_ways_blocked', 0) != len(blocked)):
         raise RouteWeftError('restriction audit count mismatch')
@@ -95,8 +155,8 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None, ma
         raise RouteWeftError('strict build contains blocked restrictions')
     if policy == 'block_ways' and review is not None:
         if (sorted(blocked) != sorted(review['blocked_way_ids'])
-                or sorted(observed, key=lambda x: (x['relation_id'], x['code'])) != sorted(
-                    review['diagnostics'], key=lambda x: (x['relation_id'], x['code']))):
+                or sorted(observed, key=lambda x: (x.get('attempt', 0), x['relation_id'], x['code'])) != sorted(
+                    review['diagnostics'], key=lambda x: (x.get('attempt', 0), x['relation_id'], x['code']))):
             raise RouteWeftError('restriction audit differs from reviewed policy')
     return report
 
