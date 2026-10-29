@@ -83,10 +83,29 @@ class BundleServiceTest(unittest.TestCase):
     def test_source_mismatch_refuses_archive(self):
         self._pack('both', mismatch=True)
 
+    def test_missing_map_source_sha256_refuses_archive(self):
+        self._pack('both', map_sha=None)
+
+    def test_absent_map_source_block_refuses_archive(self):
+        self._pack('both', map_source_missing=True)
+
+    def test_invalid_map_source_sha256_refuses_archive(self):
+        self._pack('both', map_sha='A' * 64)
+
+    def test_joint_package_requires_building_fingerprint(self):
+        self._pack('both', building=True, building_sha=None)
+
+    def test_building_source_mismatch_refuses_joint_archive(self):
+        self._pack('both', building=True, building_sha='c' * 64)
+
+    def test_joint_package_accepts_matching_building_fingerprint(self):
+        self._pack('both', building=True)
+
     def test_missing_routing_refuses_archive(self):
         self._pack('both', missing=True)
 
-    def _pack(self, role, mismatch=False, missing=False):
+    def _pack(self, role, mismatch=False, missing=False, map_sha='a' * 64,
+              map_source_missing=False, building=False, building_sha='a' * 64):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             outputs = root / "outputs"
@@ -100,7 +119,7 @@ class BundleServiceTest(unittest.TestCase):
                 f"{digest}  {stem}.pmtiles\n", encoding="ascii"
             )
             manifest = {
-                "source": {"sha256": "a" * 64},
+                "source": {"sha256": map_sha},
                 "region": "china/guangxi", "build_id": "2026-08-18T00:00:00Z",
                 "output": {"sha512": digest, "tile_range": {
                     "min_zoom": 0, "max_zoom": 14, "bounds": [104, 20, 113, 27]
@@ -116,7 +135,28 @@ class BundleServiceTest(unittest.TestCase):
                 },
             }
             (outputs / f"{stem}.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            if map_source_missing:
+                manifest.pop("source")
+                (outputs / f"{stem}.manifest.json").write_text(
+                    json.dumps(manifest), encoding="utf-8"
+                )
             (outputs / f"{stem}.attribution.json").write_text("{}\n", encoding="utf-8")
+            if building:
+                building_stem = f"{session}.building"
+                building_manifest = json.loads(json.dumps(manifest))
+                building_manifest["source"]["sha256"] = building_sha
+                building_manifest["huavd_record"].update({
+                    "id": "cn-45-building", "name": building_stem,
+                    "package_version": "20260818.building",
+                    "asset_role": "building-vector",
+                })
+                for suffix in ("pmtiles", "pmtiles.sha512", "attribution.json"):
+                    (outputs / f"{building_stem}.{suffix}").write_bytes(
+                        (outputs / f"{stem}.{suffix}").read_bytes()
+                    )
+                (outputs / f"{building_stem}.manifest.json").write_text(
+                    json.dumps(building_manifest), encoding="utf-8"
+                )
             for style in ("style.json", "style-raster.json"):
                 path = outputs / f"{session}.{style}"
                 path.write_text("{}\n", encoding="utf-8")
@@ -148,7 +188,10 @@ class BundleServiceTest(unittest.TestCase):
                 RegionId("china/guangxi"), BuildDate("20260818"), SessionId(session),
                 role, directory, "both",
             )
-            if mismatch or missing:
+            refused = (mismatch or missing or map_sha != 'a' * 64
+                       or map_source_missing
+                       or (building and building_sha != 'a' * 64))
+            if refused:
                 with self.assertRaises(ValueError):
                     service.run(request)
                 self.assertFalse((outputs / f'{session}.bundle.zip').exists())
@@ -177,10 +220,15 @@ class BundleServiceTest(unittest.TestCase):
             with tarfile.open(outputs / f'{session}.bundle.tar.gz') as package:
                 self.assertIn('./routing/graph.bin', package.getnames())
 
-        self.assertEqual(2 if role == "base_raster" else 1, result["copied_roles"])
+        self.assertEqual(
+            2 if role == "base_raster" else 1 + int(building), result["copied_roles"]
+        )
         self.assertEqual("huavd-map-install/v1", install["schema_version"])
         self.assertIn("base-vector", [item["asset-role"] for item in install["offline_maps"]])
-        self.assertEqual(["standard"], install["bundles"][0]["supported-presentations"])
+        self.assertEqual(
+            ["standard"] + (["standard-buildings"] if building else []),
+            install["bundles"][0]["supported-presentations"],
+        )
         self.assertIn("install.json", members)
         self.assertIn("package.json", members)
         self.assertIn("routing/graph.bin", members)
