@@ -102,6 +102,16 @@ class RoutingService:
         self.policy = self.config.get('invalid_restrictions', 'reject')
         if self.policy not in ('reject', 'block_ways'):
             raise RouteWeftError('invalid restriction policy; use reject or block_ways')
+        from huavd_map_build.production.south.adapter.process.routeweft_contract import AUDIT_LIMITS
+        self.audit_args = []
+        for key, (_, maximum) in AUDIT_LIMITS.items():
+            if key in self.config:
+                value = self.config[key]
+                if type(value) is not int or not 0 < value <= maximum:
+                    raise RouteWeftError(f'invalid {key}')
+                if key == 'max_blockways_attempts' and self.policy != 'block_ways':
+                    raise RouteWeftError('max_blockways_attempts requires block_ways')
+                self.audit_args += ['--' + key.replace('_', '-'), str(value)]
         self.review = self.config.get('restriction_review')
         if self.review is not None:
             if (not isinstance(self.review, dict) or not isinstance(self.review.get('reason'), str)
@@ -113,6 +123,10 @@ class RoutingService:
                     or any(not isinstance(d, dict) or type(d.get('relation_id')) is not int
                            or not isinstance(d.get('code'), str) for d in self.review['diagnostics'])):
                 raise RouteWeftError('restriction_review must be explicit and complete')
+            if any('attempt' in d for d in self.review['diagnostics']) and any(
+                    type(d.get('attempt')) is not int or not 0 < d['attempt'] <= 257
+                    for d in self.review['diagnostics']):
+                raise RouteWeftError('restriction_review attempts must be explicit and complete')
             if not self.config.get('source_sha256'):
                 raise RouteWeftError('restriction_review requires a reviewed source SHA-256')
         for key in ('build_timeout_s', 'verify_timeout_s', 'query_timeout_s'):
@@ -338,9 +352,17 @@ class RoutingService:
                 from huavd_map_build.production.south.adapter.process.routeweft_input import provenance
                 input_provenance = provenance(frozen)
                 version = capabilities(self.tool)
+                if self.audit_args:
+                    from huavd_map_build.production.south.adapter.process.routeweft_contract import AUDIT_LIMITS
+                    audit_caps = version.get('capabilities', {}).get('restriction_audit', {})
+                    if not isinstance(audit_caps, dict) or any(
+                            type(audit_caps.get(cap)) is not int
+                            or audit_caps[cap] < self.config[key]
+                            for key, (cap, _) in AUDIT_LIMITS.items() if key in self.config):
+                        raise RouteWeftError('RouteWeft lacks requested restriction audit capacity')
                 arguments = ['--input', str(frozen), '--profile', 'driving',
                              '--invalid-restrictions', self.policy,
-                             '--invalid-maxspeed', self.maxspeed_policy, '--json']
+                             '--invalid-maxspeed', self.maxspeed_policy, '--json', *self.audit_args]
                 dataset = attempt / 'dataset'
                 if self.external:
                     caps = version.get('capabilities', {})
