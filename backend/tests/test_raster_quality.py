@@ -30,7 +30,7 @@ class RasterQualityDomainTest(unittest.TestCase):
             base_file="china-guangxi-20261003.base.pmtiles",
             base_sha512="b" * 128, plan_sha512="c" * 128,
             tiles_sha512="d" * 128, input_fingerprint="fingerprint",
-            base_source={"vendor": "local", "url": None},
+            base_source={"vendor": "local", "url": None, "sha256": "e" * 64},
             source_revision="local-custom-2026-10-03",
         )
 
@@ -71,6 +71,44 @@ class RasterQualityDomainTest(unittest.TestCase):
             expectations=expected,
         )
         self.assertTrue(report.passed, report.as_dict())
+
+    def test_reports_missing_source_sha256(self) -> None:
+        expected = self.expectations()
+        header = PmtilesHeader(
+            4, 1, 3, 8, (100, 20, 110, 30), addressed_tiles_count=2
+        )
+        metadata = {
+            "name": expected.stem, "format": "webp",
+            "huavd:region": expected.region,
+            "huavd:source-id": expected.source_id,
+            "huavd:asset-role": "raster-baked", "vector_layers": [],
+            "huavd:raster-encoding": "webp", "huavd:tile-count": 2,
+            "huavd:raster-tile-size": 256, "minzoom": 3, "maxzoom": 8,
+            "bounds": [100, 20, 110, 30],
+        }
+        manifest = {
+            "source": {"vendor": "local", "url": None, "sha256": None},
+            "huavd_record": {"source_revision": expected.source_revision},
+            "output": {"path": expected.output_path, "size_bytes": 127,
+                       "sha512": "a" * 128},
+            "vector_layers": [],
+            "raster_bake": {
+                "encoding": "webp", "tile_count": 2, "tile_size": 256,
+                "tile_type": 4, "tile_compression": 1,
+                "base_input": {"file": expected.base_file,
+                               "sha512": "b" * 128},
+                "plan": {"plan_sha512": "c" * 128,
+                         "tiles_sha512": "d" * 128,
+                         "input_fingerprint": "fingerprint",
+                         "requested_tile_count": 2},
+            },
+        }
+        report = verify_raster_contract(
+            header=header, metadata=metadata, manifest=manifest,
+            attribution=AttributionDocument.osm("local", None).as_dict(),
+            expectations=expected,
+        )
+        self.assertIn("source-sha256", {item.code for item in report.findings})
 
     def test_reports_independent_header_and_plan_failures(self) -> None:
         report = verify_raster_contract(
@@ -121,6 +159,16 @@ class RasterQualityGateTest(unittest.TestCase):
                 report = self.verify(request)
                 self.assertTrue(report.passed, report.as_dict())
 
+    def test_keeps_base_lineage_when_staged_pbf_is_gone(self) -> None:
+        with raster_workspace() as fixture:
+            service, request, _base, document = fixture
+            staged = Path(request.workdir) / f"staging/{request.session.value}/source.osm.pbf"
+            staged.unlink()
+            service.run(request)
+            self.write_attribution(request, document["source"])
+            report = self.verify(request)
+            self.assertTrue(report.passed, report.as_dict())
+
     def test_rejects_raster_source_attribution_and_revision_tampering(self) -> None:
         changes = (("source", {"vendor": "local", "url": None}, "source-base-consistency"),
                    ("source", {"vendor": "geofabrik", "url": None}, "attribution-contract"),
@@ -144,7 +192,8 @@ class RasterQualityGateTest(unittest.TestCase):
 
     def test_rejects_base_tampering_after_candidate_was_written(self) -> None:
         for key, value in (("region", "wrong"), ("output.sha512", "0" * 128),
-                           ("output.size_bytes", 1), ("source.vendor", "unknown")):
+                           ("output.size_bytes", 1), ("source.vendor", "unknown"),
+                           ("source.sha256", None), ("source.sha256", "A" * 64)):
             with self.subTest(key=key), raster_workspace() as fixture:
                 service, request, base, document = fixture
                 service.run(request)
