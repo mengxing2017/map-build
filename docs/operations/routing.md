@@ -73,16 +73,52 @@ backend/tests/fixtures/routing/nanning-audit.yaml 仅用于固定南宁切片的
 
 ## 验证与当前限制
 
+### 标准构建与联合包的显式审核配置
+
+Make 的 `ROUTING_AUDIT_CONFIG` 可将同一审核配置传给标准 build、verify、pack，
+以及独立路由 targets。未指定时使用区域目录的默认策略；当前默认与 RouteWeft 一致，为 `quarantine_ways`。
+相对配置路径按项目根解析；相对 INPUT 仍按 WORKDIR 解析。
+
+```bash
+make build REGION=china/guangdong YYYYMMDD=20261028 ROLE=base \
+  WORKDIR=/tmp/guangdong-audited INPUT=/absolute/verified-source.osm.pbf \
+  ROUTING_AUDIT_CONFIG=/absolute/reviewed-fixed-sha.yaml
+make verify REGION=china/guangdong YYYYMMDD=20261028 ROLE=base \
+  WORKDIR=/tmp/guangdong-audited ROUTING_AUDIT_CONFIG=/absolute/reviewed-fixed-sha.yaml
+make pack REGION=china/guangdong YYYYMMDD=20261028 ROLE=base FORMAT=both \
+  WORKDIR=/tmp/guangdong-audited ROUTING_AUDIT_CONFIG=/absolute/reviewed-fixed-sha.yaml
+```
+
+配置必须绑定实际输入 SHA；现有固定广东配置仅适用于其声明的 d942… 样本，
+不能用于 0e9e… 输入。标准 build 在地图重任务前执行 `routing check`，核对配置、
+输入 SHA 与工具能力，不提前建图；建图时仍冻结并重新检查输入。
+标准 verify 对包含路由的地图角色同时核验 routing ready。
+
+直接脚本 build/pack 支持 `--routing-audit-config=<path>` 并传给 Make；
+直接脚本 verify 仅在显式传入该参数时追加路由校验，内部地图阶段校验仍保持地图范围。
+Python 打包入口为 `artifact pack --routing-audit-config=<path>`；独立路由 CLI
+继续使用 `--config`。联合打包使用同一配置检查 ready 并对复制后的图执行 verify/smoke。
+遗漏或更换审核配置会导致身份不匹配，必须用正确配置重验或重建。
+独立路由审核包仍为 `installable=false`，联合包继续使用原安装协议。
+
+构建失败时，attempt 目录保留 `failure.json` 原始响应、`failure-summary.json`
+定位摘要和 `process-log.json`。`NoSafeFromToMember` 表示当前策略无法安全处理关系，
+应核对源成员或显式选择受审查的隔离配置；增加预算不能补全角色。
+隔离通过只表明技术门禁通过，覆盖损失和全省路线质量仍需单独验收。
+
 ### 新版转向审计兼容与预算
 
-升级到锁定的 `5fdb38ce` 后，报告区分 `planned_blocked_way_ids` 与
+指定广东样本的普通入口全量结果见[默认隔离验收报告](../../report/routeweft-guangdong-default-quarantine-validation-20261030.md)。
+
+当前锁定工具为 `75261cab`；自 `5fdb38ce` 起，报告区分 `planned_blocked_way_ids` 与
 `applied_blocked_way_ids`，并通过 `blockways_failure` 返回不可恢复关系。
 本项目只接受计划集合、已应用集合和旧别名一致且没有 blocker 的成功报告；
 ready 和审核包保留集合，消费时再次核验。阶段耗时 `build_metrics` 保留在回执中，
 但不参与同一数据集重复构建的确定性审计比较。
 
-普通入口仍采用目录中的 `block_ways` 策略。需要隔离结构异常关系时，可显式配置
-`invalid_restrictions: quarantine_ways`，同时必须填写匹配输入的 `source_sha256`。
+普通入口采用目录中的 `quarantine_ways` 策略，按本次实际输入冻结并记录 SHA，
+无需额外审核文件。显式审核配置选择 `quarantine_ways` 时，仍必须填写匹配输入的
+`source_sha256`。`reject` 和 `block_ways` 保留为可选的严格或旧封路策略。
 这是一种可能降低覆盖和可达性的独立策略，不推断空角色，不表示源数据已修复。
 本项目检查工具支持、政策标记、完整审计和最终排除集合，并额外调用 `coverage`
 确认被排除道路的残留边数为零；覆盖结果与 smoke 一起保存，打包时重验。
@@ -146,15 +182,16 @@ ROUTEWEFT_TEST_BIN=/absolute/routeweft ROUTEWEFT_TEST_SHA256=<sha256> PYTHONPATH
 ```yaml
 routing:
   invalid_maxspeed: use_default
-  invalid_restrictions: block_ways
+  invalid_restrictions: quarantine_ways
 ```
 
 - `invalid_maxspeed: use_default`：无法解析的通用限速使用道路类别默认速度估算成本，方向限速回退到已解析的通用速度。有效限速保持上游语义。默认速度不代表核实后的法定限速。设为 `reject` 可要求严格拒绝。
+- `invalid_restrictions: quarantine_ways`：默认隔离依赖可界定的异常关系的全部现存 way 成员，包括空 from/to 角色，不猜测角色；迭代重建并保留完整审计和排除清单。未知或嵌套依赖等不可安全界定情况仍拒绝。普通构建冻结实际输入并记录 SHA，显式审核文件另外要求固定 SHA。
 - `invalid_restrictions: block_ways`：由上游根据当前输入识别异常转向关系，保守排除其现存关联道路并重建图；不忽略限制，不猜测缺失转向。无法安全排除时构建仍失败。设为 `reject` 可要求严格拒绝。
 
 普通 Make/CLI 无需额外开关、日期白名单或人工道路 ID 清单。缺少 routing 配置时兼容回落到 reject。字段拼写错误、未知策略及错误类型会在目录加载时拒绝。
 
-生产限速策略优先级：CLI `--invalid-maxspeed`、显式环境变量 `ROUTING_INVALID_MAXSPEED`、区域字段、目录默认字段、reject。Make 不再注入 reject 覆盖目录设置。显式 `--config` 是独立审核模式，其配置优先于环境变量，可保留源哈希和 restriction_review 做精确回归；生产流程不会自动加载它。
+生产限速策略优先级：CLI `--invalid-maxspeed`、显式环境变量 `ROUTING_INVALID_MAXSPEED`、区域字段、目录默认字段、reject。Make 不再注入 reject 覆盖目录设置。显式 `--config` 是独立审核模式，其配置优先于环境变量，可保留源哈希和 restriction_review 做精确回归；标准 Make 流程仅在显式指定 `ROUTING_AUDIT_CONFIG` 时加载它。
 
 构建报告必须与 manifest 一致：限制计数须匹配完整诊断及去重后的排除道路集合，每条排除道路须有关系成员证据。诊断重复、缺失、截断、未知错误代码或计数不一致均阻止 ready 发布。限速审计上限为 256 项且估算文本大小不超过 64 KiB；转向诊断在新版完整审计摘要下最多 32,768 项，未携带新版摘要的旧报告仍限 256 项，每关系最多 256 个成员。其他审计预算见上文；超限失败，不截断后继续发布。上游自身的资源和安全排除限制仍生效。
 
