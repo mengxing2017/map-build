@@ -16,7 +16,7 @@ import yaml
 from huavd_map_build.production.south.adapter.process.routeweft import sha256
 from huavd_map_build.production.south.port.routeweft import RouteWeftError, RouteWeftPort
 from huavd_map_build.shared.kernel.identity import RegionId, BuildDate, SessionId
-from huavd_map_build.production.south.adapter.process.routeweft_contract import capabilities, build_report
+from huavd_map_build.production.south.adapter.process.routeweft_contract import capabilities, build_report, audit_identity
 
 
 def write_json(path: Path, value):
@@ -78,6 +78,7 @@ class RoutingService:
             self.config = document.get('regions', {}).get(region)
             if not self.config or self.config.get('enabled') is not True:
                 raise RouteWeftError(f'routing region not enabled: {region}')
+        self.automatic_smoke = self.automatic_smoke or self.config.get('smoke_mode') == 'graph-edge-v1'
         self.maxspeed_policy = (invalid_maxspeed if invalid_maxspeed is not None else
             self.config.get('invalid_maxspeed', os.environ.get('ROUTING_INVALID_MAXSPEED', 'reject')))
         if self.maxspeed_policy not in ('reject', 'use_default'):
@@ -100,8 +101,10 @@ class RoutingService:
         if self.config.get('profile') != 'driving':
             raise RouteWeftError('unsupported routing profile')
         self.policy = self.config.get('invalid_restrictions', 'reject')
-        if self.policy not in ('reject', 'block_ways'):
-            raise RouteWeftError('invalid restriction policy; use reject or block_ways')
+        if self.policy not in ('reject', 'block_ways', 'quarantine_ways'):
+            raise RouteWeftError('invalid restriction policy; use reject, block_ways or quarantine_ways')
+        if self.policy == 'quarantine_ways' and not self.config.get('source_sha256'):
+            raise RouteWeftError('quarantine_ways requires an explicit source SHA-256')
         from huavd_map_build.production.south.adapter.process.routeweft_contract import AUDIT_LIMITS
         self.audit_args = []
         for key, (_, maximum) in AUDIT_LIMITS.items():
@@ -109,8 +112,8 @@ class RoutingService:
                 value = self.config[key]
                 if type(value) is not int or not 0 < value <= maximum:
                     raise RouteWeftError(f'invalid {key}')
-                if key == 'max_blockways_attempts' and self.policy != 'block_ways':
-                    raise RouteWeftError('max_blockways_attempts requires block_ways')
+                if key == 'max_blockways_attempts' and self.policy not in ('block_ways', 'quarantine_ways'):
+                    raise RouteWeftError('max_blockways_attempts requires block_ways or quarantine_ways')
                 self.audit_args += ['--' + key.replace('_', '-'), str(value)]
         self.review = self.config.get('restriction_review')
         if self.review is not None:
@@ -192,7 +195,26 @@ class RoutingService:
                 raise RouteWeftError(f'diagnostic threshold: {name}')
         return manifest
 
-    def smoke(self, dataset, manifest):
+    def smoke(self, dataset, manifest, excluded=None):
+        coverage = None
+        if self.policy == 'quarantine_ways':
+            if excluded is None:
+                receipt = json.loads((dataset / 'routing-build.json').read_text())
+                excluded = receipt['build_result']['report']['applied_blocked_way_ids']
+            with tempfile.NamedTemporaryFile(mode='w', dir=self.workdir / 'staging/routing') as listing:
+                json.dump(sorted(excluded), listing)
+                listing.flush()
+                coverage = self.tool.call('coverage', [
+                    '--dataset', str(dataset), '--excluded-ways', listing.name, '--json',
+                    *self.capacity_args, '--max-load-bytes',
+                    str(self.config.get('max_load_bytes', 8 * 1024**3))], self.config['query_timeout_s'])
+            stats = coverage.get('coverage', {})
+            if (coverage.get('dataset_id') != manifest['dataset_id']
+                    or any(type(stats.get(k)) is not int or stats[k] != manifest[k]
+                           for k in ('nodes', 'edges'))
+                    or type(stats.get('excluded_way_edges')) is not int
+                    or stats['excluded_way_edges'] != 0):
+                raise RouteWeftError('quarantine coverage/excluded-edge check failed')
         results = []
         queries = self._automatic_queries(dataset) if self.automatic_smoke else self.config['smoke']
         for query in queries:
@@ -266,7 +288,8 @@ class RoutingService:
             results.append(result)
         return {'schema': 1, 'dataset_id': manifest['dataset_id'],
                 'mode': 'graph-edge-v1' if self.automatic_smoke else 'reviewed',
-                'queries': queries, 'results': results}
+                'queries': queries, 'results': results,
+                **({'coverage': coverage} if coverage is not None else {})}
 
     @staticmethod
     def _automatic_queries(dataset):
@@ -314,6 +337,9 @@ class RoutingService:
         if (ready.get('blocked_way_ids') != report.get('blocked_way_ids')
                 or ready.get('restriction_diagnostics') != report.get('restriction_diagnostics')):
             raise RouteWeftError('ready restriction audit mismatch')
+        for key in ('planned_blocked_way_ids', 'applied_blocked_way_ids', 'blockways_failure'):
+            if ready.get(key) != report.get(key):
+                raise RouteWeftError('ready exclusion application audit mismatch')
         if receipt.get('invalid_restrictions') != self.policy:
             raise RouteWeftError('ready restriction policy mismatch')
         build_report(receipt.get('build_result', {}), ready['source_sha256'], self.policy,
@@ -323,7 +349,7 @@ class RoutingService:
                     or receipt.get('graph_capacity') != self.graph_capacity
                     or receipt['build_result'].get('build', {}).get('builder') != 'external'):
                 raise RouteWeftError('external build audit mismatch')
-        elif receipt.get('preflight', {}).get('report') != receipt['build_result']['report']:
+        elif audit_identity(receipt.get('preflight', {}).get('report', {})) != audit_identity(receipt['build_result']['report']):
             raise RouteWeftError('ready preflight/build report mismatch')
         return dataset, manifest, ready
 
@@ -352,6 +378,10 @@ class RoutingService:
                 from huavd_map_build.production.south.adapter.process.routeweft_input import provenance
                 input_provenance = provenance(frozen)
                 version = capabilities(self.tool)
+                if self.policy == 'quarantine_ways' and 'coverage' not in version.get('commands', []):
+                    raise RouteWeftError('RouteWeft lacks quarantine coverage verification')
+                if self.policy not in version.get('invalid_restriction_policies', []):
+                    raise RouteWeftError('RouteWeft lacks requested restriction policy')
                 if self.audit_args:
                     from huavd_map_build.production.south.adapter.process.routeweft_contract import AUDIT_LIMITS
                     audit_caps = version.get('capabilities', {}).get('restriction_audit', {})
@@ -397,7 +427,7 @@ class RoutingService:
                     if built.get('build', {}).get('builder') != 'external':
                         raise RouteWeftError('external build identity missing')
                     report = actual_report
-                elif actual_report != report:
+                elif audit_identity(actual_report) != audit_identity(report):
                     raise RouteWeftError('preflight/build report mismatch')
                 if sha256(frozen) != before:
                     raise RouteWeftError('frozen input changed during build')
@@ -411,7 +441,8 @@ class RoutingService:
                 inspect = self.tool.call('inspect', ['--dataset', str(dataset), '--json', *self.capacity_args], self.config['verify_timeout_s'])
                 if inspect.get('manifest') != manifest:
                     raise RouteWeftError('inspect manifest mismatch')
-                smoke = self.smoke(dataset, manifest)
+                smoke = self.smoke(dataset, manifest, report['applied_blocked_way_ids']
+                                   if self.policy == 'quarantine_ways' else None)
                 if sha256(frozen) != before:
                     raise RouteWeftError('frozen input changed during build')
                 build = {'schema': 1, 'tool': self.tool.identity, 'source_sha256': before,
@@ -437,7 +468,7 @@ class RoutingService:
                     self.smoke(destination, manifest)
                     existing = json.loads((destination / 'routing-build.json').read_text())
                     if (existing.get('invalid_restrictions') != self.policy
-                            or existing.get('build_result', {}).get('report') != report):
+                            or audit_identity(existing.get('build_result', {}).get('report', {})) != audit_identity(report)):
                         raise RouteWeftError('immutable restriction audit collision')
                 else:
                     os.rename(dataset, destination)
@@ -449,6 +480,9 @@ class RoutingService:
                          'blocked_way_ids': report['blocked_way_ids'],
                          'restriction_diagnostics': report['restriction_diagnostics'],
                          'files': file_records(destination)}
+                for key in ('planned_blocked_way_ids', 'applied_blocked_way_ids', 'blockways_failure'):
+                    if key in report:
+                        ready[key] = report[key]
                 write_json(self.ready, ready)
                 return ready
             except RouteWeftError as error:
