@@ -54,7 +54,7 @@ class RoutingSettings:
     def __post_init__(self) -> None:
         if self.invalid_maxspeed not in ("reject", "use_default"):
             raise CatalogValidationError("invalid routing.invalid_maxspeed")
-        if self.invalid_restrictions not in ("reject", "block_ways"):
+        if self.invalid_restrictions not in ("reject", "block_ways", "quarantine_ways"):
             raise CatalogValidationError("invalid routing.invalid_restrictions")
 
 
