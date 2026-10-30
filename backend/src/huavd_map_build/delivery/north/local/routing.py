@@ -82,11 +82,13 @@ class RoutingDelivery:
                     'invalid_maxspeed': service.maxspeed_policy,
                     'maxspeed_diagnostics': ready['maxspeed_diagnostics'],
                     'blocked_way_ids': ready['blocked_way_ids'],
+                    **{key: ready[key] for key in ('planned_blocked_way_ids', 'applied_blocked_way_ids')
+                       if key in ready},
                     'restriction_diagnostics': ready['restriction_diagnostics'],
                     'restriction_review': service.review,
                     'coverage_notice': ('Invalid restriction ways were conservatively excluded; '
                                         'road coverage and reachability may be reduced.'
-                                        if service.policy == 'block_ways' else None),
+                                        if service.policy in ('block_ways', 'quarantine_ways') else None),
                     'tool': ready['tool'], 'files': file_records(stage)})
                 outputs = []
                 for kind in (['tar', 'zip'] if format == 'both' else [format]):
