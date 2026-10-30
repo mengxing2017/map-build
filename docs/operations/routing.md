@@ -75,6 +75,32 @@ backend/tests/fixtures/routing/nanning-audit.yaml 仅用于固定南宁切片的
 
 ### 新版转向审计兼容与预算
 
+升级到锁定的 `5fdb38ce` 后，报告区分 `planned_blocked_way_ids` 与
+`applied_blocked_way_ids`，并通过 `blockways_failure` 返回不可恢复关系。
+本项目只接受计划集合、已应用集合和旧别名一致且没有 blocker 的成功报告；
+ready 和审核包保留集合，消费时再次核验。阶段耗时 `build_metrics` 保留在回执中，
+但不参与同一数据集重复构建的确定性审计比较。
+
+普通入口仍采用目录中的 `block_ways` 策略。需要隔离结构异常关系时，可显式配置
+`invalid_restrictions: quarantine_ways`，同时必须填写匹配输入的 `source_sha256`。
+这是一种可能降低覆盖和可达性的独立策略，不推断空角色，不表示源数据已修复。
+本项目检查工具支持、政策标记、完整审计和最终排除集合，并额外调用 `coverage`
+确认被排除道路的残留边数为零；覆盖结果与 smoke 一起保存，打包时重验。
+
+固定广东样本的审核配置与调用示例：
+
+```bash
+PYTHONPATH=backend/src .venv/bin/python -m huavd_map_build routing build \
+  --config=config/routing/china-guangdong-20260803-quarantine.yaml \
+  --region=china/guangdong --yyyymmdd=20261028 \
+  --workdir=/tmp/routeweft-guangdong-quarantine \
+  --input=/home/dev/data/source-map/guangdong-260803.osm.pbf
+```
+
+该配置使用明确的 12 GiB 加载估算预算及 `smoke_mode: graph-edge-v1`，
+自动选择实际图边执行基础 nearest/route 检查。基础 smoke 和零残留边检查
+不替代省级连通性、长距离路线质量或外部引擎对照验收。
+
 RouteWeft alpha.2 的完整审计报告可超过旧版 256 条限制。本项目按新版
 `restriction_audit` 校验完整扫描、无截断、观察/保留数量、实际序列化字节数、
 限额和完成轮次，并按 `(attempt, relation_id)` 校验诊断顺序及唯一性。
@@ -88,7 +114,7 @@ RouteWeft alpha.2 的完整审计报告可超过旧版 256 条限制。本项目
 ```yaml
 max_restriction_diagnostics: 8192   # 1..32768，工具默认 4096
 max_restriction_audit_bytes: 16777216  # 1..16777216
-max_blockways_attempts: 80         # 1..257，仅用于 block_ways，工具默认 64
+max_blockways_attempts: 80         # 1..257，block_ways/quarantine_ways，工具默认 64
 ```
 
 以上字段传给 full preflight 与 build；external 路径由 build 执行验证。
