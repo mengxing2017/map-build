@@ -70,13 +70,20 @@ class RoutingService:
             self.config_sha256 = hashlib.sha256(
                 json.dumps(effective, sort_keys=True).encode()).hexdigest()
         else:
-            # Explicit audit fixtures remain available to tests and diagnostic CLI.
-            document = yaml.safe_load(config.read_text())
+            # Explicit audit configurations are shared by CLI and standard bundles.
+            config = (config if config.is_absolute() else root / config).resolve()
+            try:
+                document = yaml.safe_load(config.read_text())
+            except (OSError, yaml.YAMLError) as error:
+                raise RouteWeftError(f'cannot read routing audit config: {config}: {error}') from error
             if not isinstance(document, dict) or document.get('schema') != 1:
                 raise RouteWeftError('unsupported routing config schema')
             self.config_sha256 = sha256(config)
-            self.config = document.get('regions', {}).get(region)
-            if not self.config or self.config.get('enabled') is not True:
+            regions = document.get('regions')
+            if not isinstance(regions, dict):
+                raise RouteWeftError('routing config regions must be a mapping')
+            self.config = regions.get(region)
+            if not isinstance(self.config, dict) or self.config.get('enabled') is not True:
                 raise RouteWeftError(f'routing region not enabled: {region}')
         self.automatic_smoke = self.automatic_smoke or self.config.get('smoke_mode') == 'graph-edge-v1'
         self.maxspeed_policy = (invalid_maxspeed if invalid_maxspeed is not None else
@@ -103,7 +110,7 @@ class RoutingService:
         self.policy = self.config.get('invalid_restrictions', 'reject')
         if self.policy not in ('reject', 'block_ways', 'quarantine_ways'):
             raise RouteWeftError('invalid restriction policy; use reject, block_ways or quarantine_ways')
-        if self.policy == 'quarantine_ways' and not self.config.get('source_sha256'):
+        if self.policy == 'quarantine_ways' and config is not None and not self.config.get('source_sha256'):
             raise RouteWeftError('quarantine_ways requires an explicit source SHA-256')
         from huavd_map_build.production.south.adapter.process.routeweft_contract import AUDIT_LIMITS
         self.audit_args = []
@@ -353,6 +360,42 @@ class RoutingService:
             raise RouteWeftError('ready preflight/build report mismatch')
         return dataset, manifest, ready
 
+    def check(self, input_path: Path | None = None, *, version=None):
+        """Validate configuration, capability and optional input without building a graph."""
+        source_sha = None
+        if input_path is not None:
+            source = input_path if input_path.is_absolute() else self.workdir / input_path
+            if not source.is_file():
+                raise RouteWeftError("routing input must be a PBF file")
+            if not 0 < source.stat().st_size <= min(self.config.get("max_input_bytes", 512 * 1024**2), 512 * 1024**2):
+                raise RouteWeftError("input exceeds routing capacity")
+            source_sha = sha256(source)
+            if self.config.get("source_sha256") not in (None, source_sha):
+                raise RouteWeftError("input does not match reviewed regional snapshot")
+        version = capabilities(self.tool) if version is None else version
+        if self.policy == 'quarantine_ways' and 'coverage' not in version.get('commands', []):
+            raise RouteWeftError('RouteWeft lacks quarantine coverage verification')
+        if self.policy not in version.get('invalid_restriction_policies', []):
+            raise RouteWeftError('RouteWeft lacks requested restriction policy')
+        if self.audit_args:
+            from huavd_map_build.production.south.adapter.process.routeweft_contract import AUDIT_LIMITS
+            audit_caps = version.get('capabilities', {}).get('restriction_audit', {})
+            if not isinstance(audit_caps, dict) or any(
+                    type(audit_caps.get(cap)) is not int
+                    or audit_caps[cap] < self.config[key]
+                    for key, (cap, _) in AUDIT_LIMITS.items() if key in self.config):
+                raise RouteWeftError('RouteWeft lacks requested restriction audit capacity')
+        if self.external:
+            caps = version.get("capabilities", {})
+            if (2 not in version.get("dataset_formats", [])
+                    or "external" not in caps.get("build_modes", [])
+                    or 2 not in caps.get("external_build_formats", [])
+                    or self.graph_capacity not in caps.get("graph_capacity_profiles", {})):
+                raise RouteWeftError("RouteWeft lacks external/v2 capacity support; reinstall locked tool")
+        return {"schema": 1, "config_sha256": self.config_sha256,
+                "invalid_restrictions": self.policy, "source_sha256": source_sha,
+                "tool": self.tool.identity}
+
     def preflight(self, input_path: Path):
         return self.build(input_path, preflight_only=True)
 
@@ -378,29 +421,12 @@ class RoutingService:
                 from huavd_map_build.production.south.adapter.process.routeweft_input import provenance
                 input_provenance = provenance(frozen)
                 version = capabilities(self.tool)
-                if self.policy == 'quarantine_ways' and 'coverage' not in version.get('commands', []):
-                    raise RouteWeftError('RouteWeft lacks quarantine coverage verification')
-                if self.policy not in version.get('invalid_restriction_policies', []):
-                    raise RouteWeftError('RouteWeft lacks requested restriction policy')
-                if self.audit_args:
-                    from huavd_map_build.production.south.adapter.process.routeweft_contract import AUDIT_LIMITS
-                    audit_caps = version.get('capabilities', {}).get('restriction_audit', {})
-                    if not isinstance(audit_caps, dict) or any(
-                            type(audit_caps.get(cap)) is not int
-                            or audit_caps[cap] < self.config[key]
-                            for key, (cap, _) in AUDIT_LIMITS.items() if key in self.config):
-                        raise RouteWeftError('RouteWeft lacks requested restriction audit capacity')
+                self.check(version=version)
                 arguments = ['--input', str(frozen), '--profile', 'driving',
                              '--invalid-restrictions', self.policy,
                              '--invalid-maxspeed', self.maxspeed_policy, '--json', *self.audit_args]
                 dataset = attempt / 'dataset'
                 if self.external:
-                    caps = version.get('capabilities', {})
-                    if (2 not in version.get('dataset_formats', [])
-                            or 'external' not in caps.get('build_modes', [])
-                            or 2 not in caps.get('external_build_formats', [])
-                            or self.graph_capacity not in caps.get('graph_capacity_profiles', {})):
-                        raise RouteWeftError('RouteWeft lacks external/v2 capacity support; reinstall locked tool')
                     preflight = {'mode': 'external-build-validation'}
                     arguments += ['--builder', 'external', '--format', '2', *self.capacity_args,
                                   '--scratch-dir', str(attempt / 'scratch'), '--max-scratch-bytes',
@@ -489,7 +515,24 @@ class RoutingService:
                 write_json(attempt / 'failure.json', {'error': str(error), 'response': error.response,
                                                       'command': error.command, 'exit_code': error.exit_code,
                                                       'invalid_maxspeed': self.maxspeed_policy})
-                raise
+                response = error.response if isinstance(error.response, dict) else {}
+                failure = response.get('error', {})
+                failure = failure if isinstance(failure, dict) else {}
+                details = failure.get('details', {})
+                details = details if isinstance(details, dict) else {}
+                blocker = details.get('blockways_failure', {})
+                blocker = blocker if isinstance(blocker, dict) else {}
+                summary = {'stage': error.command or 'routing-build', 'kind': failure.get('kind'),
+                           'relation_id': blocker.get('relation_id'), 'reason': blocker.get('reason'),
+                           'attempt': blocker.get('attempt'), 'recoverable': blocker.get('recoverable'),
+                           'policy': self.policy, 'source_sha256': details.get('source_sha256'),
+                           'evidence': str(attempt / 'failure.json')}
+                if blocker.get('reason') == 'NoSafeFromToMember':
+                    summary['action'] = '核验源关系，或使用绑定输入 SHA 的显式 quarantine_ways 审核配置；增加预算无法补全角色'
+                write_json(attempt / 'failure-summary.json', summary)
+                raise RouteWeftError(f'{error}; routing failure summary: {json.dumps(summary, ensure_ascii=False)}',
+                                     response=error.response, command=error.command,
+                                     exit_code=error.exit_code) from error
             finally:
                 write_json(attempt / 'process-log.json', getattr(self.tool, 'logs', []))
 
