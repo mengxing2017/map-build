@@ -127,7 +127,7 @@ ready 和审核包保留集合，消费时再次核验。阶段耗时 `build_met
 
 ```bash
 PYTHONPATH=backend/src .venv/bin/python -m huavd_map_build routing build \
-  --config=config/routing/china-guangdong-20260803-quarantine.yaml \
+  --config=backend/tests/fixtures/routing/china-guangdong-20260803-quarantine.yaml \
   --region=china/guangdong --yyyymmdd=20261028 \
   --workdir=/tmp/routeweft-guangdong-quarantine \
   --input=/home/dev/data/source-map/guangdong-260803.osm.pbf
@@ -201,6 +201,12 @@ routing:
 
 ### 广西 20260803 已审核交付
 
-`config/routing/china-guangxi-20260803-audit.yaml` 绑定广西输入 SHA-256，显式选择 external/regional/v2、use_default 及 block_ways，核对 14 个异常关系和 21 条道路的完整排除集合。它包含省域正常路线、绕行和真实不连通分量的 NoRoute 查询，不可用于其他源快照。
+`backend/tests/fixtures/routing/china-guangxi-20260803-audit.yaml` 绑定广西输入 SHA-256，显式选择 external/regional/v2、use_default 及 block_ways，核对 14 个异常关系和 21 条道路的完整排除集合。它包含省域正常路线、绕行和真实不连通分量的 NoRoute 查询，不可用于其他源快照。
 
-该配置仅供显式 `routing build/verify/smoke/pack --config=config/routing/china-guangxi-20260803-audit.yaml` 审核使用，不被普通 Make/CLI 自动加载，也不是区域业务配置。所有步骤保持 REGION、YYYYMMDD 和 WORKDIR 一致。该配置用于独立路网审计交付，pack 输出 `installable=false` 的审计包。发布证据见 [广西发布记录](../../report/routeweft-guangxi-release-20261020.md)。
+该配置仅供显式 `routing build/verify/smoke/pack --config=backend/tests/fixtures/routing/china-guangxi-20260803-audit.yaml` 审核使用，不被普通 Make/CLI 自动加载，也不是区域业务配置。所有步骤保持 REGION、YYYYMMDD 和 WORKDIR 一致。该配置用于独立路网审计交付，pack 输出 `installable=false` 的审计包。发布证据见 [广西发布记录](../../report/routeweft-guangxi-release-20261020.md)。
+
+### 引擎加载预算
+
+普通构建从 `config/regions.yaml` 的 `routing.max_load_bytes` 读取加载预算，区域条目可覆盖全局默认值（未设置时为 8 GiB）。广东正式配置为 12884901888 字节（12 GiB），同时用于 coverage、nearest 和 route。此值是 RouteWeft 的加载估算上限，不是系统内存预留；运行环境仍须提供足够内存。
+
+固定快照审计配置已从 `config/routing/` 迁至 `backend/tests/fixtures/routing/`，仅通过显式 `--config` 或 `ROUTING_AUDIT_CONFIG` 使用。普通生产构建不加载这些测试夹具。调整预算后有效配置摘要会变化，旧 ready 凭据不能直接作为新配置的发布验证；应重新执行正式构建和验证。
