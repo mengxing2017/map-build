@@ -12,15 +12,18 @@ source "${SCRIPT_DIR}/lib/install_json.sh"
 FORMAT="${FORMAT:-both}"
 INCLUDE_BUILD_LOG=0
 
+ROUTING_AUDIT_CONFIG="${ROUTING_AUDIT_CONFIG:-}"
+
 for arg in "$@"; do
   if parse_common_arg "${arg}"; then
     continue
   fi
   case "${arg}" in
+    --routing-audit-config=*) ROUTING_AUDIT_CONFIG="${arg#*=}" ;;
     --format=*) FORMAT="${arg#*=}" ;;
     --include-build-log) INCLUDE_BUILD_LOG=1 ;;
     -h|--help)
-      printf 'usage: %s --session=<session> [--role=base|building|raster_bake|base_raster|both_raster|both|dem|all] [--format=tar|zip|both] [--workdir=<path>]\n' "$0"
+      printf 'usage: %s --session=<session> [--role=base|building|raster_bake|base_raster|both_raster|both|dem|all] [--format=tar|zip|both] [--routing-audit-config=<path>] [--workdir=<path>]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -31,7 +34,8 @@ case "${ROLE:-both}" in
   base|both|raster_bake|base_raster|both_raster)
     exec make --no-print-directory -C "${REPO_ROOT}" pack \
       WORKDIR="${WORKDIR}" REGION="${REGION}" YYYYMMDD="$(session_yyyymmdd "${SESSION}")" \
-      SESSION="${SESSION}" ROLE="${ROLE:-both}" FORMAT="${FORMAT}"
+      SESSION="${SESSION}" ROLE="${ROLE:-both}" FORMAT="${FORMAT}" \
+      ROUTING_AUDIT_CONFIG="${ROUTING_AUDIT_CONFIG}"
     ;;
 esac
 

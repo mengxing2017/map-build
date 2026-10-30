@@ -12,15 +12,17 @@ source "${SCRIPT_DIR}/lib/pmtiles.sh"
 source "${SCRIPT_DIR}/lib/viewport.sh"
 
 STRICT=0
+ROUTING_AUDIT_CONFIG=""
 
 for arg in "$@"; do
   if parse_common_arg "${arg}"; then
     continue
   fi
   case "${arg}" in
+    --routing-audit-config=*) ROUTING_AUDIT_CONFIG="${arg#*=}" ;;
     --strict) STRICT=1 ;;
     -h|--help)
-      printf 'usage: %s --region=<id> --role=<base|building|raster_bake|base_raster|both_raster|both|dem|all> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--strict]\n' "$0"
+      printf 'usage: %s --region=<id> --role=<base|building|raster_bake|base_raster|both_raster|both|dem|all> [--yyyymmdd=YYYYMMDD] [--session=<session>] [--routing-audit-config=<path>] [--strict]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -1656,4 +1658,14 @@ if ((FAILURES == 0)); then
 else
   printf 'verify: FAIL (%d)\n' "${FAILURES}"
   exit "${HUAVD_EXIT_VERIFY}"
+fi
+
+if [[ -n "${ROUTING_AUDIT_CONFIG}" ]]; then
+  case "${ROLE}" in
+    base|both|raster_bake|base_raster|both_raster)
+      make --no-print-directory -C "${REPO_ROOT}" verify-routing \
+        WORKDIR="${WORKDIR}" REGION="${REGION}" YYYYMMDD="${YYYYMMDD}" \
+        SESSION="${SESSION}" ROUTING_AUDIT_CONFIG="${ROUTING_AUDIT_CONFIG}"
+      ;;
+  esac
 fi

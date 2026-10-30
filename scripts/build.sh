@@ -11,16 +11,19 @@ INPUT=""
 FORCE=0
 GLYPH="${GLYPH:-0}"
 
+ROUTING_AUDIT_CONFIG="${ROUTING_AUDIT_CONFIG:-}"
+
 for arg in "$@"; do
   if parse_common_arg "${arg}"; then
     continue
   fi
   case "${arg}" in
+    --routing-audit-config=*) ROUTING_AUDIT_CONFIG="${arg#*=}" ;;
     --input=*) INPUT="${arg#*=}" ;;
     --glyph=*) GLYPH="${arg#*=}" ;;
     --force) FORCE=1 ;;
     -h|--help)
-      printf 'usage: %s [--input=<path-to.osm.pbf>] --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base|building|raster_bake|base_raster|both_raster|both] [--workdir=<path>] [--glyph=0|1] [--force] [--force-building]\n' "$0"
+      printf 'usage: %s [--input=<path-to.osm.pbf>] --region=<id> [--yyyymmdd=YYYYMMDD] [--role=base|building|raster_bake|base_raster|both_raster|both] [--routing-audit-config=<path>] [--workdir=<path>] [--glyph=0|1] [--force] [--force-building]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -41,7 +44,8 @@ if [[ "${ROLE}" == base || "${ROLE}" == both || "${ROLE}" == raster_bake || "${R
   exec make --no-print-directory -C "${REPO_ROOT}" build \
     WORKDIR="${WORKDIR}" REGION="${REGION}" YYYYMMDD="${YYYYMMDD}" \
     SESSION="${SESSION}" ROLE="${ROLE}" INPUT="${INPUT}" GLYPH="${GLYPH}" \
-    FORCE="${FORCE}" FORCE_BUILDING="${FORCE_BUILDING:-0}"
+    FORCE="${FORCE}" FORCE_BUILDING="${FORCE_BUILDING:-0}" \
+    ROUTING_AUDIT_CONFIG="${ROUTING_AUDIT_CONFIG}"
 fi
 
 require_cmd pmtiles
