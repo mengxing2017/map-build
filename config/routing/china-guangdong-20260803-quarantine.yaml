@@ -1,0 +1,23 @@
+schema: 1
+regions:
+  china/guangdong:
+    enabled: true
+    profile: driving
+    builder: external
+    graph_capacity: regional
+    # Explicit conservative coverage loss for this fixed local snapshot only.
+    source_sha256: d942222ce826fb3c1294d697ae97b780e4df3ed99ebc1a3feffb6ea5dca6b19b
+    invalid_restrictions: quarantine_ways
+    invalid_maxspeed: use_default
+    max_blockways_attempts: 8
+    max_restriction_diagnostics: 4096
+    max_restriction_audit_bytes: 16777216
+    max_scratch_bytes: 17179869184
+    max_load_bytes: 12884901888
+    build_timeout_s: 3600
+    verify_timeout_s: 600
+    query_timeout_s: 600
+    smoke_mode: graph-edge-v1
+    query_budget:
+      radius-m: 0.1
+      timeout-ms: 10000
