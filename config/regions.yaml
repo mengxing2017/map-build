@@ -37,7 +37,7 @@ huavd:
 # A region may override either field in its own routing mapping.
 routing:
   invalid_maxspeed: use_default
-  invalid_restrictions: block_ways
+  invalid_restrictions: quarantine_ways
 regions:
   - id: "africa"
     slug: "africa"
