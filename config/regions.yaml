@@ -34,7 +34,7 @@ huavd:
     building: "osm-{region_slug}-building"
     dem: "osm-{region_slug}-dem"
 # Routing business defaults apply to every catalog region and every build date.
-# A region may override either field in its own routing mapping.
+# A region may override these fields in its own routing mapping.
 routing:
   invalid_maxspeed: use_default
   invalid_restrictions: quarantine_ways
@@ -11352,6 +11352,9 @@ regions:
       mapping_status: "pending-source-id"
       package_version_template: null
   - id: "china/guangdong"
+    routing:
+      # Production engine-load budget; coverage and query commands share it.
+      max_load_bytes: 12884901888
     slug: "china-guangdong"
     display_name: "Guangdong"
     display_name_zh: "广东省"
