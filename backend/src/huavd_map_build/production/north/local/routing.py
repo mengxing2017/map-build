@@ -64,7 +64,7 @@ class RoutingService:
                 'query_timeout_s': 300, 'query_budget': {'radius-m': 0.1, 'timeout-ms': 10000},
                 'smoke': [], 'smoke_mode': 'graph-edge-v1',
                 'builder': 'external', 'graph_capacity': 'regional',
-                'max_scratch_bytes': 16 * 1024**3, 'max_load_bytes': 8 * 1024**3,
+                'max_scratch_bytes': 16 * 1024**3, 'max_load_bytes': settings.max_load_bytes,
             }
             effective = {'region': region, 'defaults': self.config}
             self.config_sha256 = hashlib.sha256(
