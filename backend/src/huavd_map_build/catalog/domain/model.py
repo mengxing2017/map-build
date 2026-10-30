@@ -50,8 +50,11 @@ class HuavdRegionSettings:
 class RoutingSettings:
     invalid_maxspeed: str = "reject"
     invalid_restrictions: str = "reject"
+    max_load_bytes: int = 8 * 1024**3
 
     def __post_init__(self) -> None:
+        if type(self.max_load_bytes) is not int or self.max_load_bytes <= 0:
+            raise CatalogValidationError("invalid routing.max_load_bytes")
         if self.invalid_maxspeed not in ("reject", "use_default"):
             raise CatalogValidationError("invalid routing.invalid_maxspeed")
         if self.invalid_restrictions not in ("reject", "block_ways", "quarantine_ways"):

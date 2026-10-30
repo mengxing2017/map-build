@@ -58,11 +58,12 @@ class PyYamlRegionCatalogRepository:
 
     @staticmethod
     def _routing(value: object, defaults: RoutingSettings | None = None) -> RoutingSettings:
-        if not isinstance(value, dict) or set(value) - {"invalid_maxspeed", "invalid_restrictions"}:
-            raise CatalogAdapterError("routing must contain only supported policy fields")
+        if not isinstance(value, dict) or set(value) - {"invalid_maxspeed", "invalid_restrictions", "max_load_bytes"}:
+            raise CatalogAdapterError("routing must contain only supported routing fields")
         defaults = defaults or RoutingSettings()
         try:
             return RoutingSettings(
+                max_load_bytes=value.get("max_load_bytes", defaults.max_load_bytes),
                 invalid_maxspeed=value.get("invalid_maxspeed", defaults.invalid_maxspeed),
                 invalid_restrictions=value.get("invalid_restrictions", defaults.invalid_restrictions),
             )
