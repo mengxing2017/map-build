@@ -33,7 +33,7 @@ setup 会生成工具及 receipt.json，正常使用不需要手填 SHA-256。�
 
 ## REGION 与执行
 
-普通构建直接复用 config/regions.yaml 的 REGION、同一份原始 PBF 和内置驾车参数，不读取额外区域白名单，也不需要 ROUTING_CONFIG。默认使用 external 磁盘构建、format 2 和 regional 图容量。预算为输入不超过 512 MiB、scratch 16 GiB、查询加载分配估算 8 GiB；build/preflight 3600 秒，verify 和单次查询进程各 300 秒。查询计算本身仍限 10 秒。无效限速和异常转向采用 `config/regions.yaml` 中的通用业务策略，详见下文。
+普通构建直接复用 config/regions.yaml 的 REGION、同一份原始 PBF 和内置驾车参数。默认使用 external 磁盘构建、format 2 和 regional 图容量。预算为输入不超过 512 MiB、scratch 16 GiB、查询加载分配估算 8 GiB；build/preflight 3600 秒，verify 和单次查询进程各 300 秒。查询计算本身仍限 10 秒。无效限速和异常转向采用 `config/regions.yaml` 中的通用业务策略，详见下文。
 
 external 构建自身完成语义检查，不调用仍受 200 万对象限制的内存 preflight。独立 preflight-routing 执行一次 external 试构建与 verify，保留 attempt 审计但不发布 ready；正式 build-routing 不重复建图。显式审核配置可设置 builder: external、graph_capacity: regional、max_scratch_bytes 和 max_load_bytes；未指定 builder 的历史审核夹具继续使用 memory/v1。regional 仍受上游对象、图大小、跨度和数据质量限制，不保证任意省域成功。
 
@@ -55,7 +55,7 @@ make pack-routing FORMAT=both
 
 ### 专项测试夹具
 
-backend/tests/fixtures/routing/nanning-audit.yaml 仅用于固定南宁切片的回归测试，包含人工限制审核与查询案例。生产 Make 构建不读取它。诊断 CLI 的 --config 仅用于显式审核测试，不是地图包构建要求；普通入口的区域 ID 仅来自 `config/regions.yaml`，不使用日期或源快照白名单。
+backend/tests/fixtures/routing/nanning-audit.yaml 仅用于固定南宁切片的回归测试，包含人工限制审核与查询案例。生产 Make 构建不读取它。诊断 CLI 的 `--config` 用于指定显式审核配置；普通入口的区域 ID 仅来自 `config/regions.yaml`，不使用日期或源快照白名单。
 
 ## 产物与恢复
 
@@ -109,7 +109,7 @@ RouteWeft alpha.2 的完整审计报告可超过旧版 256 条限制。本项目
 单条诊断的成员上限与 maxspeed 审计边界不变。进程 stdout/stderr 各自有
 32 MiB 上限，以容纳审计及结果包络；超限仍终止子进程并拒绝发布。
 
-显式 `ROUTING_CONFIG` / `--config` 区域配置可选以下字段（普通入口继续使用工具默认值）：
+通过 CLI `--config` 指定的显式区域审核配置可选以下字段（普通入口继续使用工具默认值）：
 
 ```yaml
 max_restriction_diagnostics: 8192   # 1..32768，工具默认 4096
@@ -156,7 +156,7 @@ routing:
 
 生产限速策略优先级：CLI `--invalid-maxspeed`、显式环境变量 `ROUTING_INVALID_MAXSPEED`、区域字段、目录默认字段、reject。Make 不再注入 reject 覆盖目录设置。显式 `--config` 是独立审核模式，其配置优先于环境变量，可保留源哈希和 restriction_review 做精确回归；生产流程不会自动加载它。
 
-构建报告必须与 manifest 一致：限制计数须匹配完整诊断及去重后的排除道路集合，每条排除道路须有关系成员证据。诊断重复、缺失、截断、未知错误代码或计数不一致均阻止 ready 发布。限速审计上限为 256 项且估算文本大小不超过 64 KiB，转向诊断上限为 256 项、每关系最多 256 个成员；超限失败，不截断后继续发布。上游自身的资源和安全排除限制仍生效。
+构建报告必须与 manifest 一致：限制计数须匹配完整诊断及去重后的排除道路集合，每条排除道路须有关系成员证据。诊断重复、缺失、截断、未知错误代码或计数不一致均阻止 ready 发布。限速审计上限为 256 项且估算文本大小不超过 64 KiB；转向诊断在新版完整审计摘要下最多 32,768 项，未携带新版摘要的旧报告仍限 256 项，每关系最多 256 个成员。其他审计预算见上文；超限失败，不截断后继续发布。上游自身的资源和安全排除限制仍生效。
 
 实际策略参与配置摘要。ready、构建回执、独立包和标准联合包均记录策略、限速回退、`blocked_way_ids`、`restriction_diagnostics`，包中注明可能减少道路覆盖和可达性。策略改变或旧 ready 缺少完整审计字段时必须重建，不能手工改 ready。无异常输入不产生排除清单。
 
