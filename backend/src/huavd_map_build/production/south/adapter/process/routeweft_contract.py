@@ -10,6 +10,11 @@ AUDIT_LIMITS = {'max_restriction_diagnostics': ('max_records', 32768),
                 'max_blockways_attempts': ('max_blockways_attempts', 257)}
 
 
+def audit_identity(report):
+    """Timing measurements are retained evidence, not deterministic audit identity."""
+    return {key: value for key, value in report.items() if key != 'build_metrics'}
+
+
 def restriction_audit_summary(report, diagnostics):
     """Validate new summaries without trusting their declared resource bounds."""
     summary = report.get('restriction_audit')
@@ -107,6 +112,21 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None, ma
             or any(type(v) is not int for v in blocked) or len(set(blocked)) != len(blocked)
             or not isinstance(diagnostics, list) or len(diagnostics) > 32768):
         raise RouteWeftError('invalid restriction audit')
+    exclusion_fields = ('planned_blocked_way_ids', 'applied_blocked_way_ids', 'blockways_failure')
+    if any(key in report for key in exclusion_fields) or policy == 'quarantine_ways':
+        for key in exclusion_fields[:2]:
+            ids = report.get(key)
+            if (not isinstance(ids, list) or any(type(v) is not int for v in ids)
+                    or ids != sorted(set(ids)) or ids != sorted(blocked)):
+                raise RouteWeftError('successful exclusion plan/applied mismatch')
+        if 'blockways_failure' not in report or report['blockways_failure'] is not None:
+            raise RouteWeftError('successful report contains a BlockWays failure')
+    if policy == 'quarantine_ways' and counts.get('quarantine_ways_policy_v1') != 1:
+        raise RouteWeftError('missing quarantine policy marker')
+    if policy != 'quarantine_ways' and counts.get('quarantine_ways_policy_v1', 0) != 0:
+        raise RouteWeftError('unexpected quarantine policy marker')
+    if policy == 'quarantine_ways' and report.get('restriction_audit') is None:
+        raise RouteWeftError('quarantine requires a complete restriction audit summary')
     summary = restriction_audit_summary(report, diagnostics)
     codes = {'MissingVia', 'MissingFromTo', 'MissingReference', 'InvalidMemberType',
              'UnsupportedMultiplicity', 'UnsupportedViaShape', 'UnsupportedRestriction',
@@ -153,7 +173,7 @@ def build_report(value, source_sha256, policy, *, manifest=None, review=None, ma
         raise RouteWeftError('restriction exclusions lack member evidence')
     if policy == 'reject' and (blocked or diagnostics):
         raise RouteWeftError('strict build contains blocked restrictions')
-    if policy == 'block_ways' and review is not None:
+    if policy in ('block_ways', 'quarantine_ways') and review is not None:
         if (sorted(blocked) != sorted(review['blocked_way_ids'])
                 or sorted(observed, key=lambda x: (x.get('attempt', 0), x['relation_id'], x['code'])) != sorted(
                     review['diagnostics'], key=lambda x: (x.get('attempt', 0), x['relation_id'], x['code']))):
