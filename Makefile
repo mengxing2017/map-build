@@ -110,6 +110,13 @@ check-routeweft-build-tool:
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing doctor --workdir="$(WORKDIR)"
 endif
 
+ifneq ($(filter $(ROLE),base both raster_bake base_raster both_raster),)
+build: check-routing-input
+.PHONY: check-routing-input
+check-routing-input:
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing check $(ROUTING_ARGS) $(if $(INPUT),--input="$(INPUT)",)
+endif
+
 build: python-doctor python-workspace-init
 ifneq ($(filter $(ROLE),base building both),)
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build build execute-vector \
@@ -211,13 +218,16 @@ ifneq ($(filter $(ROLE),base_raster both_raster all),)
 endif
 	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)"
 endif
+ifneq ($(filter $(ROLE),base both raster_bake base_raster both_raster),)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing verify $(ROUTING_ARGS)
+endif
 
 verify-dem:
 	WORKDIR="$(WORKDIR)" ./scripts/verify.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role=dem --strict
 
 pack:
 ifneq ($(filter $(ROLE),base building both raster_bake base_raster both_raster),)
-	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact pack --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)" --workdir="$(WORKDIR)"
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact pack --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)" --workdir="$(WORKDIR)" $(if $(ROUTING_AUDIT_CONFIG),--routing-audit-config="$(ROUTING_AUDIT_CONFIG)",)
 else
 	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
 endif
@@ -312,7 +322,8 @@ ifneq ($(origin ROUTING_INVALID_MAXSPEED),undefined)
 export ROUTING_INVALID_MAXSPEED
 endif
 ROUTEWEFT_SOURCE ?=
-ROUTING_ARGS = --workdir="$(WORKDIR)" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)"
+ROUTING_AUDIT_CONFIG ?=
+ROUTING_ARGS = --workdir="$(WORKDIR)" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(ROUTING_AUDIT_CONFIG),--config="$(ROUTING_AUDIT_CONFIG)",)
 .PHONY: setup-routeweft doctor-routeweft preflight-routing build-routing verify-routing smoke-routing pack-routing
 setup-routeweft:
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing setup --workdir="$(WORKDIR)" $(if $(ROUTEWEFT_SOURCE),--source="$(ROUTEWEFT_SOURCE)",)
