@@ -121,6 +121,13 @@ class AuditCompatibilityTests(unittest.TestCase):
             self.service({'invalid_restrictions': 'quarantine_ways'})
         service = self.service({'invalid_restrictions': 'quarantine_ways',
                                 'source_sha256': sha256(self.source)})
+        original = self.tool.call
+        def no_coverage(command, arguments, timeout, expected_error=None):
+            value = original(command, arguments, timeout, expected_error)
+            if command == 'version':
+                value['commands'].remove('coverage')
+            return value
+        self.tool.call = no_coverage
         with self.assertRaisesRegex(RouteWeftError, 'coverage'):
             service.build(self.source)
         self.assertFalse(service.ready.exists())
@@ -200,7 +207,17 @@ class RealQuarantineTests(unittest.TestCase):
             generate(source, invalid_restriction=True, empty_roles=True)
             process = RouteWeftProcess(Path(os.environ['ROUTEWEFT_TEST_BIN']),
                                       os.environ['ROUTEWEFT_TEST_SHA256'])
-            conservative = RoutingService(process, ROOT, root / 'conservative', 'monaco', '20261019')
+            default = RoutingService(process, ROOT, root / 'default', 'monaco', '20261019')
+            default.build(source)
+            self.assertEqual('quarantine_ways', default.policy)
+            self.assertEqual([10], default.verify()['applied_blocked_way_ids'])
+            self.assertEqual(0, default.verify(smoke=True)['coverage']['coverage']['excluded_way_edges'])
+            strict_config = configuration()
+            strict_config['regions']['monaco']['invalid_restrictions'] = 'block_ways'
+            strict_path = root / 'block-ways.yaml'
+            strict_path.write_text(yaml.safe_dump(strict_config))
+            conservative = RoutingService(process, ROOT, root / 'conservative', 'monaco', '20261019',
+                                          config=strict_path)
             with self.assertRaises(RouteWeftError) as caught:
                 conservative.build(source)
             report = caught.exception.response['error']['details']
