@@ -25,6 +25,7 @@ class BundleRequest:
     role: str
     workdir: str
     format: str = "both"
+    routing_audit_config: Path | None = None
 
 
 class BundleService:
@@ -106,7 +107,8 @@ class BundleService:
         from huavd_map_build.production.south.adapter.process.routeweft_tools import tool
         root = repository_root()
         return RoutingService(tool(root, Path(request.workdir)), root, Path(request.workdir),
-                              request.region.value, request.build_date.value, request.session.value)
+                              request.region.value, request.build_date.value, request.session.value,
+                              config=request.routing_audit_config)
 
     def _include_routing(self, request, package, included):
         from huavd_map_build.production.north.local.routing import file_records, write_json
