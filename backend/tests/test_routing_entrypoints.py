@@ -35,6 +35,22 @@ class AuditEntrypointTests(unittest.TestCase):
     def service(self):
         return RoutingService(self.tool, ROOT, self.root, 'monaco', '20261019', config=self.config)
 
+    def test_production_budget_reaches_coverage_and_queries(self):
+        service = RoutingService(self.tool, ROOT, self.root, 'china/guangdong', '20261030')
+        self.assertEqual(12 * 1024**3, service.config['max_load_bytes'])
+        service.automatic_smoke = False
+        service.config['smoke'] = [{'command': 'nearest', 'coordinates': '0,0', 'expect': 'ok'},
+                                  {'command': 'route', 'coordinates': '0,0;0.001,0', 'expect': 'ok',
+                                   'distance_m': [1, 1000], 'duration_s': [1, 100]}]
+        (self.root / 'staging/routing').mkdir(parents=True)
+        manifest = {'dataset_id': 'fixture', 'nodes': 2, 'edges': 2, 'profile': 'driving-v1', 'format': 1}
+        (self.root / 'manifest.json').write_text(json.dumps(manifest))
+        service.smoke(self.root, manifest, excluded=[])
+        for command, args in self.tool.calls:
+            if command in ('coverage', 'nearest', 'route'):
+                self.assertEqual(str(12 * 1024**3), args[args.index('--max-load-bytes') + 1])
+        self.assertEqual(['coverage', 'nearest', 'route'], [c for c, _ in self.tool.calls])
+
     def test_check_does_not_build_or_publish_and_checks_sha(self):
         service = self.service()
         self.assertEqual(sha256(self.source), service.check(self.source)['source_sha256'])
