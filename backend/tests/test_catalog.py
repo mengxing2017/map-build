@@ -44,7 +44,7 @@ class CatalogTest(unittest.TestCase):
             def load():
                 path.write_text(yaml.safe_dump(document))
                 return PyYamlRegionCatalogRepository(path).load().get(RegionId('monaco')).routing
-            self.assertEqual(load(), RoutingSettings('use_default', 'block_ways'))
+            self.assertEqual(load(), RoutingSettings('use_default', 'quarantine_ways'))
             item['routing'] = {'invalid_restrictions': 'reject'}
             self.assertEqual(load(), RoutingSettings('use_default', 'reject'))
             for bad in ({'invalid_restrictions': 'ignore'}, {'invalid_maxspeed': False},
