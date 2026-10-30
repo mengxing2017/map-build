@@ -29,7 +29,8 @@ def block(kind, payload):
     return struct.pack('>I', len(header)) + header + body
 
 
-def generate(path: Path, maxspeed='36', forward=None, backward=None, invalid_restriction=False):
+def generate(path: Path, maxspeed='36', forward=None, backward=None, invalid_restriction=False,
+             empty_roles=False):
     # Coordinates separated enough to keep radius=20 m queries on their own component.
     coordinates = [(0, 0), (10000, 0), (1000000, 0), (1010000, 0)]
     strings = ['', 'highway', 'residential', 'maxspeed', maxspeed, 'oneway', 'yes']
@@ -60,7 +61,8 @@ def generate(path: Path, maxspeed='36', forward=None, backward=None, invalid_res
         relation = (number(1, 99)
                     + blob(2, varint(offset) + varint(offset + 1))
                     + blob(3, varint(offset + 1) + varint(offset + 2))
-                    + blob(8, varint(offset + 3) + varint(offset + 4))
+                    + blob(8, (varint(0) + varint(0)) if empty_roles else
+                           (varint(offset + 3) + varint(offset + 4)))
                     + blob(9, varint(20) + varint(0))
                     + blob(10, varint(1) + varint(1)))
         group += blob(4, relation)
