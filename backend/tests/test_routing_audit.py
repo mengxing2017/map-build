@@ -1,6 +1,7 @@
 """Province-sized audit contracts, budget wiring and bounded process output."""
 import copy
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from huavd_map_build.production.south.adapter.process.routeweft import RouteWeft
 from huavd_map_build.production.south.adapter.process.routeweft_contract import build_report
 from huavd_map_build.production.south.adapter.process.routeweft_probe import generate
 from huavd_map_build.production.south.port.routeweft import RouteWeftError
+from huavd_map_build.delivery.north.local.routing import RoutingDelivery, unpack
 
 
 class AuditCompatibilityTests(unittest.TestCase):
@@ -100,6 +102,29 @@ class AuditCompatibilityTests(unittest.TestCase):
         with self.assertRaises(RouteWeftError):
             self.validate(report)
 
+    def test_new_success_report_requires_applied_plan_and_no_blocker(self):
+        report = self.report()
+        report.update(planned_blocked_way_ids=[42], applied_blocked_way_ids=[42], blockways_failure=None)
+        self.validate(report)
+        for mutation in ({'applied_blocked_way_ids': []}, {'planned_blocked_way_ids': [43]},
+                         {'blockways_failure': {'reason': 'NoSafeFromToMember'}}):
+            with self.subTest(mutation=mutation), self.assertRaises(RouteWeftError):
+                self.validate({**report, **mutation})
+        report['policy'] = 'quarantine_ways'
+        with self.assertRaisesRegex(RouteWeftError, 'marker'):
+            build_report({'report': report}, sha256(self.source), 'quarantine_ways')
+        report['diagnostics']['quarantine_ways_policy_v1'] = 1
+        build_report({'report': report}, sha256(self.source), 'quarantine_ways')
+
+    def test_quarantine_requires_fixed_source_and_tool_capability(self):
+        with self.assertRaisesRegex(RouteWeftError, 'source SHA'):
+            self.service({'invalid_restrictions': 'quarantine_ways'})
+        service = self.service({'invalid_restrictions': 'quarantine_ways',
+                                'source_sha256': sha256(self.source)})
+        with self.assertRaisesRegex(RouteWeftError, 'coverage'):
+            service.build(self.source)
+        self.assertFalse(service.ready.exists())
+
     def test_province_audit_survives_receipts_and_failed_rebuild_keeps_ready(self):
         report = self.report()
         self.tool.report = lambda args: copy.deepcopy(report)
@@ -163,3 +188,56 @@ class AuditCompatibilityTests(unittest.TestCase):
         self.assertEqual(5 * 1024**2, len(process.call('build', [], 10)['audit']))
         with self.assertRaisesRegex(RouteWeftError, 'output limit'):
             RouteWeftProcess(binary, sha256(binary), limit=1024).call('build', [], 10)
+
+
+@unittest.skipUnless(os.environ.get('ROUTEWEFT_TEST_BIN') and os.environ.get('ROUTEWEFT_TEST_SHA256'),
+                     'requires real RouteWeft CLI')
+class RealQuarantineTests(unittest.TestCase):
+    def test_empty_roles_fail_conservatively_or_quarantine_with_coverage_and_packages(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source.osm.pbf'
+            generate(source, invalid_restriction=True, empty_roles=True)
+            process = RouteWeftProcess(Path(os.environ['ROUTEWEFT_TEST_BIN']),
+                                      os.environ['ROUTEWEFT_TEST_SHA256'])
+            conservative = RoutingService(process, ROOT, root / 'conservative', 'monaco', '20261019')
+            with self.assertRaises(RouteWeftError) as caught:
+                conservative.build(source)
+            report = caught.exception.response['error']['details']
+            self.assertEqual('NoSafeFromToMember', report['blockways_failure']['reason'])
+            self.assertFalse(conservative.ready.exists())
+            config = configuration()
+            config['regions']['monaco'].update(
+                invalid_restrictions='quarantine_ways', source_sha256=sha256(source),
+                builder='external', smoke_mode='graph-edge-v1', max_blockways_attempts=8)
+            path = root / 'config.yaml'
+            path.write_text(yaml.safe_dump(config))
+            service = RoutingService(process, ROOT, root / 'quarantine', 'monaco', '20261019', config=path)
+            service.build(source)
+            dataset, manifest, ready = service.current()
+            self.assertEqual([10], ready['planned_blocked_way_ids'])
+            self.assertEqual([10], ready['applied_blocked_way_ids'])
+            self.assertEqual(1, manifest['diagnostics']['quarantine_ways_policy_v1'])
+            smoke = service.verify(smoke=True)
+            self.assertEqual(0, smoke['coverage']['coverage']['excluded_way_edges'])
+            call = process.call
+            def residual(command, arguments, timeout, expected_error=None):
+                result = call(command, arguments, timeout, expected_error)
+                if command == 'coverage':
+                    result['coverage']['excluded_way_edges'] = 1
+                return result
+            process.call = residual
+            with self.assertRaisesRegex(RouteWeftError, 'excluded-edge'):
+                service.verify(smoke=True)
+            process.call = call
+            for archive in RoutingDelivery(service).pack('both'):
+                extracted = unpack(Path(archive), root / ('unpacked-' + Path(archive).suffix))
+                package = json.loads((extracted / 'routing-package.json').read_text())
+                self.assertEqual('quarantine_ways', package['invalid_restrictions'])
+                self.assertTrue(package['coverage_notice'])
+                self.assertEqual([10], package['applied_blocked_way_ids'])
+            saved = json.loads(service.ready.read_text())
+            saved['applied_blocked_way_ids'] = []
+            service.ready.write_text(json.dumps(saved))
+            with self.assertRaisesRegex(RouteWeftError, 'audit mismatch'):
+                service.verify()
