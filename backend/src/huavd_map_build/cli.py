@@ -141,7 +141,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="huavd-map-build")
     commands = parser.add_subparsers(dest="context", required=True)
     routing = commands.add_parser("routing", help="Independent routing audit datasets")
-    routing.add_argument("command", choices=("setup", "doctor", "preflight", "build", "verify", "smoke", "pack"))
+    routing.add_argument("command", choices=("setup", "doctor", "check", "preflight", "build", "verify", "smoke", "pack"))
     routing.add_argument("--region", default="monaco")
     routing.add_argument("--yyyymmdd", default=datetime.now(timezone.utc).strftime("%Y%m%d"))
     routing.add_argument("--session")
@@ -541,6 +541,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     bundle.add_argument("--format", choices=["tar", "zip", "both"], default="both")
     bundle.add_argument("--workdir", default="/tmp/huavd-map-build")
+    bundle.add_argument("--routing-audit-config", type=Path)
     return parser
 
 
@@ -560,7 +561,12 @@ def run(arguments: list[str] | None = None) -> int:
             else:
                 service = RoutingService(process, root, args.workdir, args.region, args.yyyymmdd,
                                          args.session, args.config, invalid_maxspeed=args.invalid_maxspeed)
-                if args.command in ("build", "preflight"):
+                if args.command == "check":
+                    source = args.input
+                    if source is None:
+                        source = Path("mirror") / catalog_service(root).pbf_basename(RegionId(args.region))
+                    result = service.check(source)
+                elif args.command in ("build", "preflight"):
                     if args.input is None:
                         raise ValueError("routing build/preflight requires --input")
                     result = service.preflight(args.input) if args.command == "preflight" else service.build(args.input)
@@ -812,7 +818,7 @@ def run(arguments: list[str] | None = None) -> int:
         ):
             style_service(repository_root()).run(StyleRequest(region, session, args.workdir))
         result = bundle_service().run(BundleRequest(
-            region, build_date, session, args.role, args.workdir, args.format
+            region, build_date, session, args.role, args.workdir, args.format, args.routing_audit_config
         ))
         print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
         return 0
