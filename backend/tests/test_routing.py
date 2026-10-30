@@ -47,7 +47,7 @@ class FakeTool:
                       invalid_restriction_ways_blocked=int(self.blocked))
         if self.speed_audit:
             counts['maxspeed_fallback_values'] = len(self.speed_audit)
-        return {'valid': True, 'failure_code': None,
+        report = {'valid': True, 'failure_code': None,
                 'maxspeed_policy': speed_policy, 'maxspeed_diagnostics': self.speed_audit,
                 'policy': arguments[arguments.index('--invalid-restrictions') + 1],
                 'source_sha256': sha256(Path(arguments[1])), 'source_snapshot': None,
@@ -56,17 +56,32 @@ class FakeTool:
                 'restriction_diagnostics': [{'relation_id': 99, 'code': 'MissingVia',
                     'action': 'blocked_ways', 'members_truncated': False,
                     'members': [{'kind': 'way', 'id': 42, 'role': 'from'}], 'tags': {}}] if self.blocked else []}
+        if report['policy'] == 'quarantine_ways':
+            counts['quarantine_ways_policy_v1'] = 1
+            report.update(planned_blocked_way_ids=report['blocked_way_ids'],
+                          applied_blocked_way_ids=report['blocked_way_ids'], blockways_failure=None)
+            for item in report['restriction_diagnostics']:
+                item['attempt'] = 1
+            serialized = [json.dumps(item, ensure_ascii=False, separators=(',', ':')).encode()
+                          for item in report['restriction_diagnostics']]
+            report['restriction_audit'] = {
+                'attempt': 1, 'attempts_completed': 1, 'scan_complete': True, 'truncated': False,
+                'records_observed': len(serialized), 'records_retained': len(serialized),
+                'retained_bytes': sum(map(len, serialized)), 'retained_memory_bytes': len(serialized)*1024,
+                'limits': {'max_diagnostics': 4096, 'max_audit_bytes': 16777216,
+                           'max_blockways_attempts': 64}}
+        return report
     def call(self, command, arguments, timeout, expected_error=None):
         self.calls.append((command, list(arguments)))
         if self.fail:
             raise RouteWeftError('injected failure')
         if command == 'version':
             return {'schema': 1, 'status': 'ok', 'version': '0.1.0', 'cli_schema': 1,
-                    'commands': ['build','preflight','inspect','verify','nearest','route','version'],
+                    'commands': ['build','preflight','inspect','verify','nearest','route','version','coverage'],
                     'dataset_formats': [1, 2], 'profiles': ['driving-v1'],
                     'capabilities': {'build_modes': ['memory', 'external'], 'external_build_formats': [2],
                                      'graph_capacity_profiles': {'city': {}, 'regional': {}}},
-                    'invalid_restriction_policies': ['reject','block_ways'],
+                    'invalid_restriction_policies': ['reject','block_ways','quarantine_ways'],
                     'invalid_maxspeed_policies': ['reject', 'use_default']}
         if command == 'preflight':
             return {'schema': 1, 'status': 'ok', 'report': self.report(arguments)}
@@ -97,6 +112,10 @@ class FakeTool:
         if expected_error:
             return {'schema': 1, 'status': 'error', 'error': {'kind': expected_error}}
         identity = {k: manifest[k] for k in ('dataset_id', 'profile', 'format')}
+        if command == 'coverage':
+            return {'schema': 1, 'status': 'ok', **identity,
+                    'coverage': {'nodes': manifest['nodes'], 'edges': manifest['edges'],
+                                 'excluded_way_edges': 0}}
         if command == 'nearest':
             return {'schema': 1, 'status': 'ok', **identity,
                     'matches': [{'point': {'lon': 0, 'lat': 0}, 'distance_m': 0}]}
@@ -115,7 +134,7 @@ class RegionCatalogRoutingTests(unittest.TestCase):
                         for day in ('20260803', '20260804')]
             self.assertEqual(services[0].config_sha256, services[1].config_sha256)
             for service in services:
-                self.assertEqual(service.policy, 'block_ways')
+                self.assertEqual(service.policy, 'quarantine_ways')
                 self.assertEqual(service.maxspeed_policy, 'reject')
                 self.assertTrue(service.automatic_smoke)
                 self.assertNotIn('source_sha256', service.config)
@@ -693,7 +712,7 @@ class RealCLITests(unittest.TestCase):
             dataset, manifest, ready = service.current()
             self.assertIsNone(service.review)
             self.assertEqual('use_default', service.maxspeed_policy)
-            self.assertEqual('block_ways', service.policy)
+            self.assertEqual('quarantine_ways', service.policy)
             self.assertEqual([10], ready['blocked_way_ids'])
             self.assertEqual('MissingVia', ready['restriction_diagnostics'][0]['code'])
             self.assertTrue(ready['maxspeed_diagnostics'])
