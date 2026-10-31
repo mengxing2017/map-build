@@ -141,7 +141,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="huavd-map-build")
     commands = parser.add_subparsers(dest="context", required=True)
     routing = commands.add_parser("routing", help="Independent routing audit datasets")
-    routing.add_argument("command", choices=("setup", "doctor", "check", "preflight", "build", "verify", "smoke", "pack"))
+    routing.add_argument("command", choices=("setup", "doctor", "check", "preflight", "build", "verify", "smoke", "pack", "revalidate"))
     routing.add_argument("--region", default="monaco")
     routing.add_argument("--yyyymmdd", default=datetime.now(timezone.utc).strftime("%Y%m%d"))
     routing.add_argument("--session")
@@ -149,6 +149,9 @@ def _parser() -> argparse.ArgumentParser:
     routing.add_argument("--input", type=Path)
     routing.add_argument("--source", type=Path)
     routing.add_argument("--config", type=Path)
+    routing.add_argument("--resource-config", type=Path)
+    routing.add_argument("--memory-ceiling-bytes", type=int, help="Explicit deployment memory ceiling; still bounded by detected environment")
+    routing.add_argument("--dataset", type=Path, help="Completed dataset to recover with revalidate")
     routing.add_argument("--invalid-maxspeed", choices=("reject", "use_default"))
     routing.add_argument("--format", choices=("tar", "zip", "both"), default="both")
 
@@ -542,6 +545,8 @@ def _parser() -> argparse.ArgumentParser:
     bundle.add_argument("--format", choices=["tar", "zip", "both"], default="both")
     bundle.add_argument("--workdir", default="/tmp/huavd-map-build")
     bundle.add_argument("--routing-audit-config", type=Path)
+    bundle.add_argument("--resource-config", type=Path)
+    bundle.add_argument("--memory-ceiling-bytes", type=int)
     return parser
 
 
@@ -560,7 +565,8 @@ def run(arguments: list[str] | None = None) -> int:
                 result = doctor(process, args.input)
             else:
                 service = RoutingService(process, root, args.workdir, args.region, args.yyyymmdd,
-                                         args.session, args.config, invalid_maxspeed=args.invalid_maxspeed)
+                                         args.session, args.config, invalid_maxspeed=args.invalid_maxspeed,
+                                         resource_config=args.resource_config, memory_ceiling_bytes=args.memory_ceiling_bytes)
                 if args.command == "check":
                     source = args.input
                     if source is None:
@@ -570,6 +576,10 @@ def run(arguments: list[str] | None = None) -> int:
                     if args.input is None:
                         raise ValueError("routing build/preflight requires --input")
                     result = service.preflight(args.input) if args.command == "preflight" else service.build(args.input)
+                elif args.command == "revalidate":
+                    if args.dataset is None:
+                        raise ValueError("routing revalidate requires --dataset")
+                    result = service.revalidate(args.dataset)
                 elif args.command == "pack":
                     result = RoutingDelivery(service).pack(args.format)
                 else:
@@ -818,7 +828,8 @@ def run(arguments: list[str] | None = None) -> int:
         ):
             style_service(repository_root()).run(StyleRequest(region, session, args.workdir))
         result = bundle_service().run(BundleRequest(
-            region, build_date, session, args.role, args.workdir, args.format, args.routing_audit_config
+            region, build_date, session, args.role, args.workdir, args.format, args.routing_audit_config,
+            args.resource_config, args.memory_ceiling_bytes
         ))
         print(json.dumps(result, ensure_ascii=True, indent=2, sort_keys=True))
         return 0
