@@ -63,10 +63,14 @@ class RoutingDelivery:
         service = self.routing
         with service.locked():
             dataset, manifest, ready = service.current()
-            service.smoke(dataset, manifest)
+            validated = service.smoke(dataset, manifest)
             with tempfile.TemporaryDirectory(prefix='routing-pack-', dir=service.workdir / 'staging/routing') as temporary:
                 stage = Path(temporary) / 'package'
-                shutil.copytree(dataset, stage)
+                with service.resources.storage('pack-copy', sum(v['bytes'] for v in ready['files'].values()),
+                                               service.workdir):
+                    shutil.copytree(dataset, stage)
+                write_json(stage / 'routing-validation.json', {
+                    'source_ready_validation': ready['validation_receipt'], 'validation': validated})
                 write_json(stage / 'attribution.json', {
                     'attribution': manifest['attribution'], 'source': 'OpenStreetMap contributors',
                     'license': 'ODbL-1.0', 'license_url': 'https://opendatacommons.org/licenses/odbl/1.0/',
@@ -90,19 +94,15 @@ class RoutingDelivery:
                                         'road coverage and reachability may be reduced.'
                                         if service.policy in ('block_ways', 'quarantine_ways') else None),
                     'tool': ready['tool'], 'files': file_records(stage)})
-                outputs = []
+                outputs, pending = [], []
                 for kind in (['tar', 'zip'] if format == 'both' else [format]):
                     suffix = 'tar.gz' if kind == 'tar' else 'zip'
                     archive = Path(temporary) / ('bundle.' + suffix)
-                    if kind == 'tar':
-                        with tarfile.open(archive, 'w:gz') as stream:
-                            for path in sorted(stage.iterdir()):
-                                stream.add(path, arcname=path.name, recursive=False)
-                    else:
-                        with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as stream:
-                            for path in sorted(stage.iterdir()):
-                                stream.write(path, arcname=path.name)
-                    extracted = unpack(archive, Path(temporary) / ('unpacked-' + kind))
+                    size = sum(p.stat().st_size for p in stage.iterdir())
+                    with service.resources.storage('pack-archive', size + size // 100 + 1048576, service.workdir):
+                        self._write_archive(kind, archive, stage)
+                    with service.resources.storage('pack-unpack', size, service.workdir):
+                        extracted = unpack(archive, Path(temporary) / ('unpacked-' + kind))
                     package = json.loads((extracted / 'routing-package.json').read_text())
                     actual = file_records(extracted)
                     del actual['routing-package.json']
@@ -113,9 +113,22 @@ class RoutingDelivery:
                         raise RouteWeftError('unpacked manifest changed')
                     smoke = service.smoke(extracted, unpacked_manifest)
                     output = service.outputs / f'{service.session}.routing.bundle.{suffix}'
-                    os.replace(archive, output)
-                    receipt = {'schema': 1, 'sha256': sha256(output), 'bytes': output.stat().st_size,
+                    receipt = {'schema': 1, 'sha256': sha256(archive), 'bytes': archive.stat().st_size,
                                'dataset_id': manifest['dataset_id'], 'unpacked_smoke': smoke}
+                    pending.append((archive, output, receipt))
+                for archive, output, receipt in pending:
+                    os.replace(archive, output)
                     write_json(Path(str(output) + '.verified.json'), receipt)
                     outputs.append(str(output))
                 return outputs
+
+    @staticmethod
+    def _write_archive(kind, archive, stage):
+        if kind == 'tar':
+            with tarfile.open(archive, 'w:gz') as stream:
+                for path in sorted(stage.iterdir()):
+                    stream.add(path, arcname=path.name, recursive=False)
+        else:
+            with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as stream:
+                for path in sorted(stage.iterdir()):
+                    stream.write(path, arcname=path.name)

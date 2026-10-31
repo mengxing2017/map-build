@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import shutil
 import tarfile
+import tempfile
 import time
 import uuid
 import zipfile
@@ -26,6 +27,8 @@ class BundleRequest:
     workdir: str
     format: str = "both"
     routing_audit_config: Path | None = None
+    resource_config: Path | None = None
+    memory_ceiling_bytes: int | None = None
 
 
 class BundleService:
@@ -77,10 +80,9 @@ class BundleService:
             json.dumps(install, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        if Role.BASE in roles:
-            self._include_routing(request, package, included)
+        routing = self._include_routing(request, package, included) if Role.BASE in roles else None
         self._write_manifests(package)
-        archives = self._archives(outputs, package, request.session.value, request.format)
+        archives = self._archives(outputs, package, request.session.value, request.format, routing)
         metrics = {
             "schema_version": 1,
             "generated_at": self._timestamp(),
@@ -108,7 +110,8 @@ class BundleService:
         root = repository_root()
         return RoutingService(tool(root, Path(request.workdir)), root, Path(request.workdir),
                               request.region.value, request.build_date.value, request.session.value,
-                              config=request.routing_audit_config)
+                              config=request.routing_audit_config, resource_config=request.resource_config,
+                              memory_ceiling_bytes=request.memory_ceiling_bytes)
 
     def _include_routing(self, request, package, included):
         from huavd_map_build.production.north.local.routing import file_records, write_json
@@ -120,11 +123,15 @@ class BundleService:
                 if map_manifest.get('source', {}).get('sha256') != expected:
                     raise ValueError("map/routing source SHA-256 mismatch; rebuild both from the same PBF")
             destination = package / 'routing'
-            shutil.copytree(dataset, destination)
+            with service.resources.storage('bundle-copy', sum(v['bytes'] for v in ready['files'].values()),
+                                           package):
+                shutil.copytree(dataset, destination)
             if file_records(destination) != ready['files']:
                 raise ValueError("routing dataset changed while packaging")
             verified = service.verify_dataset(destination, expected)
-            service.smoke(destination, verified)
+            validated = service.smoke(destination, verified)
+            write_json(destination / 'routing-validation.json', {
+                'source_ready_validation': ready.get('validation_receipt'), 'validation': validated})
             write_json(destination / 'attribution.json', {
                 'source': 'OpenStreetMap contributors', 'license': 'ODbL-1.0',
                 'license_url': 'https://opendatacommons.org/licenses/odbl/1.0/',
@@ -149,6 +156,8 @@ class BundleService:
                                                 'road coverage and reachability may be reduced.'
                                                 if service.policy in ('block_ways', 'quarantine_ways') else None),
                             'restriction_review': service.review, 'files': file_records(destination)}})
+
+        return service, manifest, expected, file_records(destination)
 
     def _offline_map(self, role: Role, paths: ArtifactPaths, manifest: dict) -> dict:
         record = manifest.get("huavd_record", {})
@@ -264,27 +273,103 @@ class BundleService:
                 lines.append(f"{BundleService._digest(path, algorithm)}  ./{path.relative_to(package).as_posix()}\n")
             (package / name).write_text("".join(lines), encoding="ascii")
 
-    def _archives(self, outputs: Path, package: Path, session: str, format: str) -> dict:
+    def _archives(self, outputs: Path, package: Path, session: str, format: str, routing=None) -> dict:
         result: dict[str, object] = {"tar_bytes": None, "zip_bytes": None}
+        pending = []
         if format in {"tar", "both"}:
             path = outputs / f"{session}.bundle.tar.gz"
-            with tarfile.open(path, "w:gz") as archive:
-                for child in sorted(package.rglob("*")):
-                    archive.add(child, arcname=f"./{child.relative_to(package)}", recursive=False)
-            self._write_sidecar(path); result["tar_bytes"] = path.stat().st_size
+            temporary = path.with_name(path.name + ".pending")
+            with self._archive_storage(routing, package, 'bundle-tar'):
+                with tarfile.open(temporary, "w:gz") as archive:
+                    for child in sorted(package.rglob("*")):
+                        archive.add(child, arcname=f"./{child.relative_to(package)}", recursive=False)
+            self._verify_archive_routing(temporary, routing)
+            pending.append((temporary, path))
+            result["tar_bytes"] = temporary.stat().st_size
         if format in {"zip", "both"}:
             path = outputs / f"{session}.bundle.zip"
-            with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
-                for child in sorted(package.rglob("*")):
-                    if child.is_file(): archive.write(child, child.relative_to(package).as_posix())
-            with zipfile.ZipFile(path) as archive:
+            temporary = path.with_name(path.name + ".pending")
+            with self._archive_storage(routing, package, 'bundle-zip'):
+                with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as archive:
+                    for child in sorted(package.rglob("*")):
+                        if child.is_file(): archive.write(child, child.relative_to(package).as_posix())
+            with zipfile.ZipFile(temporary) as archive:
                 damaged = archive.testzip()
                 if damaged is not None:
                     raise ValueError(f"Bundle ZIP CRC validation failed: {damaged}")
-            self._write_sidecar(path); result["zip_bytes"] = path.stat().st_size
+            self._verify_archive_routing(temporary, routing)
+            pending.append((temporary, path))
+            result["zip_bytes"] = temporary.stat().st_size
             result["zip_path"] = str(path.resolve())
-            result["zip_sha512"] = self._digest(path, "sha512")
+            result["zip_sha512"] = self._digest(temporary, "sha512")
+        for temporary, path in pending:
+            temporary.replace(path)
+            self._write_sidecar(path)
         return result
+
+    @staticmethod
+    def _archive_storage(routing, package, phase):
+        from contextlib import nullcontext
+        if routing is None:
+            return nullcontext()
+        size = sum(p.stat().st_size for p in package.rglob('*') if p.is_file())
+        return routing[0].resources.storage(phase, size + size // 100 + 1048576, routing[0].outputs)
+
+    @staticmethod
+    def _verify_archive_routing(archive, routing):
+        if routing is None:
+            return
+        from huavd_map_build.production.north.local.routing import file_records
+        service, manifest, source_sha, expected = routing
+        with service.locked(), tempfile.TemporaryDirectory(prefix='bundle-routing-',
+                dir=service.workdir / 'staging/routing') as directory:
+            destination = Path(directory)
+            seen = set()
+            def consume(name, size, stream):
+                if name not in expected or name in seen or size != expected[name]['bytes']:
+                    raise ValueError('bundle routing archive inventory mismatch')
+                seen.add(name)
+                with (destination / name).open('xb') as target:
+                    remaining = size
+                    while remaining:
+                        chunk = stream.read(min(65536, remaining))
+                        if not chunk:
+                            raise ValueError('truncated bundle routing entry')
+                        target.write(chunk)
+                        remaining -= len(chunk)
+                    if stream.read(1):
+                        raise ValueError('bundle routing entry exceeds size')
+            with service.resources.storage('bundle-unpack', sum(v['bytes'] for v in expected.values()), destination):
+                BundleService._extract_routing(archive, consume)
+            if seen != expected.keys() or file_records(destination) != expected:
+                raise ValueError('bundle unpacked routing hashes mismatch')
+            verified = service.verify_dataset(destination, source_sha)
+            if verified != manifest:
+                raise ValueError('bundle unpacked routing manifest mismatch')
+            service.smoke(destination, verified)
+
+    @staticmethod
+    def _extract_routing(archive, consume):
+        if zipfile.is_zipfile(archive):
+            with zipfile.ZipFile(archive) as source:
+                for entry in source.infolist():
+                    if entry.filename.startswith('routing/'):
+                        mode = (entry.external_attr >> 16) & 0o170000
+                        if entry.is_dir() or mode not in (0, 0o100000):
+                            raise ValueError('non-regular routing archive entry')
+                        with source.open(entry) as stream:
+                            consume(entry.filename[8:], entry.file_size, stream)
+        else:
+            with tarfile.open(archive, 'r:gz') as source:
+                for entry in source:
+                    name = entry.name.removeprefix('./')
+                    if name == 'routing' and entry.isdir():
+                        continue
+                    if name.startswith('routing/'):
+                        if not entry.isfile():
+                            raise ValueError('non-regular routing archive entry')
+                        with source.extractfile(entry) as stream:
+                            consume(name[8:], entry.size, stream)
 
     def _verify_ready(self, paths: ArtifactPaths) -> None:
         marker = self._read_json(paths.ready)
