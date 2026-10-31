@@ -35,21 +35,26 @@ class AuditEntrypointTests(unittest.TestCase):
     def service(self):
         return RoutingService(self.tool, ROOT, self.root, 'monaco', '20261019', config=self.config)
 
-    def test_production_budget_reaches_coverage_and_queries(self):
+    def test_production_plan_reaches_coverage_and_queries_without_region_budget(self):
+        from test_routing import fake_plan
         service = RoutingService(self.tool, ROOT, self.root, 'china/guangdong', '20261030')
-        self.assertEqual(12 * 1024**3, service.config['max_load_bytes'])
+        self.assertNotIn('max_load_bytes', service.config)
         service.automatic_smoke = False
         service.config['smoke'] = [{'command': 'nearest', 'coordinates': '0,0', 'expect': 'ok'},
-                                  {'command': 'route', 'coordinates': '0,0;0.001,0', 'expect': 'ok',
-                                   'distance_m': [1, 1000], 'duration_s': [1, 100]}]
+            {'command': 'route', 'coordinates': '0,0;0.001,0', 'expect': 'ok',
+             'distance_m': [1, 1000], 'duration_s': [1, 100]}]
         (self.root / 'staging/routing').mkdir(parents=True)
-        manifest = {'dataset_id': 'fixture', 'nodes': 2, 'edges': 2, 'profile': 'driving-v1', 'format': 1}
+        manifest = {'dataset_id': 'fixture', 'nodes': 2, 'edges': 2, 'restrictions': 0,
+                    'profile': 'driving-v1', 'format': 2, 'graph_bytes': 100,
+                    'graph_sha256': 'b'*64, 'source_sha256': 'c'*64}
         (self.root / 'manifest.json').write_text(json.dumps(manifest))
         service.smoke(self.root, manifest, excluded=[])
+        commands = []
         for command, args in self.tool.calls:
             if command in ('coverage', 'nearest', 'route'):
-                self.assertEqual(str(12 * 1024**3), args[args.index('--max-load-bytes') + 1])
-        self.assertEqual(['coverage', 'nearest', 'route'], [c for c, _ in self.tool.calls])
+                commands.append(command)
+                self.assertEqual('1024', args[args.index('--max-load-bytes') + 1])
+        self.assertEqual(['coverage', 'nearest', 'route'], commands)
 
     def test_check_does_not_build_or_publish_and_checks_sha(self):
         service = self.service()
@@ -59,7 +64,7 @@ class AuditEntrypointTests(unittest.TestCase):
         service.config['source_sha256'] = '0' * 64
         with self.assertRaisesRegex(RouteWeftError, 'snapshot'):
             service.check(self.source)
-        self.assertEqual(1, len(self.tool.calls))
+        self.assertEqual(2, len(self.tool.calls))
 
     def test_cli_check_and_relative_config_resolve_from_repository(self):
         relative = Path(os.path.relpath(self.config, ROOT))
@@ -92,15 +97,24 @@ class AuditEntrypointTests(unittest.TestCase):
         with patch.object(cli, 'bundle_service', return_value=bundle), redirect_stdout(io.StringIO()):
             cli.run(['artifact', 'pack', '--region=monaco', '--yyyymmdd=20261019',
                      '--role=base', '--workdir=' + str(self.root),
-                     '--routing-audit-config=' + str(self.config)])
-        self.assertEqual(self.config, bundle.run.call_args.args[0].routing_audit_config)
+                     '--routing-audit-config=' + str(self.config),
+                     '--resource-config=' + str(ROOT / 'config/build-resources.yaml'),
+                     '--memory-ceiling-bytes=21474836480'])
+        request = bundle.run.call_args.args[0]
+        self.assertEqual(self.config, request.routing_audit_config)
+        self.assertEqual(ROOT / 'config/build-resources.yaml', request.resource_config)
+        self.assertEqual(21474836480, request.memory_ceiling_bytes)
 
     def test_make_config_reaches_build_verify_and_pack(self):
         for target, expected in [('build', 'routing check'), ('verify', 'routing verify'),
                                  ('pack', 'artifact pack'), ('pack-tar', 'artifact pack')]:
             result = subprocess.run(['make', '-n', target, 'ROLE=base', 'REGION=monaco',
-                                     'ROUTING_AUDIT_CONFIG=' + str(self.config)],
+                                     'ROUTING_AUDIT_CONFIG=' + str(self.config),
+                                     'ROUTING_RESOURCE_CONFIG=/tmp/resources.yaml',
+                                     'ROUTING_MEMORY_CEILING_BYTES=21474836480'],
                                     cwd=ROOT, capture_output=True, text=True, check=True)
+            self.assertIn('--resource-config="/tmp/resources.yaml"', result.stdout)
+            self.assertIn('--memory-ceiling-bytes="21474836480"', result.stdout)
             self.assertIn(expected, result.stdout)
             self.assertIn(str(self.config), result.stdout)
             if target == 'build':
