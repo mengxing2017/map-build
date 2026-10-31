@@ -23,13 +23,28 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def configuration():
     return {'schema': 1, 'regions': {'monaco': {
-        'enabled': True, 'profile': 'driving', 'build_timeout_s': 10,
-        'verify_timeout_s': 10, 'query_timeout_s': 10,
+        'enabled': True, 'profile': 'driving',
         'smoke': [
             {'command': 'nearest', 'coordinates': '0,0', 'expect': 'ok'},
             {'command': 'route', 'coordinates': '0,0;0.001,0', 'expect': 'ok',
              'distance_m': [50, 200], 'duration_s': [1, 100]},
             {'command': 'route', 'coordinates': '0,0;0.1,0', 'expect': 'NoRoute'}]}}}
+
+
+def fake_plan(manifest, independent=False):
+    estimate = {'estimated_bytes': 1024, 'nodes_bytes': 512, 'edges_bytes': 512,
+                'restriction_bytes': 0, 'strings_bytes': 0, 'dictionary_bytes': 0}
+    return {'schema': 1, 'estimator_version': 1,
+            'estimate_kind': 'conservative_logical_allocations_not_rss',
+            **{k: manifest[k] for k in ('dataset_id', 'graph_sha256', 'source_sha256', 'format')},
+            'counts': {k: manifest[k] for k in ('nodes', 'edges', 'restrictions', 'graph_bytes')},
+            'dataset_load': estimate, 'engine_load': estimate,
+            'effective_load_options': {'max_bytes': 2147483648, 'max_nodes': 8000000,
+                'max_edges': 16000000, 'max_restriction_edges': 1000000, 'max_resident_bytes': 2147483648},
+            'included': ['graph'], 'excluded_unknown': ['query_workspace'],
+            'verification_scope': ('full_streaming_v2' if manifest['format'] == 2 else
+                                   'identity_size_hash_v1_not_semantic') if independent else 'published_manifest',
+            'validation_workspace_budget_bytes': 67108864 if independent else None}
 
 
 class FakeTool:
@@ -77,10 +92,14 @@ class FakeTool:
             raise RouteWeftError('injected failure')
         if command == 'version':
             return {'schema': 1, 'status': 'ok', 'version': '0.1.0', 'cli_schema': 1,
-                    'commands': ['build','preflight','inspect','verify','nearest','route','version','coverage'],
+                    'commands': ['build','preflight','inspect','verify','nearest','route','version','coverage','resource-plan'],
                     'dataset_formats': [1, 2], 'profiles': ['driving-v1'],
-                    'capabilities': {'build_modes': ['memory', 'external'], 'external_build_formats': [2],
-                                     'graph_capacity_profiles': {'city': {}, 'regional': {}}},
+                    'capabilities': {'resource_plan': {'schema': 1, 'estimator_version': 1,
+                                        'command': 'resource-plan', 'build_output': True, 'query_indexes_constructed': False},
+                                     'limits': {'input_bytes': 536870912},
+                                     'external_decode_limits': {'input_bytes': 536870912},
+                                     'build_modes': ['memory', 'external'], 'external_build_formats': [2],
+                                     'graph_capacity_profiles': {'city': {'bytes': 268435456}, 'regional': {'bytes': 2147483648}}},
                     'invalid_restriction_policies': ['reject','block_ways','quarantine_ways'],
                     'invalid_maxspeed_policies': ['reject', 'use_default']}
         if command == 'preflight':
@@ -103,12 +122,16 @@ class FakeTool:
                     struct.pack('<8s7Q', b'RWFTG002', 0, 2, 1, 0, 0, 0, 0)
                     + struct.pack('<4d', 0, 0, 0.001, 0)
                     + struct.pack('<QQqQQIIQ', 0, 1, 42, 100000, 10000, 0, 0, 0))
+            graph = output / ('graph.bin' if manifest['format'] == 2 else 'graph.json')
+            manifest.update(graph_sha256=sha256(graph), graph_bytes=graph.stat().st_size)
             write_json(output / 'manifest.json', manifest)
         else:
             manifest = json.loads((Path(arguments[1]) / 'manifest.json').read_text())
+        if command == 'resource-plan':
+            return {'schema': 1, 'status': 'ok', 'resource_plan': fake_plan(manifest, independent=True)}
         if command in ('build', 'verify', 'inspect'):
             return {'schema': 1, 'status': 'ok', 'verified': True, 'manifest': manifest,
-                    **({'report': self.report(arguments), 'build': {'builder': 'external' if '--builder' in arguments else 'memory'}} if command == 'build' else {})}
+                    **({'resource_plan': fake_plan(manifest), 'report': self.report(arguments), 'build': {'builder': 'external' if '--builder' in arguments else 'memory'}} if command == 'build' else {})}
         if expected_error:
             return {'schema': 1, 'status': 'error', 'error': {'kind': expected_error}}
         identity = {k: manifest[k] for k in ('dataset_id', 'profile', 'format')}
@@ -159,7 +182,9 @@ class LifecycleTests(unittest.TestCase):
         self.assertIsNone(json.loads((self.work / 'outputs/monaco-20261019.routing/fixture/routing-build.json').read_text())['source_snapshot'])
         self.service.build(self.input)
         self.assertNotEqual(*self.tool.outputs)
-        self.assertEqual(ready, self.service.verify())
+        verified = self.service.verify()
+        self.assertEqual(ready['dataset_id'], verified['dataset_id'])
+        self.assertEqual(ready['files'], verified['files'])
         outputs = RoutingDelivery(self.service).pack('both')
         self.assertEqual(2, len(outputs))
         for output in outputs:
@@ -302,7 +327,7 @@ class LifecycleTests(unittest.TestCase):
         def missing(command, args, timeout, expected_error=None):
             result = original(command, args, timeout, expected_error)
             if command == 'version':
-                result.pop('capabilities')
+                result['capabilities'].pop('build_modes')
             return result
         self.tool.call = missing
         with self.assertRaisesRegex(RouteWeftError, 'external/v2'):
