@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "repository": "https://github.com/mengxing2017/routeweft",
-  "commit": "75261cab4e4450dbee508599a10b511829771eba",
+  "commit": "a37202fc56dcc00b509018f9b89255cf967c28b4",
   "require_build_identity": true,
   "map_build_baseline": "c1a1c1390bf23a6faed92b6c1356e37ba3613555",
   "build": [
