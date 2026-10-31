@@ -1,0 +1,19 @@
+schema: 1
+routing:
+  # Deployment-wide policy, independent of region names and build dates.
+  mode: auto
+  per_job_ceiling_bytes: null
+  reserve_bytes: 1073741824
+  reserve_percent: 10
+  # Operational allowances, not a guarantee of OS peak RSS. Tune with measurements.
+  estimate_peak_percent: 125
+  unknown_overhead_bytes: 536870912
+  plan_workspace_bytes: 67108864
+  # null uses the locked tool's advertised input ceiling / available scratch.
+  max_input_bytes: null
+  max_scratch_bytes: null
+  disk_reserve_bytes: 1073741824
+  build_timeout_s: 7200
+  verify_timeout_s: 600
+  query_timeout_s: 600
+  total_timeout_s: 14400
