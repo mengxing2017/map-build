@@ -121,6 +121,8 @@ def receipt_process(binary: Path, receipt_path: Path, lock: dict):
 def doctor(process, probe: Path | None = None):
     # A caller-supplied tiny PBF is explicit: no downloads and no renderer dependencies.
     version = capabilities(process)
+    from huavd_map_build.production.domain.routing_resources import ResourcePlan, require_resource_capability
+    require_resource_capability(version)
     with tempfile.TemporaryDirectory(prefix='routeweft-probe-') as directory:
         if probe is None:
             from huavd_map_build.production.south.adapter.process.routeweft_probe import generate
@@ -154,6 +156,9 @@ def doctor(process, probe: Path | None = None):
                 or external.get('build', {}).get('builder') != 'external'):
             raise RouteWeftError('RouteWeft external/v2 contract probe failed')
         build_report(external, sha256(probe), 'reject', manifest=external_manifest)
+        planned = process.call('resource-plan', ['--dataset', str(external_output),
+            '--graph-capacity', 'regional', '--max-plan-workspace-bytes', '67108864', '--json'], 30)
+        ResourcePlan.parse(planned.get('resource_plan'), external_manifest, workspace=67108864)
         return {'schema': 1, 'tool': {**process.identity,
                 'binary': str(process.binary.resolve()), 'version': version['version'],
                 'embedded_build': version.get('build'),
@@ -162,4 +167,4 @@ def doctor(process, probe: Path | None = None):
                 'selection': ('locked-receipt' if process.identity.get('commit') else 'explicit-sha256')},
                 'capabilities': version,
                 'preflight': preflight, 'build': built, 'probe': verified,
-                'external_build': external, 'external_probe': external_verified}
+                'external_build': external, 'external_probe': external_verified, 'resource_plan_probe': planned}
