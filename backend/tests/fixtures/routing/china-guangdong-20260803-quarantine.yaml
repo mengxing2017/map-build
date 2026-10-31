@@ -12,11 +12,6 @@ regions:
     max_blockways_attempts: 8
     max_restriction_diagnostics: 4096
     max_restriction_audit_bytes: 16777216
-    max_scratch_bytes: 17179869184
-    max_load_bytes: 12884901888
-    build_timeout_s: 3600
-    verify_timeout_s: 600
-    query_timeout_s: 600
     smoke_mode: graph-edge-v1
     query_budget:
       radius-m: 0.1

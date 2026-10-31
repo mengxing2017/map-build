@@ -6,11 +6,6 @@ regions:
     enabled: true
     profile: driving
     source_sha256: e7eee17e89b65bdff18bdc1be45e59952a1a3774fc9845a9488e67968f31c4ba
-    max_input_bytes: 2097152
-    build_timeout_s: 600
-    preflight_timeout_s: 600
-    verify_timeout_s: 120
-    query_timeout_s: 30
     invalid_restrictions: block_ways
     restriction_review:
       reason: >-

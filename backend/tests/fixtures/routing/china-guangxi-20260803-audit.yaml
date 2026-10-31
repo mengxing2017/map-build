@@ -6,13 +6,6 @@ regions:
     builder: external
     graph_capacity: regional
     source_sha256: eea0eb47bba0640b2c6468a1b82cb2c5f8ea1261a5333f47420e6d569f0b769d
-    max_input_bytes: 536870912
-    build_timeout_s: 7200
-    preflight_timeout_s: 7200
-    verify_timeout_s: 600
-    query_timeout_s: 600
-    max_scratch_bytes: 17179869184
-    max_load_bytes: 8589934592
     invalid_maxspeed: use_default
     invalid_restrictions: block_ways
     restriction_review:

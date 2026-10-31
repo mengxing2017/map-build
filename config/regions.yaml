@@ -11352,9 +11352,6 @@ regions:
       mapping_status: "pending-source-id"
       package_version_template: null
   - id: "china/guangdong"
-    routing:
-      # Production engine-load budget; coverage and query commands share it.
-      max_load_bytes: 12884901888
     slug: "china-guangdong"
     display_name: "Guangdong"
     display_name_zh: "广东省"
