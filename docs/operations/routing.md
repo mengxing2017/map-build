@@ -33,9 +33,9 @@ setup 会生成工具及 receipt.json，正常使用不需要手填 SHA-256。�
 
 ## REGION 与执行
 
-普通构建直接复用 config/regions.yaml 的 REGION、同一份原始 PBF 和内置驾车参数。默认使用 external 磁盘构建、format 2 和 regional 图容量。预算为输入不超过 512 MiB、scratch 16 GiB、查询加载分配估算 8 GiB；build/preflight 3600 秒，verify 和单次查询进程各 300 秒。查询计算本身仍限 10 秒。无效限速和异常转向采用 `config/regions.yaml` 中的通用业务策略，详见下文。
+普通构建直接复用 config/regions.yaml 的 REGION、同一份原始 PBF 和内置驾车参数。默认使用 external 磁盘构建、format 2 和 regional 图容量。资源策略统一来自 `config/build-resources.yaml`，不按区域配置内存。输入上限取运维策略与锁定工具声明的较小值（当前工具为 512 MiB），scratch 根据所在挂载点可用空间计算；tmpfs 同时计入内存准入。图完成后调用 `resource-plan`，据实际图需求、主机 MemAvailable、cgroup 限额和运维预留进行准入。默认 build/preflight 7200 秒、verify/查询进程各 600 秒、单任务总时限 14400 秒；查询计算本身仍限 10 秒。无效限速和异常转向采用 `config/regions.yaml` 中的通用业务策略，详见下文。
 
-external 构建自身完成语义检查，不调用仍受 200 万对象限制的内存 preflight。独立 preflight-routing 执行一次 external 试构建与 verify，保留 attempt 审计但不发布 ready；正式 build-routing 不重复建图。显式审核配置可设置 builder: external、graph_capacity: regional、max_scratch_bytes 和 max_load_bytes；未指定 builder 的历史审核夹具继续使用 memory/v1。regional 仍受上游对象、图大小、跨度和数据质量限制，不保证任意省域成功。
+external 构建自身完成语义检查，不调用仍受 200 万对象限制的内存 preflight。独立 preflight-routing 执行一次 external 试构建与 verify，保留 attempt 审计但不发布 ready；正式 build-routing 不重复建图。显式审核配置可设置 builder: external、graph_capacity: regional；执行资源只通过独立的全局运维资源策略设置，审核文件中的 max_input_bytes/max_scratch_bytes/max_load_bytes 及阶段超时字段会报迁移错误；未指定 builder 的历史审核夹具继续使用 memory/v1。regional 仍受上游对象、图大小、跨度和数据质量限制，不保证任意省域成功。
 
 ```bash
 export REGION=your/configured/local-region
@@ -110,7 +110,7 @@ Python 打包入口为 `artifact pack --routing-audit-config=<path>`；独立路
 
 指定广东样本的普通入口全量结果见[默认隔离验收报告](../../report/routeweft-guangdong-default-quarantine-validation-20261030.md)。
 
-当前锁定工具为 `75261cab`；自 `5fdb38ce` 起，报告区分 `planned_blocked_way_ids` 与
+当前锁定工具为 `a37202fc`；自 `5fdb38ce` 起，报告区分 `planned_blocked_way_ids` 与
 `applied_blocked_way_ids`，并通过 `blockways_failure` 返回不可恢复关系。
 本项目只接受计划集合、已应用集合和旧别名一致且没有 blocker 的成功报告；
 ready 和审核包保留集合，消费时再次核验。阶段耗时 `build_metrics` 保留在回执中，
@@ -133,7 +133,7 @@ PYTHONPATH=backend/src .venv/bin/python -m huavd_map_build routing build \
   --input=/home/dev/data/source-map/guangdong-260803.osm.pbf
 ```
 
-该配置使用明确的 12 GiB 加载估算预算及 `smoke_mode: graph-edge-v1`，
+该配置使用通用资源准入及 `smoke_mode: graph-edge-v1`，
 自动选择实际图边执行基础 nearest/route 检查。基础 smoke 和零残留边检查
 不替代省级连通性、长距离路线质量或外部引擎对照验收。
 
@@ -205,8 +205,49 @@ routing:
 
 该配置仅供显式 `routing build/verify/smoke/pack --config=backend/tests/fixtures/routing/china-guangxi-20260803-audit.yaml` 审核使用，不被普通 Make/CLI 自动加载，也不是区域业务配置。所有步骤保持 REGION、YYYYMMDD 和 WORKDIR 一致。该配置用于独立路网审计交付，pack 输出 `installable=false` 的审计包。发布证据见 [广西发布记录](../../report/routeweft-guangxi-release-20261020.md)。
 
-### 引擎加载预算
+### 跨区域资源准入
 
-普通构建从 `config/regions.yaml` 的 `routing.max_load_bytes` 读取加载预算，区域条目可覆盖全局默认值（未设置时为 8 GiB）。广东正式配置为 12884901888 字节（12 GiB），同时用于 coverage、nearest 和 route。此值是 RouteWeft 的加载估算上限，不是系统内存预留；运行环境仍须提供足够内存。
+`config/build-resources.yaml` 是全局部署策略，所有区域、普通构建、显式审计、verify、smoke 和 pack 共用。默认 auto 模式读取主机 MemAvailable、进程实际 cgroup v1/v2 路径及祖先限制；取可见的最严剩余额度，扣除固定/比例预留，再判断“上游逻辑估算 × peak 比例 + 未知开销余量”能否执行。当前默认 125% 和 512 MiB 是可调整的运维余量，不是峰值 RSS 保证，也不消除实际加载时的资源检查。可选 routing.mld 尚无完整估算时拒绝接入。
 
-固定快照审计配置已从 `config/routing/` 迁至 `backend/tests/fixtures/routing/`，仅通过显式 `--config` 或 `ROUTING_AUDIT_CONFIG` 使用。普通生产构建不加载这些测试夹具。调整预算后有效配置摘要会变化，旧 ready 凭据不能直接作为新配置的发布验证；应重新执行正式构建和验证。
+每个 coverage、nearest、route 执行前重新检测并准入，通过后向工具传入本图的逻辑需求。上游估算公式只在 RouteWeft 维护，宿主校验身份、计数、估算组成、版本与验证范围，不复制公式。尚无图时，check 明确返回 engine_load_requirement=unknown_until_dataset_built；PBF 压缩大小不用于伪造精确内存预测。工具不支持资源规划时明确拒绝，不能回退固定 8 GiB。
+
+资源探测不完整时，必须使用 explicit 策略提供有限部署上限。显式上限仍受可观察的主机/cgroup 剩余额度约束；不会突破已知容器限制。部署调度器/cgroup 负责 OS 硬隔离。资源池仅串行化同一 WORKDIR 中的构建/加载，跨 WORKDIR 并发需由外部调度器管理。
+
+```bash
+# 可选独立运维资源文件：路径相对项目根目录解析
+make build-routing REGION=china/guangdong YYYYMMDD=20261030 \
+  INPUT=/path/source.osm.pbf WORKDIR=/path/disk-workdir \
+  ROUTING_RESOURCE_CONFIG=/path/deployment-resources.yaml
+
+# 可选明确的单任务部署内存上限（字节），优先于资源文件中的 ceiling
+make smoke-routing REGION=china/guangdong YYYYMMDD=20261030 \
+  WORKDIR=/path/disk-workdir ROUTING_MEMORY_CEILING_BYTES=17179869184
+```
+
+CLI 对应 `--resource-config`、`--memory-ceiling-bytes`；build/verify/pack 脚本也接受这两个参数，普通 artifact pack 同样支持。优先级为显式 CLI ceiling > 显式资源文件 > 默认全局资源文件，不使用额外隐式环境覆盖。`--memory-ceiling-bytes` 是含运维余量检查的部署上限，不等同直接传给 RouteWeft 的 max-load-bytes。
+
+### 凭据与失败恢复
+
+新 ready schema=2 区分构建配置身份与执行/验证策略。`outputs/routing-validation/` 保存不可变的验证凭据，ready 引用其路径与哈希。预算或超时改变时，pack 会要求先重验；修改资源不要求重建同一张图：
+
+```bash
+make verify-routing REGION=china/guangdong YYYYMMDD=20261030 \
+  WORKDIR=/path/disk-workdir ROUTING_RESOURCE_CONFIG=/path/new-resources.yaml
+```
+
+verify 现在同时执行完整图校验、quarantine 隔离边检查及基础 nearest/route，并原子刷新 ready 引用，保留历史验证凭据。图文件和构建审计不变。
+
+若图构建已完成而后续加载失败，新构建会保留 staging 下 schema=2 的 routing-build.json。修正部署资源后可以显式恢复：
+
+```bash
+PYTHONPATH=backend/src .venv/bin/python -m huavd_map_build routing revalidate \
+  --region=china/guangdong --yyyymmdd=20261030 --workdir=/path/disk-workdir \
+  --dataset=/path/disk-workdir/staging/routing/china-guangdong-20261030-ATTEMPT/dataset \
+  --resource-config=/path/new-resources.yaml
+```
+
+恢复必须证明源、当前工具、构建业务配置、manifest、限制审计与图完整性一致，并重新准入与验证；不同工具或业务策略不能直接复用。旧 schema=1 缺少可拆分构建身份，明确要求重建，不能跳过旧 config_sha256 或手工改 ready。工具升级或旧不可变数据集占用相同 dataset_id 时，使用新的 WORKDIR 重建，保留旧工作目录作为历史证据。
+
+pack 会独立重验复制后数据和 tar/zip 解包后的路网，解包重验失败不替换对应正式归档。资源失败保留原始响应，failure-summary 补充 resource 的 limit/observed/stage/estimator_version 与已冻结源 SHA，不把资源错误当作限制关系错误。
+
+固定快照审计配置位于 `backend/tests/fixtures/routing/`，仅显式 `--config` 或 ROUTING_AUDIT_CONFIG 加载，普通生产不自动读取。历史 report 中的 config/routing 路径仅指当时证据。
