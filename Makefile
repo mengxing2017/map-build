@@ -227,7 +227,7 @@ verify-dem:
 
 pack:
 ifneq ($(filter $(ROLE),base building both raster_bake base_raster both_raster),)
-	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact pack --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)" --workdir="$(WORKDIR)" $(if $(ROUTING_AUDIT_CONFIG),--routing-audit-config="$(ROUTING_AUDIT_CONFIG)",)
+	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build artifact pack --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)" --workdir="$(WORKDIR)" $(ROUTING_RESOURCE_ARGS) $(if $(ROUTING_AUDIT_CONFIG),--routing-audit-config="$(ROUTING_AUDIT_CONFIG)",)
 else
 	WORKDIR="$(WORKDIR)" ./scripts/pack.sh --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" --role="$(ROLE)" --format="$(FORMAT)"
 endif
@@ -322,8 +322,11 @@ ifneq ($(origin ROUTING_INVALID_MAXSPEED),undefined)
 export ROUTING_INVALID_MAXSPEED
 endif
 ROUTEWEFT_SOURCE ?=
+ROUTING_RESOURCE_CONFIG ?=
+ROUTING_MEMORY_CEILING_BYTES ?=
+ROUTING_RESOURCE_ARGS = $(if $(ROUTING_RESOURCE_CONFIG),--resource-config="$(ROUTING_RESOURCE_CONFIG)",) $(if $(ROUTING_MEMORY_CEILING_BYTES),--memory-ceiling-bytes="$(ROUTING_MEMORY_CEILING_BYTES)",)
 ROUTING_AUDIT_CONFIG ?=
-ROUTING_ARGS = --workdir="$(WORKDIR)" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(ROUTING_AUDIT_CONFIG),--config="$(ROUTING_AUDIT_CONFIG)",)
+ROUTING_ARGS = $(ROUTING_RESOURCE_ARGS) --workdir="$(WORKDIR)" --region="$(REGION)" --yyyymmdd="$(YYYYMMDD)" --session="$(SESSION)" $(if $(ROUTING_AUDIT_CONFIG),--config="$(ROUTING_AUDIT_CONFIG)",)
 .PHONY: setup-routeweft doctor-routeweft preflight-routing build-routing verify-routing smoke-routing pack-routing
 setup-routeweft:
 	PYTHONPATH=backend/src $(PYTHON) -m huavd_map_build routing setup --workdir="$(WORKDIR)" $(if $(ROUTEWEFT_SOURCE),--source="$(ROUTEWEFT_SOURCE)",)

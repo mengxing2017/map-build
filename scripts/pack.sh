@@ -12,6 +12,8 @@ source "${SCRIPT_DIR}/lib/install_json.sh"
 FORMAT="${FORMAT:-both}"
 INCLUDE_BUILD_LOG=0
 
+ROUTING_RESOURCE_CONFIG="${ROUTING_RESOURCE_CONFIG:-}"
+ROUTING_MEMORY_CEILING_BYTES="${ROUTING_MEMORY_CEILING_BYTES:-}"
 ROUTING_AUDIT_CONFIG="${ROUTING_AUDIT_CONFIG:-}"
 
 for arg in "$@"; do
@@ -19,11 +21,13 @@ for arg in "$@"; do
     continue
   fi
   case "${arg}" in
+    --resource-config=*) ROUTING_RESOURCE_CONFIG="${arg#*=}" ;;
+    --memory-ceiling-bytes=*) ROUTING_MEMORY_CEILING_BYTES="${arg#*=}" ;;
     --routing-audit-config=*) ROUTING_AUDIT_CONFIG="${arg#*=}" ;;
     --format=*) FORMAT="${arg#*=}" ;;
     --include-build-log) INCLUDE_BUILD_LOG=1 ;;
     -h|--help)
-      printf 'usage: %s --session=<session> [--role=base|building|raster_bake|base_raster|both_raster|both|dem|all] [--format=tar|zip|both] [--routing-audit-config=<path>] [--workdir=<path>]\n' "$0"
+      printf 'usage: %s --session=<session> [--role=base|building|raster_bake|base_raster|both_raster|both|dem|all] [--format=tar|zip|both] [--routing-audit-config=<path>] [--resource-config=<path>] [--memory-ceiling-bytes=<bytes>] [--workdir=<path>]\n' "$0"
       exit 0
       ;;
     *) die "${HUAVD_EXIT_INPUT}" "unknown argument: ${arg}" ;;
@@ -35,7 +39,8 @@ case "${ROLE:-both}" in
     exec make --no-print-directory -C "${REPO_ROOT}" pack \
       WORKDIR="${WORKDIR}" REGION="${REGION}" YYYYMMDD="$(session_yyyymmdd "${SESSION}")" \
       SESSION="${SESSION}" ROLE="${ROLE:-both}" FORMAT="${FORMAT}" \
-      ROUTING_AUDIT_CONFIG="${ROUTING_AUDIT_CONFIG}"
+      ROUTING_AUDIT_CONFIG="${ROUTING_AUDIT_CONFIG}" \
+    ROUTING_RESOURCE_CONFIG="${ROUTING_RESOURCE_CONFIG}" ROUTING_MEMORY_CEILING_BYTES="${ROUTING_MEMORY_CEILING_BYTES}"
     ;;
 esac
 
