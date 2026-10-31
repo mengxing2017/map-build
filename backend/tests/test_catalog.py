@@ -47,10 +47,8 @@ class CatalogTest(unittest.TestCase):
             self.assertEqual(load(), RoutingSettings('use_default', 'quarantine_ways'))
             item['routing'] = {'invalid_restrictions': 'reject'}
             self.assertEqual(load(), RoutingSettings('use_default', 'reject'))
-            item['routing']['max_load_bytes'] = 12 * 1024**3
-            self.assertEqual(load().max_load_bytes, 12 * 1024**3)
             for bad in ({'invalid_restrictions': 'ignore'}, {'invalid_maxspeed': False},
-                        {'invalid_maxspeeed': 'reject'}, {'max_load_bytes': 0},
+                        {'invalid_maxspeeed': 'reject'}, {'max_load_bytes': 12884901888},
                         {'max_load_bytes': True}, {'max_load_bytes': '12884901888'}, None):
                 with self.subTest(bad=bad):
                     item['routing'] = bad
