@@ -27,6 +27,11 @@ class _Routing:
     dataset_format = 1
 
     def __init__(self, root, source='a' * 64):
+        from huavd_map_build.production.north.local.routing_resources import ResourceGate
+        self.workdir = root
+        self.outputs = root / 'outputs'
+        (root / 'staging/routing').mkdir(parents=True, exist_ok=True)
+        self.resources = ResourceGate(Path(__file__).resolve().parents[2], root)
         self.dataset = root / 'dataset'
         self.dataset.mkdir()
         (self.dataset / 'graph.bin').write_bytes(b'graph')
